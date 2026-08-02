@@ -15,7 +15,7 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-/** Keep in sync with LINKEDIN_MAX_JOBS_PER_RUN in intakeConfig. */
+/** Keep in sync with (or above) LINKEDIN_MAX_JOBS_PER_RUN in intakeConfig. */
 const MAX_JOBS_PER_REQUEST = 60;
 
 type LinkedInImportPayload = {

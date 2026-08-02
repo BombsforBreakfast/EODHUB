@@ -16,15 +16,15 @@ export type LinkedInSearchQuery = {
   location: string;
 };
 
-/** US + high-signal markets for HMA / demining LinkedIn searches. */
+/**
+ * US + high-signal markets for HMA / demining LinkedIn searches.
+ * Kept lean after LinkedIn rate warnings — expand only if runs stay clean.
+ */
 export const LINKEDIN_HMA_LOCATIONS = [
   "United States",
   "United Kingdom",
   "Australia",
-  "Canada",
-  "South Africa",
   "Ukraine",
-  "Germany",
 ] as const;
 
 const LINKEDIN_HMA_KEYWORD_SEEDS: ReadonlyArray<{ id: string; keywords: string }> = [
@@ -60,30 +60,20 @@ const LINKEDIN_US_CORE_QUERIES: LinkedInSearchQuery[] = [
   { id: "uxo", keywords: "UXO", location: "United States" },
   { id: "uxo-full", keywords: "Unexploded Ordnance", location: "United States" },
 
-  // C-IED / CIED
+  // C-IED / CIED (one acronym + one expanded form)
   { id: "cied", keywords: "C-IED", location: "United States" },
-  { id: "cied-alt", keywords: "CIED", location: "United States" },
   { id: "cied-full", keywords: "Counter IED", location: "United States" },
-  { id: "ied", keywords: "Improvised Explosive Device", location: "United States" },
 
-  // UAS
+  // UAS / C-UAS
   { id: "uas", keywords: "UAS", location: "United States" },
-  { id: "uas-full", keywords: "Unmanned Aerial Systems", location: "United States" },
-
-  // C-UAS
   { id: "cuas", keywords: "C-UAS", location: "United States" },
-  { id: "cuas-full", keywords: "Counter UAS", location: "United States" },
 
   // CWMD / WMD
   { id: "cwmd", keywords: "CWMD", location: "United States" },
-  { id: "cwmd-alt", keywords: "C-WMD", location: "United States" },
-  { id: "cwmd-full", keywords: "Counter Weapons of Mass Destruction", location: "United States" },
   { id: "wmd", keywords: "WMD", location: "United States" },
-  { id: "wmd-full", keywords: "Weapons of Mass Destruction", location: "United States" },
 
   // Explosive safety
   { id: "explosive-safety", keywords: "Explosive Safety", location: "United States" },
-  { id: "explosives-specialist", keywords: "Explosives Specialist", location: "United States" },
 ];
 
 /**
@@ -122,14 +112,26 @@ export const LINKEDIN_SEARCH_QUERIES: LinkedInSearchQuery[] = [
  * Max unique listings imported per calendar run (API accepts up to 50 by default
  * on the import route; raised slightly so intl HMA can land alongside US core).
  */
-export const LINKEDIN_MAX_JOBS_PER_RUN = 60;
+export const LINKEDIN_MAX_JOBS_PER_RUN = 40;
 
 /** Max relevant jobs kept from each search query (ensures category coverage). */
-export const LINKEDIN_MAX_JOBS_PER_QUERY = 3;
+export const LINKEDIN_MAX_JOBS_PER_QUERY = 2;
 
-/** Max job cards scraped per search before relevance filtering. */
-export const LINKEDIN_JOBS_PER_SEARCH = 15;
+/** Max job cards considered per search before relevance filtering / detail fetch. */
+export const LINKEDIN_JOBS_PER_SEARCH = 8;
 
 /** Local run window: 4:30 AM – before 8:00 AM (minutes from midnight, local time). */
 export const LINKEDIN_IMPORT_WINDOW_START_MINUTES = 4 * 60 + 30;
 export const LINKEDIN_IMPORT_WINDOW_END_MINUTES = 8 * 60;
+
+/**
+ * Minimum calendar days between successful guarded imports (3 = every third day).
+ * Raised after LinkedIn rate / plugin warnings.
+ */
+export const LINKEDIN_MIN_DAYS_BETWEEN_RUNS = 3;
+
+/** Pause between LinkedIn search pages (human-ish pacing). */
+export const LINKEDIN_DELAY_BETWEEN_SEARCHES_MS = { min: 6_000, max: 12_000 } as const;
+
+/** Pause between job detail page opens. */
+export const LINKEDIN_DELAY_BETWEEN_DETAILS_MS = { min: 2_500, max: 5_000 } as const;

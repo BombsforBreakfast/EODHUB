@@ -4,7 +4,7 @@
  * Usage:
  *   npx tsx scripts/linkedin-jobs-import.ts --login     # one-time LinkedIn login
  *   npx tsx scripts/linkedin-jobs-import.ts --dry-run   # scrape only, no API POST
- *   npx tsx scripts/linkedin-jobs-import.ts --force     # bypass 4:30–8 AM window + daily cap
+ *   npx tsx scripts/linkedin-jobs-import.ts --force     # bypass 4:30–8 AM window + cooldown
  *   npx tsx scripts/linkedin-jobs-import.ts             # normal run (guarded)
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
@@ -13,11 +13,14 @@ import { join, resolve, dirname } from "path";
 import { fileURLToPath } from "url";
 import { chromium, type BrowserContext, type Page } from "playwright";
 import {
+  LINKEDIN_DELAY_BETWEEN_DETAILS_MS,
+  LINKEDIN_DELAY_BETWEEN_SEARCHES_MS,
   LINKEDIN_IMPORT_WINDOW_END_MINUTES,
   LINKEDIN_IMPORT_WINDOW_START_MINUTES,
   LINKEDIN_JOBS_PER_SEARCH,
   LINKEDIN_MAX_JOBS_PER_QUERY,
   LINKEDIN_MAX_JOBS_PER_RUN,
+  LINKEDIN_MIN_DAYS_BETWEEN_RUNS,
   LINKEDIN_SEARCH_QUERIES,
 } from "../app/lib/linkedin/intakeConfig";
 import {
@@ -157,11 +160,21 @@ function todayKey(): string {
   return `${y}-${m}-${day}`;
 }
 
-function hasRunToday(): boolean {
+/** Local calendar days between YYYY-MM-DD keys (noon-anchored to avoid DST edge cases). */
+function calendarDaysBetween(earlierKey: string, laterKey: string): number {
+  const a = new Date(`${earlierKey}T12:00:00`);
+  const b = new Date(`${laterKey}T12:00:00`);
+  return Math.floor((b.getTime() - a.getTime()) / 86_400_000);
+}
+
+function hasRunTooRecently(): boolean {
   if (!existsSync(lastRunPath)) return false;
   try {
-    const parsed = JSON.parse(readFileSync(lastRunPath, "utf8")) as { date?: string };
-    return parsed.date === todayKey();
+    const raw = readFileSync(lastRunPath, "utf8").replace(/^\uFEFF/, "");
+    const parsed = JSON.parse(raw) as { date?: string };
+    if (!parsed.date || !/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) return false;
+    const days = calendarDaysBetween(parsed.date, todayKey());
+    return days < LINKEDIN_MIN_DAYS_BETWEEN_RUNS;
   } catch {
     return false;
   }
@@ -169,7 +182,18 @@ function hasRunToday(): boolean {
 
 function markRunToday() {
   mkdirSync(stateDir, { recursive: true });
-  writeFileSync(lastRunPath, JSON.stringify({ date: todayKey(), at: new Date().toISOString() }, null, 2));
+  writeFileSync(
+    lastRunPath,
+    JSON.stringify(
+      {
+        date: todayKey(),
+        at: new Date().toISOString(),
+        minDaysBetweenRuns: LINKEDIN_MIN_DAYS_BETWEEN_RUNS,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function waitForNetwork(timeoutMs = 60_000): Promise<void> {
@@ -254,15 +278,25 @@ async function scrapeSearchPage(
   keywords: string,
   location: string,
   searchQuery: string,
+  seen: Set<string>,
 ): Promise<ScrapedJob[]> {
   const url = linkedInSearchUrl(keywords, location);
-  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await page.waitForTimeout(2_500);
+  try {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  } catch (err) {
+    console.warn(
+      `  ! search page timeout/fail for ${keywords} (${location}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return [];
+  }
+  await page.waitForTimeout(randomDelayMs(2_000, 3_500));
 
-  // Scroll to load more cards
-  for (let i = 0; i < 3; i++) {
-    await page.mouse.wheel(0, 900);
-    await page.waitForTimeout(1_200);
+  // Light scroll — enough for a short card list without endless loading.
+  for (let i = 0; i < 2; i++) {
+    await page.mouse.wheel(0, 700);
+    await page.waitForTimeout(randomDelayMs(900, 1_600));
   }
 
   const raw = (await page.evaluate(SCRAPE_LINKEDIN_SEARCH_RESULTS)) as Array<{
@@ -276,13 +310,46 @@ async function scrapeSearchPage(
 
   const jobs: ScrapedJob[] = [];
   for (const item of raw.slice(0, LINKEDIN_JOBS_PER_SEARCH)) {
+    if (jobs.length >= LINKEDIN_MAX_JOBS_PER_QUERY) break;
+
     const jobId = parseLinkedInJobIdFromUrl(item.applyUrl) ?? item.linkedinJobId;
+    if (seen.has(jobId)) continue;
+
     const title = cleanLinkedInJobTitle(item.title);
 
-    const detail = await scrapeLinkedInJobDetailPage(page, item.applyUrl);
+    // Card-level prefilter: skip detail pages for obvious noise.
+    const cardRelevance = scoreLinkedInJob(
+      {
+        title,
+        description: item.description || "",
+        companyName: item.companyName || "",
+      },
+      { searchQuery },
+    );
+    if (!cardRelevance.relevant) {
+      const why = cardRelevance.reasons[0] ?? "not relevant";
+      console.log(`  − skip card: ${title} (${why})`);
+      continue;
+    }
+
+    let detail: Awaited<ReturnType<typeof scrapeLinkedInJobDetailPage>>;
+    try {
+      detail = await scrapeLinkedInJobDetailPage(page, item.applyUrl);
+    } catch (err) {
+      console.warn(
+        `  ! detail timeout/fail for ${item.applyUrl}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      await page.waitForTimeout(
+        randomDelayMs(LINKEDIN_DELAY_BETWEEN_DETAILS_MS.min, LINKEDIN_DELAY_BETWEEN_DETAILS_MS.max),
+      );
+      continue;
+    }
+
     const description = detail.description || item.description;
     const companyName = detail.companyName || item.companyName;
-    const location = detail.location || item.location;
+    const jobLocation = detail.location || item.location;
 
     const relevance = scoreLinkedInJob(
       {
@@ -295,6 +362,9 @@ async function scrapeSearchPage(
     if (!relevance.relevant) {
       const why = relevance.reasons[0] ?? "not relevant";
       console.log(`  − skip: ${detail.title || title} (${why})`);
+      await page.waitForTimeout(
+        randomDelayMs(LINKEDIN_DELAY_BETWEEN_DETAILS_MS.min, LINKEDIN_DELAY_BETWEEN_DETAILS_MS.max),
+      );
       continue;
     }
 
@@ -302,46 +372,19 @@ async function scrapeSearchPage(
       linkedinJobId: jobId,
       title: detail.title || title,
       companyName: companyName || "Unknown employer",
-      location,
+      location: jobLocation,
       description,
       applyUrl: canonicalLinkedInJobUrl(jobId),
       searchQuery,
       relevanceScore: relevance.score,
     });
 
-    await page.waitForTimeout(randomDelayMs(800, 1_800));
+    await page.waitForTimeout(
+      randomDelayMs(LINKEDIN_DELAY_BETWEEN_DETAILS_MS.min, LINKEDIN_DELAY_BETWEEN_DETAILS_MS.max),
+    );
   }
 
   return jobs;
-}
-
-async function scrapeAll(context: BrowserContext): Promise<ScrapedJob[]> {
-  const page = await context.newPage();
-  await assertLoggedIn(page);
-
-  const seen = new Set<string>();
-  const collected: ScrapedJob[] = [];
-
-  for (const query of LINKEDIN_SEARCH_QUERIES) {
-    if (collected.length >= LINKEDIN_MAX_JOBS_PER_RUN) break;
-
-    console.log(`Searching LinkedIn: ${query.keywords} (${query.location})…`);
-    const batch = await scrapeSearchPage(page, query.keywords, query.location, query.id);
-    let addedFromQuery = 0;
-    for (const job of batch) {
-      if (collected.length >= LINKEDIN_MAX_JOBS_PER_RUN) break;
-      if (addedFromQuery >= LINKEDIN_MAX_JOBS_PER_QUERY) break;
-      if (seen.has(job.linkedinJobId)) continue;
-      seen.add(job.linkedinJobId);
-      collected.push(job);
-      addedFromQuery++;
-    }
-
-    await page.waitForTimeout(2_000 + Math.floor(Math.random() * 1_500));
-  }
-
-  await page.close();
-  return collected;
 }
 
 async function postToImportApi(jobs: ScrapedJob[]) {
@@ -356,11 +399,11 @@ async function postToImportApi(jobs: ScrapedJob[]) {
   const res = await fetch(
     `${base.replace(/\/$/, "")}/api/import-linkedin?secret=${encodeURIComponent(secret)}`,
     {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ jobs }),
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ jobs }),
     },
   );
 
@@ -369,6 +412,90 @@ async function postToImportApi(jobs: ScrapedJob[]) {
     throw new Error(typeof body.error === "string" ? body.error : `Import API HTTP ${res.status}`);
   }
   return body;
+}
+
+type RunTotals = {
+  scraped: number;
+  postedBatches: number;
+  apiResponses: Array<Record<string, unknown>>;
+};
+
+/**
+ * Scrape query-by-query and POST each non-empty batch immediately so a late
+ * timeout still keeps earlier finds.
+ */
+async function scrapeAndImportIncrementally(
+  context: BrowserContext,
+  options: { dryRun: boolean },
+): Promise<RunTotals> {
+  const page = await context.newPage();
+  await assertLoggedIn(page);
+
+  const seen = new Set<string>();
+  const totals: RunTotals = { scraped: 0, postedBatches: 0, apiResponses: [] };
+  let marked = false;
+
+  try {
+    for (const query of LINKEDIN_SEARCH_QUERIES) {
+      if (totals.scraped >= LINKEDIN_MAX_JOBS_PER_RUN) break;
+
+      console.log(`Searching LinkedIn: ${query.keywords} (${query.location})…`);
+      const batch = await scrapeSearchPage(
+        page,
+        query.keywords,
+        query.location,
+        query.id,
+        seen,
+      );
+
+      const fresh: ScrapedJob[] = [];
+      for (const job of batch) {
+        if (totals.scraped + fresh.length >= LINKEDIN_MAX_JOBS_PER_RUN) break;
+        if (seen.has(job.linkedinJobId)) continue;
+        seen.add(job.linkedinJobId);
+        fresh.push(job);
+      }
+
+      if (fresh.length > 0) {
+        totals.scraped += fresh.length;
+        for (const job of fresh) {
+          const descNote =
+            job.description.length > 0 ? `${job.description.length} chars` : "no description";
+          console.log(`  + [${job.relevanceScore}] ${job.title} — ${job.companyName} (${descNote})`);
+        }
+
+        if (options.dryRun) {
+          console.log(`  dry-run — would post ${fresh.length} job(s)`);
+        } else {
+          const result = await postToImportApi(fresh);
+          totals.postedBatches += 1;
+          totals.apiResponses.push(result);
+          console.log(`  posted batch (${fresh.length}):`, JSON.stringify(result));
+          if (!marked) {
+            markRunToday();
+            marked = true;
+          }
+        }
+      }
+
+      await page.waitForTimeout(
+        randomDelayMs(
+          LINKEDIN_DELAY_BETWEEN_SEARCHES_MS.min,
+          LINKEDIN_DELAY_BETWEEN_SEARCHES_MS.max,
+        ),
+      );
+    }
+  } finally {
+    await page.close();
+  }
+
+  // Completed a full (or emptied) pass with no imports — still stamp the day so
+  // guarded retries don't keep hammering LinkedIn.
+  if (!options.dryRun && !marked) {
+    markRunToday();
+  }
+
+  return totals;
 }
 
 async function main() {
@@ -385,8 +512,10 @@ async function main() {
       console.log("outside_import_window — skipping (use --force to override)");
       return;
     }
-    if (hasRunToday()) {
-      console.log("already_ran_today — skipping (use --force to override)");
+    if (hasRunTooRecently()) {
+      console.log(
+        `already_ran_recently — skipping (need ${LINKEDIN_MIN_DAYS_BETWEEN_RUNS}+ calendar days; use --force to override)`,
+      );
       return;
     }
   }
@@ -400,34 +529,20 @@ async function main() {
 
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ storageState: authPath });
-  let jobs: ScrapedJob[] = [];
+  let totals: RunTotals = { scraped: 0, postedBatches: 0, apiResponses: [] };
 
   try {
-    jobs = await scrapeAll(context);
+    totals = await scrapeAndImportIncrementally(context, { dryRun: flags.dryRun });
   } finally {
     await browser.close();
   }
 
-  console.log(`Scraped ${jobs.length} relevant job(s).`);
-  for (const job of jobs) {
-    const descNote =
-      job.description.length > 0 ? `${job.description.length} chars` : "no description";
-    console.log(`  • [${job.relevanceScore}] ${job.title} — ${job.companyName} (${descNote})`);
-  }
-
-  if (jobs.length === 0) {
-    console.log("Nothing to import.");
-    return;
-  }
-
+  console.log(
+    `Done. Scraped ${totals.scraped} relevant job(s) across ${totals.postedBatches} posted batch(es).`,
+  );
   if (flags.dryRun) {
-    console.log("Dry run — not posting to import API.");
-    return;
+    console.log("Dry run — nothing written to the import API.");
   }
-
-  const result = await postToImportApi(jobs);
-  markRunToday();
-  console.log("Import API response:", JSON.stringify(result, null, 2));
 }
 
 main().catch((err) => {

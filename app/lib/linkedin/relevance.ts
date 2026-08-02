@@ -149,6 +149,21 @@ export const LINKEDIN_HARD_EXCLUDE_PATTERNS: ReadonlyArray<{
     label: "title abstractor",
     test: (title) => /\btitle\s+abstractor/i.test(title),
   },
+  {
+    id: "heritage_archaeology",
+    label: "heritage impact / archaeological consultancy",
+    // Archaeologists supporting EOD sites (HIA) are adjacent noise, not EOD roles.
+    test: (title, haystack) => {
+      if (isHumanitarianMineTitle(title)) return false;
+      return (
+        /\bheritage\s+impact\s+assessment\b/i.test(haystack) ||
+        /\bheritage\s+impact\b/i.test(title) ||
+        /\b\(?\s*HIA\s*\)?\b/.test(title) ||
+        /\barchaeolog(?:y|ical|ist)s?\b/i.test(haystack) ||
+        /\barchaeological\s+consultanc(?:y|ies)\b/i.test(haystack)
+      );
+    },
+  },
 ];
 
 export function linkedInHardExcludeReason(input: LinkedInRelevanceInput): string | null {

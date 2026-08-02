@@ -27,16 +27,18 @@ Log in in the browser window, press Enter in the terminal. Session saves to `~/.
 # Scrape only (no DB write)
 npx tsx scripts/linkedin-jobs-import.ts --dry-run --force
 
-# Full import (bypasses 4:30–8 AM window and daily cap)
+# Full import (bypasses 4:30–8 AM window and cooldown)
 npx tsx scripts/linkedin-jobs-import.ts --force
 
-# Normal guarded run (4:30–8 AM local, once per day)
+# Normal guarded run (4:30–8 AM local, at most every third day)
 npx tsx scripts/linkedin-jobs-import.ts
 ```
 
+**Do not re-run with `--force` the same day if LinkedIn shows a rate / plugin warning.** Cool down at least a few days.
+
 ## Run-on-wake (recommended)
 
-The script only runs when **local time is 4:30 AM – before 8:00 AM** and **at most once per calendar day**. Outside that window it exits immediately with `outside_import_window`.
+The script only runs when **local time is 4:30 AM – before 8:00 AM** and **at most once every third calendar day** (`LINKEDIN_MIN_DAYS_BETWEEN_RUNS = 3`). Outside that window it exits immediately with `outside_import_window`.
 
 ### Windows (Task Scheduler)
 
@@ -48,12 +50,12 @@ powershell -ExecutionPolicy Bypass -File scripts/register-linkedin-import-task.p
 
 This creates:
 
-- **EOD-HUB LinkedIn Import Daily** — triggers at **5:30, 6:15, and 7:00 AM** (script still runs at most once/day)
+- **EOD-HUB LinkedIn Import Daily** — triggers at **5:30, 6:15, and 7:00 AM** (script still runs at most every third day)
 - **Restart on failure** — up to 3 retries, 10 minutes apart
 - **Wake + run on battery** — enabled; wrapper also holds a sleep lock while scraping
 - **Startup shortcut** — backup if you log in during 4:30–8 AM
 
-Guards inside the script prevent daytime or duplicate runs.
+Guards inside the script prevent daytime or too-frequent runs.
 
 **Hands-off checklist:** stay signed in overnight (lock screen is fine), leave the laptop plugged in when possible, and re-auth with `npm run linkedin:login` if scrapes start failing.
 
@@ -80,11 +82,11 @@ Configured in [`app/lib/linkedin/intakeConfig.ts`](../app/lib/linkedin/intakeCon
 
 | Category | Search terms | Locations |
 |----------|--------------|-----------|
-| EOD / UXO / C-IED / UAS / C-UAS / CWMD / safety | Full US core set (see intakeConfig) | United States |
-| HMA | demining, mine action, humanitarian mine action, UXO clearance | US, UK, Australia, Canada, South Africa, Ukraine, Germany |
+| EOD / UXO / C-IED / UAS / C-UAS / CWMD / safety | Lean US core set (see intakeConfig) | United States |
+| HMA | demining, mine action, humanitarian mine action, UXO clearance | US, UK, Australia, Ukraine |
 | EOD / UXO (lean intl) | EOD, UXO, Explosive Ordnance Disposal | Same intl list (non-US) |
 
-Past week only (`f_TPR=r604800`). Up to **3 jobs per search** (max **60** total per run) so US core and intl HMA can both land. Each listing opens the job detail page for the full description. Relevance scoring reuses Adzuna EOD keyword weights (plus LinkedIn hard excludes).
+Past week only (`f_TPR=r604800`). Up to **2 jobs per search** (max **40** total per run). Cards are relevance-prefiltered so most noise never opens a detail page; promising listings still fetch the full description. Results **post to `/api/import-linkedin` after each search** so a late timeout keeps earlier finds. Pacing uses multi-second delays between searches and detail opens.
 
 ## API
 
@@ -112,7 +114,7 @@ Past week only (`f_TPR=r604800`). Up to **3 jobs per search** (max **60** total 
 | Symptom | Fix |
 |---------|-----|
 | `outside_import_window` | Expected outside 4:30–8 AM; use `--force` for manual runs |
-| `already_ran_today` | Expected after a successful run; use `--force` to override |
+| `already_ran_recently` | Expected within `LINKEDIN_MIN_DAYS_BETWEEN_RUNS` (every third day); use `--force` only if you accept LinkedIn risk |
 | Session expired | Re-run `--login` |
 | Empty scrape | LinkedIn DOM may have changed — check selectors in `scripts/linkedin-jobs-import.ts` |
 | Import API 401 | Verify `CRON_SECRET` matches production |
