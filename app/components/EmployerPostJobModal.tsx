@@ -470,6 +470,7 @@ export default function EmployerPostJobModal({
               <option value="EOD">EOD</option>
               <option value="UXO">UXO</option>
               <option value="Bomb Squad">Bomb Squad</option>
+              <option value="CWMD">CWMD</option>
               <option value="Other">Other</option>
             </select>
           </div>

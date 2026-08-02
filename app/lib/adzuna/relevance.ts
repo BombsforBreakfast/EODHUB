@@ -195,9 +195,15 @@ export function detectAdzunaCategory(title: string): string {
   if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
   if (t.includes("c-ied") || t.includes("cied") || t.includes("counter ied") || t.includes("improvised explosive"))
     return "C-IED";
-  if (t.includes("cwmd") || t.includes("c-wmd") || t.includes("counter weapons of mass destruction"))
+  if (
+    t.includes("cwmd") ||
+    t.includes("c-wmd") ||
+    t.includes("counter weapons of mass destruction") ||
+    t.includes("wmd") ||
+    t.includes("weapons of mass destruction")
+  ) {
     return "CWMD";
-  if (t.includes("wmd") || t.includes("weapons of mass destruction")) return "WMD";
+  }
   if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
     return "UAS";
   if (t.includes("c-uas") || t.includes("counter uas") || t.includes("counter-uas")) return "C-UAS";

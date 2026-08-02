@@ -104,7 +104,16 @@ export function detectCategory(title: string): string {
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
   if (t.includes("demining") || t.includes("mine action") || t.includes("hma"))
     return "HMA";
-  if (t.includes("cbrn") || t.includes("cbrne") || t.includes("wmd")) return "CBRN";
+  if (
+    t.includes("cwmd") ||
+    t.includes("c-wmd") ||
+    t.includes("counter weapons of mass destruction") ||
+    t.includes("wmd") ||
+    t.includes("weapons of mass destruction")
+  ) {
+    return "CWMD";
+  }
+  if (t.includes("cbrn") || t.includes("cbrne")) return "CBRN";
   return "EOD";
 }
 

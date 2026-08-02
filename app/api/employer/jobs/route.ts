@@ -3,7 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { LISTING_SHARE_DEFAULT_POST_AS_MODE } from "@/app/lib/postAsIdentity";
 import { resolveListingSharePostAsUserId } from "@/app/lib/server/resolveListingSharePostAsUserId";
 
-const JOB_CATEGORIES = new Set(["EOD", "UXO", "Bomb Squad", "Other"]);
+const JOB_CATEGORIES = new Set(["EOD", "UXO", "Bomb Squad", "CWMD", "Other"]);
 
 function getAdminClient() {
   return createClient(

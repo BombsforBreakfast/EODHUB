@@ -196,7 +196,16 @@ export function detectUSAJobsCategory(title: string): string {
     return "UAS";
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
   if (t.includes("emergency management") || t.includes("em specialist")) return "EM";
-  if (t.includes("cbrn") || t.includes("cbrne") || t.includes("wmd")) return "CBRN";
+  if (
+    t.includes("cwmd") ||
+    t.includes("c-wmd") ||
+    t.includes("counter weapons of mass destruction") ||
+    t.includes("wmd") ||
+    t.includes("weapons of mass destruction")
+  ) {
+    return "CWMD";
+  }
+  if (t.includes("cbrn") || t.includes("cbrne")) return "CBRN";
   if (t.includes("nuclear materials courier")) return "NMC";
   return "EOD";
 }
