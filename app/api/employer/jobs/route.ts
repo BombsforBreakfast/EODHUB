@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { LISTING_SHARE_DEFAULT_POST_AS_MODE } from "@/app/lib/postAsIdentity";
+import { resolveListingSharePostAsUserId } from "@/app/lib/server/resolveListingSharePostAsUserId";
 
 const JOB_CATEGORIES = new Set(["EOD", "UXO", "Bomb Squad", "Other"]);
 
@@ -161,11 +163,21 @@ export async function POST(req: NextRequest) {
     null;
   const postOgUrl = job.apply_url || null;
 
-  const { data: post, error: postErr } = await adminClient
+  // Feed insert must use the user JWT so the post_as trigger sees auth.uid().
+  // Admins default to the EOD HUB brand (same as job/listing shares); employers post as self.
+  const postAsUserId = profile.is_admin
+    ? await resolveListingSharePostAsUserId(
+        adminClient,
+        user,
+        LISTING_SHARE_DEFAULT_POST_AS_MODE,
+      )
+    : null;
+
+  const { data: post, error: postErr } = await userClient
     .from("posts")
     .insert({
       user_id: user.id,
-      post_as_user_id: user.id,
+      post_as_user_id: postAsUserId,
       wall_user_id: null,
       content: `We're hiring: ${postTitle}`,
       content_type: "job_post",
