@@ -1,0 +1,4 @@
+## 2025-02-23 - Prevent XSS in JSON-LD script injection
+**Vulnerability:** A Cross-Site Scripting (XSS) vulnerability was present in `app/layout.tsx` where dynamic JSON-LD metadata was injected into a `<script>` tag using `dangerouslySetInnerHTML={{ __html: JSON.stringify(...) }}`.
+**Learning:** If user-controlled data within the JSON contains the sequence `</script>`, it causes the browser's HTML parser to prematurely close the script block. The browser then executes any subsequent content as HTML/JavaScript, leading to XSS. This occurs because the HTML parser runs before the JavaScript engine parses the script content.
+**Prevention:** Always sanitize JSON serialized for script injection by replacing all occurrences of the `<` character with its unicode escape sequence (`\u003c`) using `.replace(/</g, "\\u003c")`. This ensures the output remains valid JSON while preventing the browser from interpreting it as an HTML tag.
