@@ -4,8 +4,18 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
   let code = "";
+  const maxValid = 256 - (256 % CHARS.length);
+  const randomValues = new Uint8Array(length);
+  crypto.getRandomValues(randomValues);
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    let val = randomValues[i];
+    while (val >= maxValid) {
+      const fallback = new Uint8Array(1);
+      crypto.getRandomValues(fallback);
+      val = fallback[0];
+    }
+    code += CHARS[val % CHARS.length];
   }
   return code;
 }
