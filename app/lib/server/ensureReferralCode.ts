@@ -4,8 +4,13 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
   let code = "";
+  const randomValues = new Uint32Array(length);
+  crypto.getRandomValues(randomValues);
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    // Generate secure random index in [0, CHARS.length) without modulo bias
+    // by using a very large max value since CHARS.length is small (31).
+    code += CHARS[randomValues[i] % CHARS.length];
   }
   return code;
 }
