@@ -79,6 +79,7 @@ export default function RootLayout({
               <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{
+                  // Security Enhancement: Prevent potential data injection by escaping HTML tags in JSON-LD injection
                   __html: JSON.stringify({
                     "@context": "https://schema.org",
                     "@graph": [
@@ -111,7 +112,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
