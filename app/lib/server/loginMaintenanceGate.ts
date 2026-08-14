@@ -7,12 +7,12 @@ export const LOGIN_MAINTENANCE_COOKIE = "eod_login_maint_bypass";
 const UNLOCK_MAX_AGE_SEC = 60 * 60 * 12; // 12 hours
 
 /**
- * Temporary login-screen maintenance overlay while Supabase Data API is down.
- * Disable with LOGIN_MAINTENANCE_GATE=false (or 0/off/no).
+ * Optional login-screen maintenance overlay.
+ * Enable with LOGIN_MAINTENANCE_GATE=true (or 1/on/yes).
  */
 export function isLoginMaintenanceGateEnabled(): boolean {
-  const raw = (process.env.LOGIN_MAINTENANCE_GATE ?? "true").trim().toLowerCase();
-  return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
+  const raw = (process.env.LOGIN_MAINTENANCE_GATE ?? "false").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "on" || raw === "yes";
 }
 
 export function getLoginMaintenancePassword(): string {
