@@ -51,6 +51,7 @@ import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
 import ProudPartnersSection from "../components/login/ProudPartnersSection";
+import LoginMaintenanceModal from "../components/login/LoginMaintenanceModal";
 
 /**
  * How many login → protected-route redirects may happen in quick succession
@@ -810,6 +811,7 @@ export default function LoginPage() {
         background: t.bg,
       }}
     >
+      <LoginMaintenanceModal />
       <div style={{ textAlign: "center", marginBottom: 18 }}>
         <div style={{ fontSize: 50, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
         <div style={{ marginTop: 8, display: "flex", justifyContent: "center" }}>
