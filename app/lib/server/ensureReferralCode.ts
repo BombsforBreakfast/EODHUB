@@ -2,10 +2,21 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+// Security Enhancement: Replacing Math.random() with Web Crypto API for secure token generation.
 export function makeReferralCode(length = 8): string {
   let code = "";
-  for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+  // Prevent modulo bias
+  const maxValid = 256 - (256 % CHARS.length);
+  const randomValues = new Uint8Array(length);
+
+  while (code.length < length) {
+    crypto.getRandomValues(randomValues);
+    for (let i = 0; i < randomValues.length; i++) {
+      if (randomValues[i] < maxValid) {
+        code += CHARS[randomValues[i] % CHARS.length];
+        if (code.length === length) break;
+      }
+    }
   }
   return code;
 }
