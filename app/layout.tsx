@@ -111,7 +111,8 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  // Security Enhancement: Escape JSON-LD data inside dangerouslySetInnerHTML to prevent XSS
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
