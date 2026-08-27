@@ -71,12 +71,15 @@ export default function BusinessOrgOnboardingPage() {
         if (user?.email) {
           const email = user.email.trim().toLowerCase();
           setGoogleBusinessEmail(email);
+          // Security Enhancement: Generate a cryptographically secure random password
+          // to prevent predictable placeholder password vulnerabilities
+          const securePlaceholder = crypto.randomUUID();
           setForm((prev) => ({
             ...prev,
             business_login_email: email,
             business_email: prev.business_email || email,
-            password: "google-oauth-placeholder",
-            confirm_password: "google-oauth-placeholder",
+            password: securePlaceholder,
+            confirm_password: securePlaceholder,
           }));
           setStep("profile");
         }
