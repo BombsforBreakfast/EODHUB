@@ -636,12 +636,13 @@ a.rabbithole-brand-link:focus-visible {
     flex-wrap: wrap !important;
     justify-content: center !important;
     align-items: center !important;
-    gap: 6px !important;
+    /* Tight enough that avatar + bell + Circuit + + Hub + gear + Log Out stay on one row on iPhone. */
+    gap: 4px !important;
     margin-bottom: 10px !important;
     /* Align with typical page wrapper horizontal padding (e.g. 20px) so width matches pre-fixed layout */
     padding-top: env(safe-area-inset-top, 0px) !important;
-    padding-left: max(20px, env(safe-area-inset-left, 0px)) !important;
-    padding-right: max(20px, env(safe-area-inset-right, 0px)) !important;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(16px, env(safe-area-inset-right, 0px)) !important;
     box-sizing: border-box !important;
     box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06) !important;
   }
@@ -689,7 +690,7 @@ a.rabbithole-brand-link:focus-visible {
     display: contents !important;
   }
   .nav-btn {
-    padding: 6px 9px !important;
+    padding: 6px 7px !important;
     font-size: 12px !important;
     border-radius: 8px !important;
     height: auto !important;
@@ -697,29 +698,32 @@ a.rabbithole-brand-link:focus-visible {
     white-space: nowrap;
   }
   .nav-avatar {
-    /* Large enough for a corner plus later; 35px was too small to badge. */
-    width: 56px !important;
-    height: 56px !important;
-    min-width: 56px !important;
-    min-height: 56px !important;
-    font-size: 22px !important;
+    /* Slightly under the prior 56px so Log Out fits the same row on narrow iPhones. */
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    font-size: 18px !important;
     flex-shrink: 0 !important;
   }
   .nav-circuit-plus {
-    width: 40px !important;
-    height: 40px !important;
-    min-width: 40px !important;
-    min-height: 40px !important;
-    font-size: 26px !important;
-    margin-right: 14px !important;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    font-size: 24px !important;
+    /* Keep a little air before Hub, but less than the old 14px that shoved Log Out down. */
+    margin-right: 6px !important;
   }
   .nav-logout {
-    padding: 6px 9px !important;
+    padding: 6px 6px !important;
     font-size: 12px !important;
     border-radius: 8px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
   }
   .nav-account-settings {
-    padding: 6px 9px !important;
+    padding: 6px 6px !important;
     font-size: 12px !important;
     border-radius: 8px !important;
     min-width: unset !important;
