@@ -7658,7 +7658,7 @@ export default function HomePage() {
               onPaste={handlePostImagePaste}
               style={{
                 width: "100%",
-                minHeight: 90,
+                minHeight: 48,
                 border: "none",
                 outline: "none",
                 resize: "vertical",
@@ -7793,13 +7793,6 @@ export default function HomePage() {
                 })}
               </div>
             )}
-
-            <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
-              Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
-              Short videos up to {formatUploadBytes(currentFeedUploadLimits.video)} ({currentFeedUploadLimits.videoDurationHint}).
-              PDFs and CAD/3D files up to {formatUploadBytes(UPLOAD_LIMITS.document)} are supported.
-              CAD/3D files require a JPG/PNG/WEBP preview image.
-            </p>
 
             {kcComposerPhase === "confirm" && (
               <div
@@ -7975,7 +7968,7 @@ export default function HomePage() {
 
             <div
               style={{
-                marginTop: 12,
+                marginTop: 6,
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
