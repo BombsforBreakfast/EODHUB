@@ -63,7 +63,8 @@ function terminalHandle(name: string): string {
 const SHEET_MAX_WIDTH = 720;
 const PEEK_HEIGHT = 56;
 const FAB_SIZE = 56;
-const PEEK_POLL_MS = 20_000;
+/** Backup poll; Realtime already refreshes on new messages. */
+const PEEK_POLL_MS = 45_000;
 const DESKTOP_MQ = "(min-width: 901px)";
 const DOUBLE_TAP_MS = 300;
 const SINGLE_TAP_OPEN_DELAY_MS = 280;

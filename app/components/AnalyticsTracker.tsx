@@ -15,7 +15,7 @@ import type { User } from "@supabase/supabase-js";
 //   - If a session started anonymous and the user later signs in, calls
 //     action=identify to attach user_id on the open session + page views.
 //   - On route change, closes the previous page_view and opens a new one.
-//   - Every 30s while the tab is visible AND the user has been active in the
+//   - Every 60s while the tab is visible AND the user has been active in the
 //     last 60s, posts a heartbeat that bumps active_ms on session + page_view.
 //   - On visibility-hidden / pagehide, flushes remaining active_ms via
 //     navigator.sendBeacon so we don't lose the tail of a session.
@@ -25,7 +25,7 @@ import type { User } from "@supabase/supabase-js";
 //   - Send anything when the user is idle (no input >60s)
 //   - Send anything before mount on the server
 
-const HEARTBEAT_INTERVAL_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 60_000;
 const IDLE_THRESHOLD_MS = 60_000;
 const ANON_VISITOR_KEY = "eod_analytics_visitor_id";
 const TRACK_URL = "/api/analytics/track";
