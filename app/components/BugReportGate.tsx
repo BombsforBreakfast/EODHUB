@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "../lib/auth/AuthProvider";
+import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
 import { supabase } from "../lib/lib/supabaseClient";
 import BetaBugReportFab from "./bug-report/BetaBugReportFab";
 
 /**
  * Bug-report FAB for admins and founders only — keeps the chrome clean for
  * regular members while still giving operators a quick report path.
+ * Parked via PRODUCT_FEATURE_FLAGS.bugBombEnabled.
  */
 export default function BugReportGate() {
   const pathname = usePathname();
@@ -17,6 +19,7 @@ export default function BugReportGate() {
   const [canReport, setCanReport] = useState(false);
 
   useEffect(() => {
+    if (!PRODUCT_FEATURE_FLAGS.bugBombEnabled) return;
     const check = () => {
       setHideOnMobileSidebar(pathname === "/sidebar" && window.innerWidth <= 900);
     };
@@ -26,6 +29,7 @@ export default function BugReportGate() {
   }, [pathname]);
 
   useEffect(() => {
+    if (!PRODUCT_FEATURE_FLAGS.bugBombEnabled) return;
     let cancelled = false;
 
     async function loadAccess() {
@@ -71,6 +75,7 @@ export default function BugReportGate() {
     };
   }, [user, accessToken]);
 
+  if (!PRODUCT_FEATURE_FLAGS.bugBombEnabled) return null;
   if (isLoading) return null;
   if (!user) return null;
   if (!canReport) return null;

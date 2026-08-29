@@ -11,6 +11,8 @@
 export const PRODUCT_FEATURE_FLAGS = {
   arcadeEnabled: false,
   lemonLotEnabled: false,
+  /** Floating bug-bomb FAB + account “Report a Bug” entry. Admin Bugs tab stays. */
+  bugBombEnabled: false,
   /** Entire desktop left rail (MasterLeftColumn). */
   desktopLeftRailEnabled: false,
   /** Entire desktop right rail (DMs + businesses). */

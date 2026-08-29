@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
+import { PRODUCT_FEATURE_FLAGS } from "../../lib/productFeatureFlags";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import BlockedUsersCard from "../../components/account/BlockedUsersCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
@@ -313,10 +314,12 @@ export default function MyAccountPage() {
           {/* Home feed: memorial anniversary post cards (calendars unchanged) */}
           {currentUserId && <MemorialFeedPreferencesCard userId={currentUserId} />}
 
-          {/* Beta bug report */}
-          <div style={{ ...card, padding: "18px 24px" }}>
-            <ReportProblemButton inline />
-          </div>
+          {/* Beta bug report — parked via PRODUCT_FEATURE_FLAGS.bugBombEnabled */}
+          {PRODUCT_FEATURE_FLAGS.bugBombEnabled ? (
+            <div style={{ ...card, padding: "18px 24px" }}>
+              <ReportProblemButton inline />
+            </div>
+          ) : null}
 
           {/* Theme: default dark; toggle label shows the mode you switch to */}
           <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>

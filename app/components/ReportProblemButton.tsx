@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
 import { useTheme } from "../lib/ThemeContext";
 import BugReportDialog from "./bug-report/BugReportDialog";
 
 export default function ReportProblemButton({ inline = false }: { inline?: boolean }) {
   const [open, setOpen] = useState(false);
   const { t } = useTheme();
+
+  if (!PRODUCT_FEATURE_FLAGS.bugBombEnabled) return null;
 
   return (
     <>
