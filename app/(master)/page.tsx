@@ -45,6 +45,7 @@ import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib
 import type { JobModalData } from "../components/jobs/JobDetailsModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobFeedCard from "../components/jobs/JobFeedCard";
+import FeedDiscoverMembersStrip from "../components/FeedDiscoverMembersStrip";
 import EventFeedActions from "../components/EventFeedActions";
 import JobFeedActions, { isJobShareFeedPost } from "../components/JobFeedActions";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
@@ -189,7 +190,7 @@ import {
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
 
-/** Lazy chunks — load on interaction or when feed content needs them (no extra data fetching). */
+/** Lazy chunks � load on interaction or when feed content needs them (no extra data fetching). */
 const EmojiPickerButton = dynamic(() => import("../components/EmojiPickerButton"), { ssr: false });
 const GifPickerButton = dynamic(() => import("../components/GifPickerButton"), { ssr: false });
 const OnlineNowStrip = dynamic(() => import("../components/OnlineNowStrip"), { ssr: false });
@@ -396,7 +397,7 @@ const INITIAL_FEED_POST_LIMIT = 5;
 const EAGER_FEED_AVATAR_COUNT = 2;
 const FEED_AUTO_LOAD_LIMIT = 10;
 const FEED_LOAD_MORE_INCREMENT = 10;
-/** Ranked rows to prefetch before wall/moderation filters; keep small — only 5 render on first paint. */
+/** Ranked rows to prefetch before wall/moderation filters; keep small � only 5 render on first paint. */
 const INITIAL_RANKED_POSTS_LIMIT = INITIAL_FEED_POST_LIMIT + 10;
 const FULL_FEED_HYDRATION_DELAY_MS = 400;
 
@@ -499,9 +500,8 @@ const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
 
 /** How many avatars show per "page" on desktop before clicking the arrows. */
 const DISCOVER_PAGE_SIZE = 5;
-/** Avatar diameter in the People You May Know strip (was 44px; +25%). */
-const DISCOVER_AVATAR_SIZE = 55;
-const DISCOVER_CARD_WIDTH = 125;
+/** Insert �Connect with Verified Members� after this many feed posts. */
+const DISCOVER_AFTER_POSTS = 2;
 
 type Comment = {
   id: string;
@@ -665,7 +665,7 @@ function formatEventDisplayDate(dateIso: string | null | undefined) {
 function extractLegacyEventTitle(content: string | null | undefined): string | null {
   if (!content) return null;
   // Older auto-post formats often looked like:
-  // "📅 New Event: Title 🗓️ Wednesday... 🏢 Org"
+  // "?? New Event: Title ??? Wednesday... ?? Org"
   // We only want the actual event title segment.
   const line = content
     .split(/\r?\n/)
@@ -678,7 +678,7 @@ function extractLegacyEventTitle(content: string | null | undefined): string | n
 
   const titleOnly = afterLabel
     // strip trailing date/location chunks often prefixed with emojis
-    .replace(/\s+[🗓📅🏢📍].*$/u, "")
+    .replace(/\s+[????????].*$/u, "")
     .trim();
   return titleOnly || null;
 }
@@ -878,7 +878,7 @@ function memorialDismissStorageKey(userId: string): string {
   return `eodhub.dismissedMemorialIds:${userId}`;
 }
 
-/** Local calendar day (YYYY-MM-DD) — dismissals reset after midnight in the user's timezone. */
+/** Local calendar day (YYYY-MM-DD) � dismissals reset after midnight in the user's timezone. */
 function localCalendarDateKey(d = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -989,7 +989,7 @@ export default function HomePage() {
   const confirmDialog = useConfirm();
   const queryClient = useQueryClient();
   const { user: authUser, isLoading: authLoading } = useAuth();
-  /** Stable key — OAuth/token refresh must not re-run feed init when the user id is unchanged. */
+  /** Stable key � OAuth/token refresh must not re-run feed init when the user id is unchanged. */
   const authUserId = authUser?.id ?? null;
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
@@ -1095,7 +1095,7 @@ export default function HomePage() {
   const [plankHolderModalOpen, setPlankHolderModalOpen] = useState(false);
   // Hidden state lives in sessionStorage so it resets on each new login/tab session.
   const [plankHolderCardHidden, setPlankHolderCardHidden] = useState<boolean>(false);
-  // Earned banner dismiss is permanent (localStorage) — badge remains on profile.
+  // Earned banner dismiss is permanent (localStorage) � badge remains on profile.
   const [plankHolderBannerDismissed, setPlankHolderBannerDismissed] = useState<boolean>(false);
 
   // Biz/Org submission form
@@ -1225,7 +1225,7 @@ export default function HomePage() {
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [flagModal, setFlagModal] = useState<{ contentType: "post" | "comment"; contentId: string } | null>(null);
 
-  // TODO: set to false before launch — bypasses engagement threshold so button shows on every post for testing
+  // TODO: set to false before launch � bypasses engagement threshold so button shows on every post for testing
   const RABBITHOLE_THRESHOLD_BYPASS = true;
   const [rabbitholeModalPost, setRabbitholeModalPost] = useState<{ id: string; content: string; og_title: string | null } | null>(null);
   const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
@@ -1304,7 +1304,7 @@ export default function HomePage() {
     if (plankHolderInitializedRef.current && completed.length > 0 && isPlankHolderChallengeOpen(next)) {
       const task = completed[0];
       setPlankHolderToast({
-        title: "⚓ Challenge Updated",
+        title: "? Challenge Updated",
         detail: `${PLANK_HOLDER_TASK_LABELS[task]} Complete`,
         progress: `${next.progress.completedCount} / ${next.progress.total} Complete`,
       });
@@ -1570,7 +1570,7 @@ export default function HomePage() {
     });
   }, [plankHolderChallenge]);
 
-  /** Legacy mobile ?tab= links → dedicated routes (no in-page section tabs on mobile). */
+  /** Legacy mobile ?tab= links ? dedicated routes (no in-page section tabs on mobile). */
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
     if (!tab || tab === "feed") return;
@@ -2534,7 +2534,7 @@ export default function HomePage() {
           saved: false,
           optimisticRow: job ? savedJobRowFromJob(job) : undefined,
         });
-        // Notify job poster (fire and forget ΓÇö no actor name for privacy)
+        // Notify job poster (fire and forget G�� no actor name for privacy)
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
           void postNotifyJson(supabase, {
             user_id: job.user_id,
@@ -3831,7 +3831,7 @@ export default function HomePage() {
     const fetchedRankedPostCount = (rankedPostsData ?? []).length;
     let rawPosts = (rankedPostsData ?? []) as RankedPostRow[];
 
-    // Notification deep links use /?postId=ΓÇª; that post may not appear in ranked_posts anymore.
+    // Notification deep links use /?postId=GǪ; that post may not appear in ranked_posts anymore.
     if (typeof window !== "undefined") {
       const deepId = new URLSearchParams(window.location.search).get("postId");
       if (deepId && !rawPosts.some((p) => p.id === deepId)) {
@@ -3868,7 +3868,7 @@ export default function HomePage() {
             ...rawPosts,
           ];
         } else {
-          // Post is deleted, hidden for review, or a wall-only post ΓÇö it will never
+          // Post is deleted, hidden for review, or a wall-only post G�� it will never
           // appear in the public feed. Flag it so the scroll effect can clean up
           // the URL params instead of retrying forever.
           setDeepLinkPostUnavailable(deepId);
@@ -4078,7 +4078,7 @@ export default function HomePage() {
     }
 
     // Legacy resilience: older event feed posts can exist without posts.event_id.
-    // Infer linkage by matching "📅 New Event: <title>" + same author.
+    // Infer linkage by matching "?? New Event: <title>" + same author.
     const missingEventCandidates = rawPosts
       .filter((post) => !eventIdByPostId.get(post.id))
       .map((post) => ({
@@ -4224,7 +4224,7 @@ export default function HomePage() {
 
     (profileData as ProfileName[] | null)?.forEach((profile) => {
       // System / pure-admin accounts (EOD-HUB, RUMINT, etc.) intentionally
-      // have no first_name/last_name — they carry a display_name instead.
+      // have no first_name/last_name � they carry a display_name instead.
       // Prefer display_name so those accounts never surface as "User".
       const fullName =
         (profile.display_name?.trim() || null) ||
@@ -4692,7 +4692,7 @@ export default function HomePage() {
 
     // Rank: fresh posts float to top; staff posts soft-pin ~2h; RUMINT news ~3h.
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
-    // Event promos → Circuit. Scrapbook day-of CTA stays in feed. Memorials untouched.
+    // Event promos ? Circuit. Scrapbook day-of CTA stays in feed. Memorials untouched.
     const feedOnlyPosts = mergedPosts.filter((p) => {
       const ct = typeof p.content_type === "string" ? p.content_type : "";
       if (ct === "event_scrapbook") return true;
@@ -6155,14 +6155,14 @@ export default function HomePage() {
 
         if (!authUser || !currentUserId) return;
 
-        // Check verification status ΓÇö unverified users go to /pending
+        // Check verification status G�� unverified users go to /pending
         const profileCheck = await fetchViewerProfileCached(queryClient, supabase, authUser);
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
         const isPureAdminProfile = !!(profileCheck as { is_pure_admin?: boolean | null } | null)?.is_pure_admin;
 
         // Sync Google OAuth name to profile if first_name is missing
-        // (skip for pure admins — they intentionally have no public name)
+        // (skip for pure admins � they intentionally have no public name)
         const googleName = authUser.user_metadata?.full_name || authUser.user_metadata?.name;
         if (!isPureAdminProfile && profileCheck && !profileCheck.first_name && googleName) {
           const parts = (googleName as string).trim().split(/\s+/);
@@ -6404,7 +6404,7 @@ export default function HomePage() {
     };
 
     // Post was fetched individually and confirmed unavailable (deleted, hidden, or
-    // wall-only). Nothing to highlight ΓÇö clean up the URL and stop.
+    // wall-only). Nothing to highlight G�� clean up the URL and stop.
     if (deepLinkPostUnavailable === postId) {
       stripDeepLinkParams();
       return;
@@ -6452,7 +6452,7 @@ export default function HomePage() {
       if (attempt < maxAttempts) {
         timeoutId = window.setTimeout(tryScroll, 80);
       }
-      // Don't strip URL params on exhaustion ΓÇö avoids killing the params before
+      // Don't strip URL params on exhaustion G�� avoids killing the params before
       // the target element renders, which would prevent any re-attempt.
     };
 
@@ -7215,7 +7215,7 @@ export default function HomePage() {
           }}
         >
             <>
-          {/* Pending Members — community vouching (deferred until after first feed paint) */}
+          {/* Pending Members � community vouching (deferred until after first feed paint) */}
           {feedAboveFoldExtrasReady &&
             userId &&
             !requestingAccessHidden &&
@@ -7326,7 +7326,7 @@ export default function HomePage() {
                           padding: 0,
                         }}
                       >
-                        ×
+                        �
                       </button>
                       <a
                         href={`/profile/${m.user_id}`}
@@ -7786,7 +7786,7 @@ export default function HomePage() {
                         cursor: "pointer",
                       }}
                     >
-                      ×
+                      �
                     </button>
                   </div>
                   );
@@ -8044,7 +8044,7 @@ export default function HomePage() {
 
                 <button
                   type="button"
-                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court — add a poll to this post"}
+                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court � add a poll to this post"}
                   onClick={() => {
                     if (kcComposerPhase) resetKcComposer();
                     else setKcComposerPhase("confirm");
@@ -8087,173 +8087,6 @@ export default function HomePage() {
               </div>
             </div>
           </div>
-
-          {/* People You May Know ΓÇö verified members only; below composer so vouch cards stay above */}
-          {feedAboveFoldExtrasReady && visibleDiscoverProfiles.length > 0 && (
-            <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, minHeight: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                  Connect with Verified Members
-                </div>
-                {discoverKnowToast && (
-                  <div
-                    role="status"
-                    aria-live="polite"
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: t.text,
-                      background: t.badgeBg,
-                      border: `1px solid ${t.border}`,
-                      borderRadius: 999,
-                      padding: "3px 10px",
-                      whiteSpace: "nowrap",
-                      maxWidth: "60%",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    {discoverKnowToast}
-                  </div>
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {!isMobile && (
-                  <button
-                    type="button"
-                    onClick={() => setDiscoverPageIndex((i) => Math.max(0, i - 1))}
-                    disabled={discoverPageIndex <= 0}
-                    title="Previous"
-                    aria-label="Previous suggestions"
-                    style={{
-                      flexShrink: 0,
-                      background: "none",
-                      border: `1px solid ${t.border}`,
-                      borderRadius: "50%",
-                      width: 28,
-                      height: 28,
-                      cursor: discoverPageIndex <= 0 ? "default" : "pointer",
-                      color: t.textMuted,
-                      fontSize: 14,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                      opacity: discoverPageIndex <= 0 ? 0.35 : 1,
-                    }}
-                  >{"<"}</button>
-                )}
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 16,
-                    overflowX: isMobile ? "auto" : "hidden",
-                    WebkitOverflowScrolling: "touch",
-                    paddingBottom: 4,
-                    flex: 1,
-                    scrollSnapType: isMobile ? "x mandatory" : undefined,
-                  }}
-                >
-                {discoverVisible.map((p) => {
-                  const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
-                  const ringColor = getServiceRingColor(p.service, p.country);
-                  const isPendingKnow = p.knowStatus === "pending_outgoing";
-                  const isIncomingKnow = p.knowStatus === "pending_incoming";
-                  const affinityHint = p.affinityReasons[0] || (p.service ? `Service: ${p.service}` : "Community member");
-                  return (
-                    <div
-                      key={p.user_id}
-                      style={{
-                        flexShrink: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 6,
-                        width: DISCOVER_CARD_WIDTH,
-                        scrollSnapAlign: isMobile ? "start" : undefined,
-                      }}
-                    >
-                      <a
-                        href={`/profile/${p.user_id}`}
-                        style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
-                      >
-                        <div style={{ width: DISCOVER_AVATAR_SIZE, height: DISCOVER_AVATAR_SIZE, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 20, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
-                          {p.photo_url
-                            ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                            : (fullName[0] || "U").toUpperCase()
-                          }
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
-                        <div
-                          title={affinityHint}
-                          style={{
-                            fontSize: 9,
-                            color: t.textFaint,
-                            textAlign: "center",
-                            lineHeight: 1.2,
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {affinityHint}
-                        </div>
-                      </a>
-                      {userId && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
-                          <button
-                            onClick={() => toggleDiscoverConnection(p.user_id)}
-                            disabled={isPendingKnow}
-                            style={{
-                              fontSize: 9,
-                              fontWeight: 700,
-                              padding: "3px 5px",
-                              borderRadius: 6,
-                              border: "none",
-                              cursor: isPendingKnow ? "default" : "pointer",
-                              background: isPendingKnow ? t.text : isIncomingKnow ? "#1d4ed8" : t.badgeBg,
-                              color: isPendingKnow || isIncomingKnow ? "#fff" : t.textMuted,
-                              opacity: isPendingKnow ? 0.75 : 1,
-                              width: "100%",
-                            }}
-                          >
-                            {isPendingKnow ? "Request Sent" : isIncomingKnow ? "Know Back" : "Know"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                </div>
-                {!isMobile && (
-                  <button
-                    type="button"
-                    onClick={() => setDiscoverPageIndex((i) => Math.min(discoverMaxPageIndex, i + 1))}
-                    disabled={discoverPageIndex >= discoverMaxPageIndex}
-                    title="Next"
-                    aria-label="Next suggestions"
-                    style={{
-                      flexShrink: 0,
-                      background: "none",
-                      border: `1px solid ${t.border}`,
-                      borderRadius: "50%",
-                      width: 28,
-                      height: 28,
-                      cursor: discoverPageIndex >= discoverMaxPageIndex ? "default" : "pointer",
-                      color: t.textMuted,
-                      fontSize: 14,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                      opacity: discoverPageIndex >= discoverMaxPageIndex ? 0.35 : 1,
-                    }}
-                  >{">"}</button>
-                )}
-              </div>
-            </div>
-          )}
 
           {feedAboveFoldExtrasReady && unitFeedHighlights.length > 0 && (
             <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
@@ -8306,7 +8139,7 @@ export default function HomePage() {
                           </div>
                         )}
                         <div style={{ marginTop: 9, fontSize: 12, color: t.textMuted }}>
-                          {p.like_count} likes · {p.comment_count} comments
+                          {p.like_count} likes � {p.comment_count} comments
                         </div>
                       </div>
                     </div>
@@ -9198,7 +9031,7 @@ export default function HomePage() {
                     <MurphyRabbitholeBanner />
                   )}
 
-                  {/* KC poll card: order is original post → verdict → poll → toolbar → comments */}
+                  {/* KC poll card: order is original post ? verdict ? poll ? toolbar ? comments */}
                   {post.kangaroo?.court && (
                     <KangarooCourtFeedSection
                       postId={post.id}
@@ -9230,7 +9063,7 @@ export default function HomePage() {
                       boxSizing: "border-box",
                     }}
                   >
-                    {/* Feature icon cluster — KC + Rabbithole grouped tightly, distinct from user avatars */}
+                    {/* Feature icon cluster � KC + Rabbithole grouped tightly, distinct from user avatars */}
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                       {userId && (
                         <KangarooCourtFeedSection
@@ -9248,7 +9081,7 @@ export default function HomePage() {
                       {userId && (RABBITHOLE_THRESHOLD_BYPASS || post.likeCount >= 3 || post.commentCount >= 2) && (
                         post.rabbithole_thread_id ? (
                           <div
-                            title="Filed to Rabbithole — locked"
+                            title="Filed to Rabbithole � locked"
                             style={{ position: "relative", flexShrink: 0 }}
                           >
                             <div
@@ -9674,9 +9507,40 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
+                {feedAboveFoldExtrasReady &&
+                visibleDiscoverProfiles.length > 0 &&
+                postIndex === Math.min(DISCOVER_AFTER_POSTS - 1, posts.length - 1) ? (
+                  <FeedDiscoverMembersStrip
+                    t={t}
+                    isMobile={isMobile}
+                    profiles={discoverVisible}
+                    pageIndex={discoverPageIndex}
+                    maxPageIndex={discoverMaxPageIndex}
+                    knowToast={discoverKnowToast}
+                    currentUserId={userId}
+                    onPageChange={setDiscoverPageIndex}
+                    onToggleKnow={(id) => void toggleDiscoverConnection(id)}
+                  />
+                ) : null}
                 </React.Fragment>
               );
             })}
+            {postsLoaded &&
+            posts.length === 0 &&
+            feedAboveFoldExtrasReady &&
+            visibleDiscoverProfiles.length > 0 ? (
+              <FeedDiscoverMembersStrip
+                t={t}
+                isMobile={isMobile}
+                profiles={discoverVisible}
+                pageIndex={discoverPageIndex}
+                maxPageIndex={discoverMaxPageIndex}
+                knowToast={discoverKnowToast}
+                currentUserId={userId}
+                onPageChange={setDiscoverPageIndex}
+                onToggleKnow={(id) => void toggleDiscoverConnection(id)}
+              />
+            ) : null}
             {postsLoaded && feedHasMore && feedPostLimit >= FEED_AUTO_LOAD_LIMIT && (
               <div style={{ display: "flex", justifyContent: "center", padding: "18px 0 6px" }}>
                 <button
@@ -9765,11 +9629,11 @@ export default function HomePage() {
             <>
               <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
                 <div>
-                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "—"}) jobs as of{" "}
+                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "�"}) jobs as of{" "}
                   {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
                 </div>
                 <div style={{ marginTop: 4 }}>
-                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
+                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "�"}) new jobs today!
                 </div>
                 {!isMobile && (
                   <div style={{ marginTop: 6 }}>
@@ -9777,7 +9641,7 @@ export default function HomePage() {
                       href="/jobs"
                       style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
                     >
-                      See all jobs ΓåÆ
+                      See all jobs G��
                     </a>
                   </div>
                 )}
@@ -10818,7 +10682,7 @@ export default function HomePage() {
               {(selectedFeedEvent.poc_name || selectedFeedEvent.poc_phone) && (
                 <div style={{ marginTop: 6, fontSize: 14 }}>
                   <strong>POC:</strong> {selectedFeedEvent.poc_name ?? ""}
-                  {selectedFeedEvent.poc_name && selectedFeedEvent.poc_phone ? " — " : ""}
+                  {selectedFeedEvent.poc_name && selectedFeedEvent.poc_phone ? " � " : ""}
                   {selectedFeedEvent.poc_phone ?? ""}
                 </div>
               )}
@@ -10856,7 +10720,7 @@ export default function HomePage() {
                       cursor: selectedFeedEventBusy ? "wait" : "pointer",
                     }}
                   >
-                    {selectedFeedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
+                    {selectedFeedEventMyStatus === "interested" ? "Interested ?" : "Interested"}
                   </button>
                   <button
                     type="button"
@@ -10872,7 +10736,7 @@ export default function HomePage() {
                       cursor: selectedFeedEventBusy ? "wait" : "pointer",
                     }}
                   >
-                    {selectedFeedEventMyStatus === "going" ? "Going ✓" : "Going"}
+                    {selectedFeedEventMyStatus === "going" ? "Going ?" : "Going"}
                   </button>
                   {selectedFeedEvent.signup_url && (
                     <ExternalSiteLink
