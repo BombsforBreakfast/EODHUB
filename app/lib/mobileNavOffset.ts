@@ -4,7 +4,7 @@ export const MOBILE_NAV_SPACER_VAR = "--mobile-nav-spacer-height";
 export function defaultMobileNavSpacerPx(): number {
   if (typeof window === "undefined") return 0;
   if (!window.matchMedia("(max-width: 900px)").matches) return 0;
-  return 132;
+  return 156;
 }
 
 export function setMobileNavSpacerPx(px: number): void {

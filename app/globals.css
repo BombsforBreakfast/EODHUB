@@ -315,8 +315,6 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
 /* Desktop defaults ? mobile-only elements hidden */
 .nav-units-mobile { display: none; }
 .nav-hub-panel    { display: none; }
-/* Mobile-only home logo; hidden on desktop */
-.nav-logo-mobile  { display: none !important; }
 
 /* Desktop: centered cluster ? avatar | column [ toolbar row; full-width search ] */
 .nav-root {
@@ -362,17 +360,6 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
   gap: 8px;
   width: 100%;
 }
-.nav-cell-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.nav-feed-home-desktop {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
 /* Search sits on its own row below toolbar; full width of stack */
 .nav-search-slot {
   flex: none;
@@ -381,12 +368,6 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
   max-width: none;
   box-sizing: border-box;
 }
-@media (min-width: 901px) {
-  .nav-logo-mobile-wrap {
-    display: none !important;
-  }
-}
-
 /* Desktop master shell: NavBar in center column ? cluster centered horizontally in the feed */
 .master-shell-main {
   display: flex;
@@ -599,19 +580,6 @@ a.rabbithole-brand-link:focus-visible {
     border-radius: 8px !important;
   }
 }
-.nav-brand {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-/* Mobile: desktop-only centered logo column hidden ? crab uses .nav-logo-mobile-wrap */
-@media (max-width: 900px) {
-  .nav-logo-desktop-only {
-    display: none !important;
-  }
-}
-
 .nav-search-row {
   display: flex;
   align-items: center;
@@ -652,7 +620,7 @@ a.rabbithole-brand-link:focus-visible {
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }
 
-  /* Flatten cluster so flex order can place: avatar, bell, hub, settings?, then full-width search */
+  /* Flatten cluster so flex order can place: avatar, bell, hub, settings, then full-width search */
   .nav-desktop-cluster,
   .nav-stack-main,
   .nav-toolbar-search-wrap,
@@ -697,9 +665,12 @@ a.rabbithole-brand-link:focus-visible {
     white-space: nowrap;
   }
   .nav-avatar {
-    width: 35px !important;
-    height: 35px !important;
-    font-size: 15px !important;
+    /* Large enough for a corner plus later; 35px was too small to badge. */
+    width: 56px !important;
+    height: 56px !important;
+    min-width: 56px !important;
+    min-height: 56px !important;
+    font-size: 22px !important;
     flex-shrink: 0 !important;
   }
   .nav-logout {
@@ -712,29 +683,6 @@ a.rabbithole-brand-link:focus-visible {
     font-size: 12px !important;
     border-radius: 8px !important;
     min-width: unset !important;
-  }
-
-  /* Brand column hidden on mobile ? replaced by compact logo in .nav-logo-mobile-wrap */
-  .nav-brand         { display: none !important; }
-
-  .nav-logo-mobile {
-    display: flex !important;
-    align-items: center !important;
-    position: static !important;
-    left: auto !important;
-    top: auto !important;
-    transform: none !important;
-    z-index: 4 !important;
-    pointer-events: auto !important;
-  }
-  .nav-logo-mobile-wrap {
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    order: 35 !important;
-    flex: 0 0 auto !important;
-    position: static !important;
-    margin: 0 !important;
   }
 
   .nav-hub-toggle {

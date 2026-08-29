@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useAuth } from "../lib/auth/AuthProvider";
-import EodCrabLogo from "./EodCrabLogo";
 import OptimizedAvatarImg from "./OptimizedAvatarImg";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
@@ -775,20 +774,7 @@ export default function NavBar() {
         ref={navRootRef}
         className="nav-root"
       >
-      {/* Mobile centered logo (home feed) */}
-      <div className="nav-logo-mobile-wrap" style={{ position: "relative" }}>
-        <Link
-          href="/"
-          className="nav-logo-mobile"
-          aria-label="EOD HUB home — feed"
-          title="Home feed"
-          style={{ display: "flex", alignItems: "center", textDecoration: "none" }}
-        >
-          <EodCrabLogo variant="navMobile" />
-        </Link>
-      </div>
-
-      {/* Desktop: centered cluster — avatar | [ row: bell+crab+hub+account; row: search ]; mobile: flattened via display:contents */}
+      {/* Desktop: centered cluster — avatar | [ row: bell+hub+account; row: search ]; mobile: flattened via display:contents */}
       <div className="nav-desktop-cluster">
         <div className="nav-primary-avatar" ref={accountMenuRef} style={{ position: "relative", flexShrink: 0 }}>
           {(() => {
@@ -881,27 +867,6 @@ export default function NavBar() {
                 {unreadNotifCount > 0 && badge(unreadNotifCount)}
               </button>
             )}
-
-            <div className="nav-cell-center nav-logo-desktop-only">
-              <Link
-                href="/"
-                className="nav-feed-home-desktop"
-                aria-label="EOD HUB home — feed"
-                title="Home feed"
-                onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}
-                style={{
-                  textDecoration: "none",
-                  color: t.text,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  lineHeight: 1,
-                  flexShrink: 0,
-                }}
-              >
-                <EodCrabLogo variant="navDesktop" />
-              </Link>
-            </div>
 
             <button
               ref={hubBtnRef}
