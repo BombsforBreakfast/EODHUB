@@ -12,6 +12,7 @@ import {
 } from "@/app/lib/email/digestEmail";
 import { getAppOrigin } from "@/app/lib/email/verificationEmail";
 import { getNotificationHref } from "@/app/lib/notificationNavigation";
+import { PRODUCT_FEATURE_FLAGS } from "@/app/lib/productFeatureFlags";
 import { hasFullPlatformAccess } from "@/app/lib/verificationAccess";
 
 const EOD_HUB_TIME_ZONE = "America/New_York";
@@ -384,15 +385,17 @@ async function buildCommunitySections(
       .lte("created_at", windowEnd)
       .order("created_at", { ascending: false })
       .limit(5),
-    adminClient
-      .from("marketplace_listings")
-      .select("id, title, category, location, created_at")
-      .eq("approved", true)
-      .eq("status", "active")
-      .gte("created_at", windowStart)
-      .lte("created_at", windowEnd)
-      .order("created_at", { ascending: false })
-      .limit(5),
+    PRODUCT_FEATURE_FLAGS.lemonLotEnabled
+      ? adminClient
+          .from("marketplace_listings")
+          .select("id, title, category, location, created_at")
+          .eq("approved", true)
+          .eq("status", "active")
+          .gte("created_at", windowStart)
+          .lte("created_at", windowEnd)
+          .order("created_at", { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> | null }),
     adminClient
       .from("ranked_posts")
       .select("id, content, created_at, ranking_score")
@@ -435,14 +438,16 @@ async function buildCommunitySections(
         meta: typeof group.type === "string" ? group.type : "Group",
       })),
     },
-    {
-      title: "New businesses and resources",
-      items: ((marketplaceRes.data ?? []) as Array<Record<string, unknown>>).map((listing) => ({
-        label: itemLabel(listing.title, "New Lemon Lot listing"),
-        href: absoluteUrl(origin, "/directory"),
-        meta: [listing.category, listing.location].filter((v) => typeof v === "string" && v).join(" · "),
-      })),
-    },
+    ...(PRODUCT_FEATURE_FLAGS.lemonLotEnabled
+      ? [{
+          title: "New businesses and resources",
+          items: ((marketplaceRes.data ?? []) as Array<Record<string, unknown>>).map((listing) => ({
+            label: itemLabel(listing.title, "New Lemon Lot listing"),
+            href: absoluteUrl(origin, "/directory"),
+            meta: [listing.category, listing.location].filter((v) => typeof v === "string" && v).join(" · "),
+          })),
+        }]
+      : []),
     {
       title: "Trending content",
       items: ((trendingRes.data ?? []) as Array<Record<string, unknown>>).map((post) => ({

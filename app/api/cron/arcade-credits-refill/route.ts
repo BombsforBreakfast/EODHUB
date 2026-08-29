@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { PRODUCT_FEATURE_FLAGS } from "@/app/lib/productFeatureFlags";
 import { runArcadeCreditsDailyRefill } from "@/app/lib/server/arcadeCreditsRefill";
 
 export const runtime = "nodejs";
@@ -18,6 +19,10 @@ export async function GET(request: NextRequest) {
     !!cronSecret && (authHeader === `Bearer ${cronSecret}` || querySecret === cronSecret);
   if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!PRODUCT_FEATURE_FLAGS.arcadeEnabled) {
+    return NextResponse.json({ ok: true, skipped: true, reason: "arcade_parked" });
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

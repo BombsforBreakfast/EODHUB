@@ -30,6 +30,7 @@ import {
   toggleBizLike,
 } from "../../lib/queries/bizLikes";
 import { queryKeys } from "../../lib/queryKeys";
+import { PRODUCT_FEATURE_FLAGS } from "../../lib/productFeatureFlags";
 
 type BusinessOrgListingType = Exclude<BizListingType, "resource">;
 
@@ -596,6 +597,7 @@ export default function MasterRightColumn({
         </div>
       </div>
 
+      {PRODUCT_FEATURE_FLAGS.lemonLotEnabled && (
       <div style={{ marginBottom: 18 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 6 }}>
           <Link
@@ -623,6 +625,7 @@ export default function MasterRightColumn({
           Classifieds — housing, PCS, vehicles, services. 30-day listings; contact opens Sidebars.
         </p>
       </div>
+      )}
 
       {/* Featured / business */}
       <div>

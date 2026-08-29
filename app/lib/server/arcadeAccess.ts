@@ -1,6 +1,7 @@
 /** Server-only arcade access gate. Never import from client components. */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { PRODUCT_FEATURE_FLAGS } from "../productFeatureFlags";
 import { isFounderUserId } from "./founderAccess";
 
 export const ARCADE_UNLOCK_COOKIE = "arcade_preview_unlock";
@@ -23,6 +24,7 @@ export function isArcadePubliclyEnabled(): boolean {
 
 /** Who may open arcade routes at all (nav + API). */
 export function canUseArcadePreview(userId: string | null | undefined): boolean {
+  if (!PRODUCT_FEATURE_FLAGS.arcadeEnabled) return false;
   if (!userId) return false;
   if (isArcadePubliclyEnabled()) return true;
   return isFounderUserId(userId);

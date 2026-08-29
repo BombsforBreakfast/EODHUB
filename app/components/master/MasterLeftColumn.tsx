@@ -37,6 +37,7 @@ import {
   type SavedJobRow,
 } from "../../lib/queries/savedJobs";
 import { queryKeys } from "../../lib/queryKeys";
+import { PRODUCT_FEATURE_FLAGS } from "../../lib/productFeatureFlags";
 import { useMasterShell } from "./masterShellContext";
 import { useCenterPaneRect, useViewportMobile } from "../../hooks/useCenterPaneRect";
 
@@ -212,7 +213,7 @@ export default function MasterLeftColumn({
   const savedJobsQuery = useQuery({
     queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
     queryFn: () => fetchSavedJobs(supabase, userId as string),
-    enabled: sideRailsReady && !!userId,
+    enabled: PRODUCT_FEATURE_FLAGS.desktopRailJobsEnabled && sideRailsReady && !!userId,
     staleTime: SAVED_JOBS_STALE_MS,
   });
   const EMPTY_SAVED_JOBS = useMemo<SavedJobRow[]>(() => [], []);
@@ -403,26 +404,34 @@ export default function MasterLeftColumn({
     const startIso = toDateStr(start.getFullYear(), start.getMonth(), start.getDate());
     const endIso = toDateStr(end.getFullYear(), end.getMonth(), end.getDate());
 
+    const eventsQuery = supabase
+      .from("events")
+      .select("id, title, organization, date, signup_url, image_url")
+      .gte("date", startIso)
+      .lte("date", endIso)
+      .is("unit_id", null)
+      .eq("visibility", "public")
+      .eq("is_approved", true)
+      .order("date", { ascending: true });
+
+    const memorialQuery = PRODUCT_FEATURE_FLAGS.desktopRailMemorialsEnabled
+      ? supabase
+          .from("memorials")
+          .select(
+            "id, name, death_date, source_url, photo_url, bio, category, service, is_international, country, organization, verification_status",
+          )
+          .eq("verification_status", "approved")
+      : Promise.resolve({ data: [] as DesktopMemorial[] });
+
     const [{ data: eventsData }, { data: memorialData }] = await Promise.all([
-      supabase
-        .from("events")
-        .select("id, title, organization, date, signup_url, image_url")
-        .gte("date", startIso)
-        .lte("date", endIso)
-        .is("unit_id", null)
-        .eq("visibility", "public")
-        .eq("is_approved", true)
-        .order("date", { ascending: true }),
-      supabase
-        .from("memorials")
-        .select(
-          "id, name, death_date, source_url, photo_url, bio, category, service, is_international, country, organization, verification_status",
-        )
-        .eq("verification_status", "approved"),
+      eventsQuery,
+      memorialQuery,
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
-    setDesktopMemorials((memorialData ?? []) as DesktopMemorial[]);
+    setDesktopMemorials(PRODUCT_FEATURE_FLAGS.desktopRailMemorialsEnabled
+      ? ((memorialData ?? []) as DesktopMemorial[])
+      : []);
   }, []);
 
   const loadSelectedEventAttendeePreviews = useCallback(async (eventId: string) => {
@@ -650,20 +659,24 @@ export default function MasterLeftColumn({
       const user = data.user ?? null;
       const uid = user?.id ?? null;
       if (cancelled || !uid || !user) return;
-      const profileCheck = await fetchViewerProfileCached(queryClient, supabase, user);
-      if (cancelled) return;
-      const featureAccess = getFeatureAccess({
-        accountType: profileCheck?.account_type,
-        subscriptionStatus: profileCheck?.subscription_status ?? null,
-        authUserCreatedAtIso: data.user?.created_at ?? null,
-        isAdmin: profileCheck?.is_admin,
-      });
-      setCanViewFullJobs(featureAccess.canViewFullJobs);
-      setUserIsAdmin(Boolean(profileCheck?.is_admin));
-      await Promise.all([
-        loadJobs(featureAccess.canViewFullJobs ? 500 : 5),
-        loadDesktopSavedEvents(uid),
-      ]);
+      if (PRODUCT_FEATURE_FLAGS.desktopRailJobsEnabled) {
+        const profileCheck = await fetchViewerProfileCached(queryClient, supabase, user);
+        if (cancelled) return;
+        const featureAccess = getFeatureAccess({
+          accountType: profileCheck?.account_type,
+          subscriptionStatus: profileCheck?.subscription_status ?? null,
+          authUserCreatedAtIso: data.user?.created_at ?? null,
+          isAdmin: profileCheck?.is_admin,
+        });
+        setCanViewFullJobs(featureAccess.canViewFullJobs);
+        setUserIsAdmin(Boolean(profileCheck?.is_admin));
+        await Promise.all([
+          loadJobs(featureAccess.canViewFullJobs ? 500 : 5),
+          loadDesktopSavedEvents(uid),
+        ]);
+        return;
+      }
+      await loadDesktopSavedEvents(uid);
     })();
     return () => {
       cancelled = true;
@@ -767,6 +780,7 @@ export default function MasterLeftColumn({
   const hasDesktopDayCards = useMemo(() => {
     if (!desktopSelectedDay) return false;
     if (desktopCalendarEvents.some((ev) => ev.date === desktopSelectedDay)) return true;
+    if (!PRODUCT_FEATURE_FLAGS.desktopRailMemorialsEnabled) return false;
     const y = new Date(`${desktopSelectedDay}T12:00:00`).getFullYear();
     return desktopMemorials.some((m) => anniversaryDate(m.death_date, y) === desktopSelectedDay);
   }, [desktopSelectedDay, desktopCalendarEvents, desktopMemorials]);
@@ -925,7 +939,7 @@ export default function MasterLeftColumn({
             color: t.text,
             textDecoration: "none",
             cursor: "pointer",
-            display: "block",
+            display: PRODUCT_FEATURE_FLAGS.desktopRailJobsEnabled ? "block" : "none",
             transition: "transform 0.15s ease",
           }}
         >
@@ -1054,13 +1068,17 @@ export default function MasterLeftColumn({
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
           <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>Add</span>
-          <Link
-            href="/events?add=memorial"
-            style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
-          >
-            Memorial
-          </Link>
-          <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
+          {PRODUCT_FEATURE_FLAGS.desktopRailMemorialsEnabled && (
+            <>
+              <Link
+                href="/events?add=memorial"
+                style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+              >
+                Memorial
+              </Link>
+              <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
+            </>
+          )}
           <Link
             href="/events?add=event"
             style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
@@ -1169,20 +1187,22 @@ export default function MasterLeftColumn({
                   thumbBorder: `1px solid ${t.border}`,
                   memorial: null as DesktopMemorial | null,
                 })),
-              ...desktopMemorials
-                .filter((m) => anniversaryDate(m.death_date, new Date(desktopSelectedDay + "T12:00:00").getFullYear()) === desktopSelectedDay)
-                .map((m) => ({
-                  kind: "memorial" as const,
-                  id: `mem-${m.id}`,
-                  title: m.name,
-                  sub: "EOD Memorial Foundation",
-                  websiteUrl: m.source_url?.trim() ? m.source_url : null,
-                  eventId: null as string | null,
-                  thumbAlt: `Open memorial for ${m.name}`,
-                  thumb: m.photo_url?.trim() ? m.photo_url : null,
-                  thumbBorder: `2px solid ${memorialTheme(m.category, m.service, memorialThemeOpts(m)).outlineColor}`,
-                  memorial: m,
-                })),
+              ...(PRODUCT_FEATURE_FLAGS.desktopRailMemorialsEnabled
+                ? desktopMemorials
+                    .filter((m) => anniversaryDate(m.death_date, new Date(desktopSelectedDay + "T12:00:00").getFullYear()) === desktopSelectedDay)
+                    .map((m) => ({
+                      kind: "memorial" as const,
+                      id: `mem-${m.id}`,
+                      title: m.name,
+                      sub: "EOD Memorial Foundation",
+                      websiteUrl: m.source_url?.trim() ? m.source_url : null,
+                      eventId: null as string | null,
+                      thumbAlt: `Open memorial for ${m.name}`,
+                      thumb: m.photo_url?.trim() ? m.photo_url : null,
+                      thumbBorder: `2px solid ${memorialTheme(m.category, m.service, memorialThemeOpts(m)).outlineColor}`,
+                      memorial: m,
+                    }))
+                : []),
             ]
               .slice(0, 4)
               .map((item) => {
@@ -1461,6 +1481,8 @@ export default function MasterLeftColumn({
       </div>
 
       {/* Bottom: jobs pane */}
+      {PRODUCT_FEATURE_FLAGS.desktopRailJobsEnabled && (
+      <>
       <div>
         {jobsLoaded && (
           <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
@@ -1632,6 +1654,8 @@ export default function MasterLeftColumn({
         onJobDeleted={handleJobDeleted}
         onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
       />
+      </>
+      )}
 
       {eventInviteTarget && typeof document !== "undefined" && createPortal(
         <div
@@ -1742,7 +1766,7 @@ export default function MasterLeftColumn({
           Rendered via a portal into document.body so parent stacking contexts
           (the aside + the main app grid) can't pin it below the feed
           composer or other high-z page chrome. */}
-      {selectedMemorial && typeof document !== "undefined" && createPortal(
+      {PRODUCT_FEATURE_FLAGS.desktopRailMemorialsEnabled && selectedMemorial && typeof document !== "undefined" && createPortal(
         (() => {
           const theme = memorialTheme(
             selectedMemorial.category,

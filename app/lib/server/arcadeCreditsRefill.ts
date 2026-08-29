@@ -6,6 +6,7 @@ import {
   buildArcadeCreditsRefillArcadeUrl,
   buildArcadeCreditsRefillEmailHtml,
 } from "../email/arcadeCreditsRefillEmail";
+import { PRODUCT_FEATURE_FLAGS } from "../productFeatureFlags";
 
 export const ARCADE_CREDITS_REFILL_MESSAGE = "Game Credits now full, go play!";
 export const ARCADE_CREDITS_REFILL_LINK = "/games";
@@ -38,6 +39,7 @@ async function sendArcadeCreditsRefillEmail(params: {
   to: string;
   firstName: string;
 }): Promise<"sent" | "skipped_no_key" | "error"> {
+  if (!PRODUCT_FEATURE_FLAGS.arcadeEnabled) return "skipped_no_key";
   if (!process.env.RESEND_API_KEY) return "skipped_no_key";
   const arcadeUrl = buildArcadeCreditsRefillArcadeUrl();
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -64,6 +66,10 @@ async function sendArcadeCreditsRefillEmail(params: {
 export async function runArcadeCreditsDailyRefill(
   admin: SupabaseClient,
 ): Promise<ArcadeCreditsRefillResult> {
+  if (!PRODUCT_FEATURE_FLAGS.arcadeEnabled) {
+    return { reupped: 0, notified: 0, emailed: 0, emailSkipped: 0, errors: 0 };
+  }
+
   const { data: reuppedRows, error: refillError } = await admin.rpc(
     "arcade_apply_daily_challenge_coin_refills",
   );

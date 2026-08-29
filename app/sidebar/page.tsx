@@ -31,6 +31,7 @@ import {
 } from "../lib/lemonLot";
 import EmptyState from "../components/EmptyState";
 import { useToast } from "../components/toast/ToastProvider";
+import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
 
 type LemonLotShareSnapshot = {
   id: string;
@@ -858,6 +859,7 @@ export default function SidebarPage() {
   }, [messages, userId]);
 
   useEffect(() => {
+    if (!PRODUCT_FEATURE_FLAGS.lemonLotEnabled) return;
     const listingIds = Array.from(
       new Set(messages.map((msg) => parseLemonLotListingId(msg.content || "")).filter((id): id is string => Boolean(id))),
     );
@@ -1422,7 +1424,9 @@ export default function SidebarPage() {
         const isEditing = editingMsgId === msg.id;
         const isConfirm = confirmDeleteId === msg.id;
         const inviteEventId = parseEventInviteId(msg.content || "");
-        const lemonLotListingId = parseLemonLotListingId(msg.content || "");
+        const lemonLotListingId = PRODUCT_FEATURE_FLAGS.lemonLotEnabled
+          ? parseLemonLotListingId(msg.content || "")
+          : null;
         const inviteMeta = inviteEventId ? eventInviteMeta[inviteEventId] : null;
         const lemonRow = lemonLotListingId ? listingShareMeta[lemonLotListingId] : null;
         let visibleMessageContent = msg.content || "";

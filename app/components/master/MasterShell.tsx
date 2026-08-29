@@ -29,9 +29,13 @@ import {
   profileCountryChallengeHref,
   viewerNeedsCountryPrompt,
 } from "../../lib/membershipCountryPrompt";
+import { PRODUCT_FEATURE_FLAGS } from "../../lib/productFeatureFlags";
 
 const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
 const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
+
+/** Centered desktop feed cap. 680 * 1.3 ≈ 884. */
+const DESKTOP_FEED_MAX_WIDTH = 884;
 
 function getSavedRailState(key: string): "expanded" | "collapsed" {
   if (typeof window === "undefined") return "expanded";
@@ -165,7 +169,9 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   }, [authLoading, queryClient, user?.id]);
 
   useEffect(() => {
-    if (!isDesktop) {
+    const railsEnabled =
+      PRODUCT_FEATURE_FLAGS.desktopLeftRailEnabled || PRODUCT_FEATURE_FLAGS.desktopRightRailEnabled;
+    if (!isDesktop || !railsEnabled) {
       const tid = window.setTimeout(() => {
         setSideRailsReady(false);
       }, 0);
@@ -296,18 +302,36 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       >
         <DesktopLayout
           isMobile={false}
-          desktopColumns={`${leftRailState === "collapsed" ? "38px" : "320px"} minmax(0, 1fr) ${rightRailState === "collapsed" ? "38px" : "360px"}`}
+          desktopColumns={
+            PRODUCT_FEATURE_FLAGS.desktopLeftRailEnabled && PRODUCT_FEATURE_FLAGS.desktopRightRailEnabled
+              ? `${leftRailState === "collapsed" ? "38px" : "320px"} minmax(0, 1fr) ${rightRailState === "collapsed" ? "38px" : "360px"}`
+              : PRODUCT_FEATURE_FLAGS.desktopLeftRailEnabled
+                ? `${leftRailState === "collapsed" ? "38px" : "320px"} minmax(0, 1fr)`
+                : PRODUCT_FEATURE_FLAGS.desktopRightRailEnabled
+                  ? `minmax(0, 1fr) ${rightRailState === "collapsed" ? "38px" : "360px"}`
+                  : "minmax(0, 1fr)"
+          }
+          desktopJustifyContent="start"
+          desktopMaxWidth={
+            !PRODUCT_FEATURE_FLAGS.desktopLeftRailEnabled && !PRODUCT_FEATURE_FLAGS.desktopRightRailEnabled
+              ? DESKTOP_FEED_MAX_WIDTH
+              : !PRODUCT_FEATURE_FLAGS.desktopLeftRailEnabled && PRODUCT_FEATURE_FLAGS.desktopRightRailEnabled
+                ? DESKTOP_FEED_MAX_WIDTH + 24 + (rightRailState === "collapsed" ? 38 : 360)
+                : undefined
+          }
           desktopGap={24}
           desktopMarginTop={0}
           left={
-            <MasterLeftColumn
-              userId={userId}
-              memberInteractionAllowedRef={memberInteractionAllowedRef}
-              onMemberPaywall={() => setMemberPaywallOpen(true)}
-              railState={leftRailState}
-              onToggleRail={() => setLeftRailState((prev) => (prev === "expanded" ? "collapsed" : "expanded"))}
-              sideRailsReady={sideRailsReady}
-            />
+            PRODUCT_FEATURE_FLAGS.desktopLeftRailEnabled ? (
+              <MasterLeftColumn
+                userId={userId}
+                memberInteractionAllowedRef={memberInteractionAllowedRef}
+                onMemberPaywall={() => setMemberPaywallOpen(true)}
+                railState={leftRailState}
+                onToggleRail={() => setLeftRailState((prev) => (prev === "expanded" ? "collapsed" : "expanded"))}
+                sideRailsReady={sideRailsReady}
+              />
+            ) : null
           }
           center={
             <main className="master-shell-main" style={{ minWidth: 0 }}>
@@ -317,15 +341,17 @@ export default function MasterShell({ children }: { children: React.ReactNode })
             </main>
           }
           right={
-            <MasterRightColumn
-              userId={userId}
-              memberInteractionAllowedRef={memberInteractionAllowedRef}
-              onMemberPaywall={() => setMemberPaywallOpen(true)}
-              onOpenConversation={(peerId) => setSidebarDrawer({ open: true, peerId })}
-              railState={rightRailState}
-              onToggleRail={() => setRightRailState((prev) => (prev === "expanded" ? "collapsed" : "expanded"))}
-              sideRailsReady={sideRailsReady}
-            />
+            PRODUCT_FEATURE_FLAGS.desktopRightRailEnabled ? (
+              <MasterRightColumn
+                userId={userId}
+                memberInteractionAllowedRef={memberInteractionAllowedRef}
+                onMemberPaywall={() => setMemberPaywallOpen(true)}
+                onOpenConversation={(peerId) => setSidebarDrawer({ open: true, peerId })}
+                railState={rightRailState}
+                onToggleRail={() => setRightRailState((prev) => (prev === "expanded" ? "collapsed" : "expanded"))}
+                sideRailsReady={sideRailsReady}
+              />
+            ) : null
           }
         />
       </div>

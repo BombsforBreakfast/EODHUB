@@ -1,9 +1,11 @@
+import { PRODUCT_FEATURE_FLAGS } from "./productFeatureFlags";
+
 /** Client-safe helpers for arcade nav visibility. */
 
 /**
- * Arcade is live on web and native (App Store 1.1+).
- * Kill-switch is server-side via ARCADE_PUBLIC=false.
+ * Arcade Hub link. Parked via PRODUCT_FEATURE_FLAGS.arcadeEnabled.
+ * Preview-password rollback is still server-side via ARCADE_PUBLIC=false.
  */
 export function canClickArcadeNav(_isFounder?: boolean): boolean {
-  return true;
+  return PRODUCT_FEATURE_FLAGS.arcadeEnabled;
 }

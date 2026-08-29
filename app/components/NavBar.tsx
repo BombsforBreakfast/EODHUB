@@ -18,6 +18,7 @@ import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { canClickArcadeNav } from "../lib/arcadeAccess";
+import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
@@ -147,7 +148,6 @@ export default function NavBar() {
     void setNativeAppBadgeCount(unreadNotifCount);
   }, [unreadNotifCount]);
 
-  const canClickArcade = canClickArcadeNav(isFounder);
   const showAtlwHotlineNav = canAccessAtlwHotline(membershipCountry);
 
   const NOTIFICATION_SELECT =
@@ -1154,16 +1154,20 @@ export default function NavBar() {
                     { label: "Businesses/Orgs", href: "/businesses", icon: Building2, badge: 0, onNav: null },
                     { label: "Resources", href: "/resources", icon: BookOpen, badge: 0, onNav: null },
                     { label: "Events", href: "/events", icon: Calendar, badge: 0, onNav: null },
-                    { label: "Lemon Lot", href: "/lemon-lot", icon: ShoppingBag, badge: 0, onNav: null },
-                    {
-                      label: "EOD Arcade",
-                      href: "/games",
-                      icon: Gamepad2,
-                      badge: 0,
-                      onNav: null,
-                      comingSoon: false,
-                      disabled: !canClickArcade,
-                    },
+                    ...(PRODUCT_FEATURE_FLAGS.lemonLotEnabled
+                      ? [{ label: "Lemon Lot", href: "/lemon-lot", icon: ShoppingBag, badge: 0, onNav: null as (() => Promise<void>) | null }]
+                      : []),
+                    ...(PRODUCT_FEATURE_FLAGS.arcadeEnabled
+                      ? [{
+                          label: "EOD Arcade",
+                          href: "/games",
+                          icon: Gamepad2,
+                          badge: 0,
+                          onNav: null as (() => Promise<void>) | null,
+                          comingSoon: false,
+                          disabled: !canClickArcadeNav(isFounder),
+                        }]
+                      : []),
                     { label: "Groups", href: "/units", icon: UsersRound, badge: groupPendingTotal, onNav: null },
                     { label: "Unit Directory", href: "/directory", icon: ClipboardList, badge: 0, onNav: null },
                     { label: "Users", href: "/user-directory", icon: Users, badge: 0, onNav: null },

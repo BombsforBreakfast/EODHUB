@@ -1,6 +1,12 @@
+import { redirect } from "next/navigation";
 import NavBar from "../components/NavBar";
+import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
 
 export default function GamesLayout({ children }: { children: React.ReactNode }) {
+  if (!PRODUCT_FEATURE_FLAGS.arcadeEnabled) {
+    redirect("/");
+  }
+
   return (
     <div
       style={{

@@ -2,6 +2,7 @@
  * Resolves in-app navigation for a notification row.
  * Prefer structured fields (type, metadata, post_id, unit_*) over message text.
  */
+import { PRODUCT_FEATURE_FLAGS } from "./productFeatureFlags";
 export type NotificationNavInput = {
   message: string;
   post_owner_id: string | null;
@@ -192,7 +193,7 @@ export function getNotificationHref(
   }
 
   if (nNorm.type === "arcade_credits_refilled") {
-    return "/games";
+    return PRODUCT_FEATURE_FLAGS.arcadeEnabled ? "/games" : "/";
   }
 
   if (nNorm.type === "mention_post" || nNorm.type === "mention_comment") {
