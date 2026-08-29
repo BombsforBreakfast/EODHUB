@@ -18,6 +18,8 @@ import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { canClickArcadeNav } from "../lib/arcadeAccess";
 import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
+import { canAccessCollapsingCircuit } from "../lib/circuit";
+import { requestCircuitCompose } from "../lib/circuitComposeBus";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
@@ -100,6 +102,9 @@ export default function NavBar() {
   const { user, accessToken, isLoading: authLoading } = useAuth();
   const currentUserId = user?.id ?? null;
   const authLoaded = !authLoading;
+  const showCircuitNavPlus = Boolean(
+    currentUserId && canAccessCollapsingCircuit(user?.email ?? null),
+  );
   const [userInitial, setUserInitial] = useState<string>("?");
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -857,7 +862,7 @@ export default function NavBar() {
                 className="nav-btn nav-notifications-btn nav-primary-bell"
                 aria-label="Notifications"
                 title="Notifications"
-                onClick={() => { setShowNotifPanel((v) => !v); setShowHub(false); setShowSearchDropdown(false); }}
+                onClick={() => { setShowNotifPanel((v) => !v); setShowHub(false); setShowSearchDropdown(false); setShowAccountMenu(false); }}
                 style={{ ...navButton, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", border: "none", boxShadow: "none" }}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -867,6 +872,24 @@ export default function NavBar() {
                 {unreadNotifCount > 0 && badge(unreadNotifCount)}
               </button>
             )}
+
+            {showCircuitNavPlus ? (
+              <button
+                type="button"
+                className="nav-circuit-plus"
+                aria-label="Collapsing Circuit — post a 24h tile"
+                title="Collapsing Circuit · 24h tile"
+                onClick={() => {
+                  setShowHub(false);
+                  setShowSearchDropdown(false);
+                  setShowNotifPanel(false);
+                  setShowAccountMenu(false);
+                  requestCircuitCompose({ mode: "media" });
+                }}
+              >
+                <span aria-hidden="true">+</span>
+              </button>
+            ) : null}
 
             <button
               ref={hubBtnRef}

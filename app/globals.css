@@ -360,6 +360,33 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
   gap: 8px;
   width: 100%;
 }
+/* Collapsing Circuit compose — same white + circle language as the strip blank tile */
+.nav-circuit-plus {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+  color: #0f1611;
+  background: #d7e5d2;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+}
+.nav-circuit-plus:hover {
+  filter: brightness(1.05);
+}
+.nav-circuit-plus:active {
+  transform: scale(0.96);
+}
+
 /* Search sits on its own row below toolbar; full width of stack */
 .nav-search-slot {
   flex: none;
@@ -633,6 +660,9 @@ a.rabbithole-brand-link:focus-visible {
   .nav-primary-bell {
     order: 20 !important;
   }
+  .nav-circuit-plus {
+    order: 25 !important;
+  }
   .nav-hub-toggle {
     order: 34 !important;
   }
@@ -672,6 +702,13 @@ a.rabbithole-brand-link:focus-visible {
     min-height: 56px !important;
     font-size: 22px !important;
     flex-shrink: 0 !important;
+  }
+  .nav-circuit-plus {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    min-height: 40px !important;
+    font-size: 26px !important;
   }
   .nav-logout {
     padding: 6px 9px !important;

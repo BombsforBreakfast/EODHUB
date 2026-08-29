@@ -10,6 +10,10 @@ import {
   type CircuitPromptDto,
   type CircuitStripItem,
 } from "../../lib/circuit";
+import {
+  CIRCUIT_COMPOSE_QUERY,
+  onCircuitComposeRequest,
+} from "../../lib/circuitComposeBus";
 import { uploadCircuitMedia } from "../../lib/circuitUpload";
 import { muxPosterUrl, parseMuxFeedVideoUrl } from "../../lib/feedVideoUrl";
 import { useSuppressChatroomPeek } from "../../hooks/useSuppressChatroomPeek";
@@ -70,6 +74,14 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
     [items],
   );
 
+  /** Live posts only + a leading blank +. No empty prompt theater. */
+  const stripItems = useMemo((): CircuitStripItem[] => {
+    if (posts.length === 0) return [];
+    return [{ kind: "blank" }, ...posts.map((post) => ({ kind: "post" as const, post }))];
+  }, [posts]);
+
+  const showStrip = stripItems.length > 0;
+
   const load = useCallback(async () => {
     if (!enabled || !currentUserId) return;
     const token = await getAccessToken({ source: "CollapsingCircuit.load" });
@@ -98,18 +110,48 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
     void load();
   }, [load]);
 
+  const openComposer = useCallback((mode: ComposerMode, p: CircuitPromptDto | null = null) => {
+    setEditingPostId(null);
+    setComposerMode(mode);
+    setPrompt(p);
+    setTitleDraft(mode === "thought" ? "" : (p?.label ?? ""));
+    setDraft("");
+    setPendingMedia([]);
+    setComposerError(null);
+    setPostAsMode(loadStoredPostAsMode());
+    setComposerOpen(true);
+  }, []);
+
   useEffect(() => {
-    if (typeof window === "undefined" || items.length === 0) return;
+    if (!enabled || !currentUserId) return;
+    return onCircuitComposeRequest((detail) => {
+      openComposer(detail.mode === "thought" ? "thought" : "media", null);
+    });
+  }, [enabled, currentUserId, openComposer]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const circuitId = new URLSearchParams(window.location.search).get("circuit");
     if (!circuitId) return;
     if (deepLinkHandled.current === circuitId) return;
+
+    if (circuitId === CIRCUIT_COMPOSE_QUERY) {
+      deepLinkHandled.current = circuitId;
+      openComposer("media", null);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("circuit");
+      window.history.replaceState({}, "", url.pathname + url.search);
+      return;
+    }
+
+    if (items.length === 0) return;
     const postIdx = items
       .filter((i): i is { kind: "post"; post: CircuitPostDto } => i.kind === "post")
       .findIndex((i) => i.post.id === circuitId);
     if (postIdx < 0) return;
     deepLinkHandled.current = circuitId;
     setViewerIndex(postIdx);
-  }, [items]);
+  }, [items, openComposer]);
 
   useEffect(() => {
     return () => {
@@ -168,18 +210,6 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
   }, [currentUserId]);
 
   if (!enabled || !currentUserId) return null;
-
-  const openComposer = (mode: ComposerMode, p: CircuitPromptDto | null = null) => {
-    setEditingPostId(null);
-    setComposerMode(mode);
-    setPrompt(p);
-    setTitleDraft(mode === "thought" ? "" : (p?.label ?? ""));
-    setDraft("");
-    setPendingMedia([]);
-    setComposerError(null);
-    setPostAsMode(loadStoredPostAsMode());
-    setComposerOpen(true);
-  };
 
   const openEditComposer = (post: CircuitPostDto) => {
     if (post.post_type === "event") return;
@@ -322,112 +352,94 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
       : null;
 
   return (
-    <section className="circuit-strip" aria-label="Collapsing Circuit">
-      <div className="circuit-strip-header">
-        <div className="circuit-strip-heading">
-          <div className="circuit-strip-title">Collapsing Circuit</div>
-          <div className="circuit-strip-sub">24h tiles</div>
-        </div>
-      </div>
-
-      {error ? <div className="circuit-strip-error">{error}</div> : null}
-
-      <div className="circuit-strip-scroller">
-        {loading && items.length === 0 ? (
-          <div className="circuit-tile circuit-tile-prompt">
-            <span>Loading…</span>
+    <>
+      {showStrip ? (
+        <section className="circuit-strip" aria-label="Collapsing Circuit">
+          <div className="circuit-strip-header">
+            <div className="circuit-strip-heading">
+              <div className="circuit-strip-title">Collapsing Circuit</div>
+              <div className="circuit-strip-sub">24h tiles</div>
+            </div>
           </div>
-        ) : null}
 
-        {items.map((item, idx) => {
-          if (item.kind === "blank") {
-            return (
-              <button
-                key={`blank-${idx}`}
-                type="button"
-                className="circuit-tile circuit-tile-blank"
-                aria-label="Post to Collapsing Circuit"
-                onClick={() => openComposer("media", null)}
-              >
-                <span className="circuit-tile-plus" aria-hidden="true">
-                  +
-                </span>
-              </button>
-            );
-          }
+          {error ? <div className="circuit-strip-error">{error}</div> : null}
 
-          if (item.kind === "prompt") {
-            const thoughtish = item.prompt.slug === "random-thought";
-            return (
-              <button
-                key={`prompt-${item.prompt.id}-${idx}`}
-                type="button"
-                className="circuit-tile circuit-tile-prompt"
-                onClick={() => openComposer(thoughtish ? "thought" : "media", item.prompt)}
-              >
-                <span className="circuit-tile-plus" aria-hidden="true">
-                  +
-                </span>
-                <span className="circuit-tile-prompt-label">{item.prompt.label}</span>
-                <span className="circuit-tile-prompt-cta">tap to post</span>
-              </button>
-            );
-          }
-
-          const post = item.post;
-          const postIdx = viewerPosts.findIndex((p) => p.id === post.id);
-          return (
-            <button
-              key={post.id}
-              type="button"
-              className={`circuit-tile circuit-tile-post${post.seen ? "" : " circuit-tile-unseen"}`}
-              onClick={() => setViewerIndex(postIdx >= 0 ? postIdx : 0)}
-            >
-              {post.post_type === "thought" ? (
-                <div className="circuit-tile-thought">
-                  <span
-                    style={{
-                      fontSize: Math.max(11, Math.round(thoughtFontSizePx(post.body || "", 18, 11) * 0.55)),
-                    }}
+          <div className="circuit-strip-scroller">
+            {stripItems.map((item, idx) => {
+              if (item.kind === "blank") {
+                return (
+                  <button
+                    key={`blank-${idx}`}
+                    type="button"
+                    className="circuit-tile circuit-tile-blank"
+                    aria-label="Post to Collapsing Circuit"
+                    onClick={() => openComposer("media", null)}
                   >
-                    {(post.body || "").slice(0, 72)}
-                    {(post.body || "").length > 72 ? "…" : ""}
-                  </span>
-                </div>
-              ) : post.post_type === "event" ? (
-                <div className="circuit-tile-event">
-                  {post.event?.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={post.event.image_url} alt="" />
+                    <span className="circuit-tile-plus" aria-hidden="true">
+                      +
+                    </span>
+                  </button>
+                );
+              }
+
+              if (item.kind !== "post") return null;
+
+              const post = item.post;
+              const postIdx = viewerPosts.findIndex((p) => p.id === post.id);
+              return (
+                <button
+                  key={post.id}
+                  type="button"
+                  className={`circuit-tile circuit-tile-post${post.seen ? "" : " circuit-tile-unseen"}`}
+                  onClick={() => setViewerIndex(postIdx >= 0 ? postIdx : 0)}
+                >
+                  {post.post_type === "thought" ? (
+                    <div className="circuit-tile-thought">
+                      <span
+                        style={{
+                          fontSize: Math.max(11, Math.round(thoughtFontSizePx(post.body || "", 18, 11) * 0.55)),
+                        }}
+                      >
+                        {(post.body || "").slice(0, 72)}
+                        {(post.body || "").length > 72 ? "…" : ""}
+                      </span>
+                    </div>
+                  ) : post.post_type === "event" ? (
+                    <div className="circuit-tile-event">
+                      {post.event?.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={post.event.image_url} alt="" />
+                      ) : (
+                        <div className="circuit-tile-event-fallback" />
+                      )}
+                      <span className="circuit-tile-event-badge">event</span>
+                    </div>
                   ) : (
-                    <div className="circuit-tile-event-fallback" />
+                    <CircuitThumb post={post} />
                   )}
-                  <span className="circuit-tile-event-badge">event</span>
-                </div>
-              ) : (
-                <CircuitThumb post={post} />
-              )}
-              {post.author_photo_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={post.author_photo_url}
-                  alt=""
-                  className="circuit-tile-avatar-tl"
-                />
-              ) : (
-                <span className="circuit-tile-avatar-tl circuit-tile-avatar-fallback">
-                  {post.author_name.slice(0, 1).toUpperCase()}
-                </span>
-              )}
-              {post.post_type !== "thought" && (post.title || post.event?.title) ? (
-                <span className="circuit-tile-post-title">
-                  {post.title || post.event?.title}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+                  {post.author_photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={post.author_photo_url}
+                      alt=""
+                      className="circuit-tile-avatar-tl"
+                    />
+                  ) : (
+                    <span className="circuit-tile-avatar-tl circuit-tile-avatar-fallback">
+                      {post.author_name.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  {post.post_type !== "thought" && (post.title || post.event?.title) ? (
+                    <span className="circuit-tile-post-title">
+                      {post.title || post.event?.title}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {activeViewerPost && viewerIndex != null ? (
         <CollapsingCircuitViewer
@@ -615,7 +627,7 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
           </div>
         </div>
       ) : null}
-    </section>
+    </>
   );
 }
 
