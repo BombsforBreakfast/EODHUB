@@ -50,6 +50,13 @@ export default function FeedDiscoverMembersStrip({
         borderRadius: 14,
         padding: "14px 16px",
         background: t.surface,
+        // Grid/flex parents expand to this strip's full horizontal content
+        // unless the item can shrink — otherwise feed cards blow out sideways.
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflow: "hidden",
       }}
     >
       <div
@@ -95,7 +102,7 @@ export default function FeedDiscoverMembersStrip({
           </div>
         ) : null}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, maxWidth: "100%" }}>
         {!isMobile ? (
           <button
             type="button"
@@ -131,6 +138,8 @@ export default function FeedDiscoverMembersStrip({
             WebkitOverflowScrolling: "touch",
             paddingBottom: 4,
             flex: 1,
+            minWidth: 0,
+            maxWidth: "100%",
             scrollSnapType: isMobile ? "x mandatory" : undefined,
           }}
         >
