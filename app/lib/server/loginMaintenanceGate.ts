@@ -1,10 +1,13 @@
 /** Server-only login maintenance gate. Never import from client components. */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 
 export const LOGIN_MAINTENANCE_COOKIE = "eod_login_maint_bypass";
 
 const UNLOCK_MAX_AGE_SEC = 60 * 60 * 12; // 12 hours
+
+// Security Enhancement: Use cryptographically secure random string instead of a predictable hardcoded string.
+const FALLBACK_PASSWORD = randomBytes(32).toString("hex");
 
 /**
  * Optional login-screen maintenance overlay.
@@ -16,7 +19,7 @@ export function isLoginMaintenanceGateEnabled(): boolean {
 }
 
 export function getLoginMaintenancePassword(): string {
-  return (process.env.LOGIN_MAINTENANCE_PASSWORD ?? "bombsforbreakfast").trim();
+  return (process.env.LOGIN_MAINTENANCE_PASSWORD ?? FALLBACK_PASSWORD).trim();
 }
 
 export function isLoginMaintenancePasswordValid(password: string): boolean {
@@ -48,6 +51,7 @@ export function verifyLoginMaintenanceUnlockCookie(token: string | undefined): b
   if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false;
   const payload = `${flag}.${expStr}`;
   const expected = signPayload(payload);
+  if (!expected) return false;
   try {
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
