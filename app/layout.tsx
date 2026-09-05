@@ -79,6 +79,7 @@ export default function RootLayout({
               <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{
+                  // Security Enhancement: Escape angle brackets to prevent potential XSS
                   __html: JSON.stringify({
                     "@context": "https://schema.org",
                     "@graph": [
@@ -111,7 +112,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
