@@ -68,6 +68,7 @@ import { roundToNearestHalf, StarRatingDisplay } from "../components/StarRating"
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { Award, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
+import { PRODUCT_FEATURE_FLAGS } from "../lib/productFeatureFlags";
 import { extractFirstUrl, isEmailDomainMatch, URL_PATTERN_G } from "../lib/urlPreview";
 import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
 import { jobListingCutoffIso } from "../lib/jobRetention";
@@ -5014,6 +5015,9 @@ export default function HomePage() {
     if (blockMemberInteraction()) return;
 
     const labelsForKc = [kcOpt1, kcOpt2, kcOpt3, kcOpt4].map((s) => s.trim()).filter(Boolean);
+    if (!PRODUCT_FEATURE_FLAGS.kangarooCourtFeedActionsEnabled && kcComposerPhase) {
+      resetKcComposer();
+    }
     if (kcComposerPhase === "confirm") {
       toast.info('Use "Start Court" to add poll options, or click the judge again to cancel Kangaroo Court.');
       return;
@@ -7794,7 +7798,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {kcComposerPhase === "confirm" && (
+            {PRODUCT_FEATURE_FLAGS.kangarooCourtFeedActionsEnabled && kcComposerPhase === "confirm" && (
               <div
                 style={{
                   marginTop: 14,
@@ -7844,7 +7848,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {kcComposerPhase === "builder" && (
+            {PRODUCT_FEATURE_FLAGS.kangarooCourtFeedActionsEnabled && kcComposerPhase === "builder" && (
               <div
                 style={{
                   marginTop: 14,
@@ -8042,9 +8046,10 @@ export default function HomePage() {
                   theme={isDark ? "dark" : "light"}
                 />
 
+                {PRODUCT_FEATURE_FLAGS.kangarooCourtFeedActionsEnabled ? (
                 <button
                   type="button"
-                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court � add a poll to this post"}
+                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court — add a poll to this post"}
                   onClick={() => {
                     if (kcComposerPhase) resetKcComposer();
                     else setKcComposerPhase("confirm");
@@ -8063,6 +8068,7 @@ export default function HomePage() {
                 >
                   <Image src={judgeAvatarSrc()} alt="" width={40} height={40} style={{ objectFit: "cover", display: "block" }} unoptimized />
                 </button>
+                ) : null}
 
                 <button
                   onClick={submitPost}
@@ -9063,9 +9069,11 @@ export default function HomePage() {
                       boxSizing: "border-box",
                     }}
                   >
-                    {/* Feature icon cluster � KC + Rabbithole grouped tightly, distinct from user avatars */}
+                    {/* Feature icon cluster — KC + Rabbithole grouped tightly, distinct from user avatars */}
+                    {(PRODUCT_FEATURE_FLAGS.kangarooCourtFeedActionsEnabled ||
+                      PRODUCT_FEATURE_FLAGS.rabbitholeFeedActionsEnabled) && (
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      {userId && (
+                      {PRODUCT_FEATURE_FLAGS.kangarooCourtFeedActionsEnabled && userId && (
                         <KangarooCourtFeedSection
                           postId={post.id}
                           userId={userId}
@@ -9078,7 +9086,7 @@ export default function HomePage() {
                         />
                       )}
 
-                      {userId && (RABBITHOLE_THRESHOLD_BYPASS || post.likeCount >= 3 || post.commentCount >= 2) && (
+                      {PRODUCT_FEATURE_FLAGS.rabbitholeFeedActionsEnabled && userId && (RABBITHOLE_THRESHOLD_BYPASS || post.likeCount >= 3 || post.commentCount >= 2) && (
                         post.rabbithole_thread_id ? (
                           <div
                             title="Filed to Rabbithole � locked"
@@ -9137,6 +9145,7 @@ export default function HomePage() {
                         )
                       )}
                     </div>
+                    )}
 
                     <ReactionPickerTrigger
                       t={t}

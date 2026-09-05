@@ -21,4 +21,14 @@ export const PRODUCT_FEATURE_FLAGS = {
   desktopRailJobsEnabled: false,
   /** Memorials on the desktop left-rail calendar (full memorials table read). */
   desktopRailMemorialsEnabled: false,
+  /**
+   * Feed composer judge button + per-post “take to court” trigger.
+   * Existing Kangaroo Court cards / verdicts stay on posts.
+   */
+  kangarooCourtFeedActionsEnabled: false,
+  /**
+   * Per-post “Add to Rabbithole” on the feed.
+   * /rabbithole tab and share-to-feed from Rabbithole stay live.
+   */
+  rabbitholeFeedActionsEnabled: false,
 } as const;
