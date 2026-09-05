@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { supabase } from "@/app/lib/lib/supabaseClient";
+import { hostBlocksInAppPreview } from "@/app/lib/neverEmbedHosts";
 import {
   articleLinkThumbParts,
   googleFaviconUrl,
@@ -28,6 +29,11 @@ export function ArticleStageEmbed({ externalUrl, thumbnailUrl, caption, t }: Pro
   const cap = caption?.trim();
 
   useEffect(() => {
+    if (hostBlocksInAppPreview(externalUrl)) {
+      setViewMode("fallback");
+      return;
+    }
+
     let cancelled = false;
 
     async function check() {

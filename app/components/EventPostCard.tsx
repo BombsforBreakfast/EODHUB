@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { FEED_MEDIA_RADIUS, FEED_SECTION_GAP } from "../lib/feedLayout";
-import { ExternalSiteEmbedModal } from "./ExternalSiteEmbedModal";
+import { ExternalSiteLink } from "./ExternalSiteEmbedModal";
 import ExpandableText from "./ExpandableText";
 
 type FeedEventSnapshot = {
@@ -60,7 +60,6 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
   const imageSrc = httpsAssetUrl(event.image_url);
   const detailsHref = httpsAssetUrl(event.signup_url);
   const [preview, setPreview] = useState<UrlPreview | null>(null);
-  const [websiteModalOpen, setWebsiteModalOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -232,32 +231,20 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
         ) : null}
         {detailsHref ? (
           <div style={{ marginTop: 2 }}>
-            <button
-              type="button"
-              onClick={() => setWebsiteModalOpen(true)}
+            <ExternalSiteLink
+              href={detailsHref}
               style={{
                 fontSize: 13,
                 fontWeight: 800,
                 textDecoration: "none",
                 color: isDark ? "#93c5fd" : "#1d4ed8",
-                background: "none",
-                border: "none",
-                padding: 0,
-                cursor: "pointer",
-                fontFamily: "inherit",
               }}
             >
               Website
-            </button>
+            </ExternalSiteLink>
           </div>
         ) : null}
       </div>
-      <ExternalSiteEmbedModal
-        open={websiteModalOpen && Boolean(detailsHref)}
-        url={detailsHref}
-        onClose={() => setWebsiteModalOpen(false)}
-        title="Event website"
-      />
     </div>
   );
 }

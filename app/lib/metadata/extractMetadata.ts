@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import net from "node:net";
+import { hostBlocksInAppPreview } from "@/app/lib/neverEmbedHosts";
 
 export type ExtractedMetadata = {
   title: string | null;
@@ -105,6 +106,9 @@ export function headersBlockIframeEmbedding(headers: Headers): boolean {
 export async function checkUrlEmbeddable(websiteUrl: string): Promise<{ embeddable: boolean }> {
   const parsedUrl = await assertSafePublicHttpUrl(websiteUrl);
   const safeUrl = parsedUrl.toString();
+  if (hostBlocksInAppPreview(safeUrl)) {
+    return { embeddable: false };
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
 

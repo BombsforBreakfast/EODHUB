@@ -9,6 +9,7 @@ import {
   youtubeVideoIdFromUrl,
 } from "@/app/components/memorial/scrapbook/scrapbookHelpers";
 import { supabase } from "@/app/lib/lib/supabaseClient";
+import { hostBlocksInAppPreview } from "@/app/lib/neverEmbedHosts";
 
 const DASHBOARD_NAV_LINK_BLUE = "#2563eb";
 
@@ -64,6 +65,11 @@ export function ExternalSiteEmbedModal({
   useEffect(() => {
     if (!open || !normalized || ytId) {
       setViewMode("iframe");
+      return;
+    }
+
+    if (hostBlocksInAppPreview(normalized)) {
+      setViewMode("fallback");
       return;
     }
 
@@ -377,9 +383,21 @@ type LinkProps = {
 
 /**
  * Button styled like a link; opens {@link ExternalSiteEmbedModal} instead of navigating away.
+ * Known iframe-breakers (Adzuna, LinkedIn, USAJobs, …) open in a new tab.
  */
 export function ExternalSiteLink({ href, children, style, ariaLabel }: LinkProps) {
   const [open, setOpen] = useState(false);
+  const normalized = scrapbookHttpsUrl(href);
+  const skipPreview = Boolean(normalized && hostBlocksInAppPreview(normalized));
+
+  if (skipPreview && normalized) {
+    return (
+      <a href={normalized} target="_blank" rel="noopener noreferrer" aria-label={ariaLabel} style={style}>
+        {children}
+      </a>
+    );
+  }
+
   return (
     <>
       <button
