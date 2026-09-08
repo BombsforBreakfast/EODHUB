@@ -1,0 +1,4 @@
+## 2025-02-14 - Empty HMAC signature bypass
+**Vulnerability:** Empty string signatures matched empty payloads in authentication logic due to implicit type coercion/missing check before calling timingSafeEqual in getArcadeAccessPassword/getLoginMaintenancePassword logic.
+**Learning:** In Node.js crypto logic, timingSafeEqual(Buffer.from(''), Buffer.from('')) returns true. If an environment variable is unset and falls back to an empty string, the HMAC signature calculation returns empty or the check bypasses auth if empty signatures match empty keys. Wait, actually the hmac of an empty string is NOT empty, but if the secret itself is empty and the returned `expected` signature is empty string (because of `if (!secret) return "";` in signPayload). Wait!
+**Prevention:** Verify both that `secret` is a strong random secret or fail securely, and never return true if signature is empty.
