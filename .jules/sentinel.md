@@ -1,0 +1,4 @@
+## 2024-05-25 - [Fix CRITICAL Hardcoded Password & HMAC Bypass]
+**Vulnerability:** A hardcoded fallback password ("bombsforbreakfast") in `app/lib/server/loginMaintenanceGate.ts` could allow unauthorized access to the login maintenance gate. Additionally, `timingSafeEqual` would evaluate to true if both expected and provided strings were empty strings.
+**Learning:** Hardcoded secrets in fallback paths negate environmental security controls. The empty-signature authentication bypass occurs because Node.js's `crypto.timingSafeEqual(Buffer.from(''), Buffer.from(''))` evaluates to `true`.
+**Prevention:** Use a securely generated, module-level constant (e.g., using `crypto.randomBytes(32).toString('hex')`) instead of a predictable hardcoded string. Explicitly check that `expected` is truthy before passing it to `timingSafeEqual`.
