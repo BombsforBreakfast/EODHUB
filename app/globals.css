@@ -442,6 +442,11 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
   margin-bottom: 18px;
   justify-content: center;
   width: 100%;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+html[data-theme="dark"] .master-shell-main .nav-root {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 /* Rabbithole ? header brand (mascot + title) */
@@ -631,7 +636,7 @@ a.rabbithole-brand-link:focus-visible {
     left: 0 !important;
     right: 0 !important;
     z-index: 1000 !important;
-    background: var(--background) !important;
+    background: color-mix(in srgb, var(--background) 90%, transparent) !important;
     display: flex !important;
     flex-wrap: wrap !important;
     justify-content: center !important;
@@ -643,11 +648,22 @@ a.rabbithole-brand-link:focus-visible {
     padding-top: env(safe-area-inset-top, 0px) !important;
     padding-left: max(16px, env(safe-area-inset-left, 0px)) !important;
     padding-right: max(16px, env(safe-area-inset-right, 0px)) !important;
+    padding-bottom: 10px !important;
     box-sizing: border-box !important;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06) !important;
+    backdrop-filter: blur(16px) saturate(1.2);
+    -webkit-backdrop-filter: blur(16px) saturate(1.2);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: none !important;
   }
   html[data-theme="dark"] .nav-root {
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+    background: rgba(28, 28, 28, 0.9) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    box-shadow: none !important;
+  }
+  html[data-theme="light"] .nav-root {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08) !important;
+    box-shadow: none !important;
   }
 
   /* Flatten cluster so flex order can place: avatar, bell, hub, settings, then full-width search */
@@ -771,10 +787,10 @@ a.rabbithole-brand-link:focus-visible {
   .feed-page-shell {
     max-width: 100% !important;
     width: 100% !important;
-    padding-left: max(10px, env(safe-area-inset-left, 0px)) !important;
-    padding-right: max(10px, env(safe-area-inset-right, 0px)) !important;
-    padding-top: 10px !important;
-    padding-bottom: 12px !important;
+    padding-left: max(2px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(2px, env(safe-area-inset-right, 0px)) !important;
+    padding-top: 12px !important;
+    padding-bottom: 16px !important;
     overflow-x: clip !important;
     box-sizing: border-box !important;
   }
@@ -796,6 +812,13 @@ a.rabbithole-brand-link:focus-visible {
     width: 100% !important;
     overflow-x: clip !important;
     box-sizing: border-box !important;
+  }
+
+  .hub-page-gutter {
+    padding-left: max(2px, env(safe-area-inset-left, 0px));
+    padding-right: max(2px, env(safe-area-inset-right, 0px));
+    padding-bottom: 16px;
+    box-sizing: border-box;
   }
 
   /* Sidebars / messaging route */
@@ -2231,6 +2254,91 @@ html.game-portrait-active .arcade-game-play-surface {
   min-width: 0;
   scrollbar-gutter: stable;
 }
+
+.feed-jobs-strip {
+  margin: 0 0 14px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.feed-jobs-strip-see-all-link {
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.feed-jobs-tile {
+  flex: 0 0 auto;
+  width: 128px;
+  height: 96px;
+  border-radius: 16px;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  cursor: pointer;
+  scroll-snap-align: start;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  box-sizing: border-box;
+}
+.feed-jobs-tile-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.feed-jobs-tile-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.feed-jobs-tile-copy {
+  position: relative;
+  z-index: 1;
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.feed-jobs-tile-title {
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.feed-jobs-tile-location {
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.feed-jobs-tile-see-all {
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.feed-jobs-tile-plus {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1;
+}
+.feed-jobs-tile-see-all-label {
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .circuit-tile {
   flex: 0 0 auto;
   width: 108px;

@@ -741,7 +741,7 @@ export default function NavBar() {
     display: "inline-flex",
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 9,
+    borderRadius: t.radiusSm,
     border: `1px solid ${t.navBorder}`,
     textDecoration: "none",
     fontWeight: 700,
@@ -751,7 +751,7 @@ export default function NavBar() {
   };
   const rightToolbarButton: React.CSSProperties = {
     ...navButton,
-    borderRadius: 11,
+    borderRadius: t.radiusSm,
     padding: "0 12px",
     fontWeight: 800,
   };
@@ -953,7 +953,7 @@ export default function NavBar() {
             <div className="nav-search-slot">
             <div className="nav-search-row">
               <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
-                <div className="nav-search-inner" style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 9, background: t.input, padding: "0 10px", gap: 6, minWidth: 0, boxSizing: "border-box" }}>
+                <div className="nav-search-inner" style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: t.radiusSm, background: t.input, padding: "0 10px", gap: 6, minWidth: 0, boxSizing: "border-box" }}>
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
                     <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
                   </svg>
@@ -969,7 +969,7 @@ export default function NavBar() {
                 </div>
 
                 {showSearchDropdown && (
-                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: t.radius, boxShadow: t.shadow, zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
                     {searchResults.length === 0 && !searching && (
                       <div style={{ padding: "12px 14px" }}>
                         <div style={{ fontSize: 14, color: t.textMuted, textAlign: "center", marginBottom: 10 }}>No results found.</div>

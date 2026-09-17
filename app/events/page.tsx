@@ -1689,7 +1689,7 @@ function EventsPageInner() {
   }
 
   return (
-    <div style={{ color: t.text }}>
+    <div className="hub-page-gutter" style={{ color: t.text }}>
       <ImageCropDialog
         open={eventCoverCropOpen}
         imageSrc={eventCoverCropSrc}
@@ -1772,6 +1772,7 @@ function EventsPageInner() {
             borderRadius: 16,
             padding: 24,
             background: t.surface,
+            boxShadow: t.shadow,
           }}
         >
           <div
@@ -2082,7 +2083,7 @@ function EventsPageInner() {
       )}
 
       {showMemorialForm && (
-        <div style={{ marginTop: 20, border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
+        <div style={{ marginTop: 20, border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface, boxShadow: t.shadow }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Memorial</div>
             <button
@@ -2428,6 +2429,7 @@ function EventsPageInner() {
           borderRadius: 16,
           background: t.surface,
           overflow: "hidden",
+          boxShadow: t.shadow,
         }}
       >
         <div

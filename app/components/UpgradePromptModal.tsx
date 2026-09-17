@@ -61,7 +61,7 @@ export default function UpgradePromptModal({
           maxWidth: 430,
           background: t.surface,
           border: `1px solid ${t.border}`,
-          borderRadius: 14,
+          borderRadius: t.radius,
           padding: "22px 20px",
           boxShadow: "0 16px 48px rgba(0,0,0,0.22)",
         }}

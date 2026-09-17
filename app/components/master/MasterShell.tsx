@@ -293,7 +293,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
           width: "100%",
           maxWidth: 1800,
           margin: "0 auto",
-          padding: "16px 20px 24px",
+          padding: "16px 4px 24px",
           boxSizing: "border-box",
           background: t.bg,
           minHeight: "100vh",

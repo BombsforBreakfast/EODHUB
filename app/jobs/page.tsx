@@ -66,6 +66,28 @@ const DEFAULT_FILTERS: JobFilterState = {
   salaryMin: "",
 };
 
+type JobSort = "recent" | "az" | "za";
+
+function sortJobs(jobs: JobListItem[], sort: JobSort): JobListItem[] {
+  if (jobs.length === 0) return jobs;
+  const copy = [...jobs];
+  const displayTitle = (j: JobListItem) => (j.title || j.og_title || "Untitled Job").trim();
+  if (sort === "recent") {
+    copy.sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
+    return copy;
+  }
+  if (sort === "az") {
+    copy.sort((a, b) => displayTitle(a).localeCompare(displayTitle(b)));
+    return copy;
+  }
+  copy.sort((a, b) => displayTitle(b).localeCompare(displayTitle(a)));
+  return copy;
+}
+
 function formatPayValue(n: number): string {
   if (n >= 10000) return `$${Math.round(n / 1000)}k`;
   if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
@@ -117,6 +139,7 @@ export default function JobsPage() {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<JobFilterState>(DEFAULT_FILTERS);
+  const [jobSort, setJobSort] = useState<JobSort>("recent");
   const [isMobile, setIsMobile] = useState(false);
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
@@ -318,9 +341,9 @@ export default function JobsPage() {
   const regionOptions = useMemo(() => uniqueJobRegionOptions(jobs), [jobs]);
 
   const visibleJobs = useMemo(() => {
-    if (!canUseJobFilters) return jobs;
-    return applyJobFilters(jobs, filters);
-  }, [jobs, filters, canUseJobFilters]);
+    const filtered = !canUseJobFilters ? jobs : applyJobFilters(jobs, filters);
+    return sortJobs(filtered, jobSort);
+  }, [jobs, filters, canUseJobFilters, jobSort]);
 
   const hasActiveFilters =
     filters.keyword !== "" ||
@@ -330,7 +353,7 @@ export default function JobsPage() {
   const inputStyle: React.CSSProperties = {
     width: "100%",
     padding: "8px 10px",
-    borderRadius: 8,
+    borderRadius: t.radiusSm,
     border: `1px solid ${t.inputBorder}`,
     background: t.input,
     color: t.text,
@@ -340,6 +363,7 @@ export default function JobsPage() {
 
   return (
     <div
+      className="hub-page-gutter"
       style={{
         width: "100%",
         boxSizing: "border-box",
@@ -404,11 +428,11 @@ export default function JobsPage() {
       </div>
 
       {canUseJobFilters && (
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
+        <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, background: t.surface, padding: 16, marginBottom: 14, boxShadow: t.shadow }}>
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr auto",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr 1fr auto",
               gap: 10,
               alignItems: "center",
             }}
@@ -449,6 +473,17 @@ export default function JobsPage() {
               ))}
             </select>
 
+            <select
+              value={jobSort}
+              onChange={(e) => setJobSort(e.target.value as JobSort)}
+              aria-label="Sort jobs"
+              style={inputStyle}
+            >
+              <option value="recent">Date posted (newest)</option>
+              <option value="az">Alphabetical A–Z</option>
+              <option value="za">Alphabetical Z–A</option>
+            </select>
+
             {hasActiveFilters && (
               <button
                 type="button"
@@ -482,7 +517,7 @@ export default function JobsPage() {
       )}
 
       {!loading && userId && (
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
+        <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, background: t.surface, padding: 16, marginBottom: 14, boxShadow: t.shadow }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Saved jobs</div>
@@ -543,7 +578,7 @@ export default function JobsPage() {
                 return (
                   <div
                     key={job.id}
-                    style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}
+                    style={{ border: `1px solid ${t.border}`, borderRadius: t.radiusSm, background: t.bg, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>
                       {job.title || "Untitled Job"}

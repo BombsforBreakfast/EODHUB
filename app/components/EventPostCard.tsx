@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
-import { FEED_MEDIA_RADIUS, FEED_SECTION_GAP } from "../lib/feedLayout";
+import { FEED_SECTION_GAP } from "../lib/feedLayout";
 import { ExternalSiteEmbedModal, ExternalSiteLink } from "./ExternalSiteEmbedModal";
 import { hostBlocksInAppPreview } from "@/app/lib/neverEmbedHosts";
 import ExpandableText from "./ExpandableText";
@@ -132,9 +132,10 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
         maxWidth,
         marginLeft: "auto",
         marginRight: "auto",
-        borderRadius: FEED_MEDIA_RADIUS,
-        border: `1px solid ${t.borderLight}`,
+        borderRadius: t.radius,
+        border: `1px solid ${t.border}`,
         background: isDark ? "rgba(255,255,255,0.02)" : t.bg,
+        boxShadow: t.shadow,
         overflow: "hidden",
       }}
     >
@@ -221,7 +222,7 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
         </button>
       )}
 
-      <div style={{ padding: "10px 12px 12px", display: "grid", gap: 6 }}>
+      <div style={{ padding: "12px 14px 14px", display: "grid", gap: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{eventDate}</div>
         {event.event_time ? <div style={{ fontSize: 14, color: t.text }}>{event.event_time}</div> : null}
         {(event.location || event.organization) ? (

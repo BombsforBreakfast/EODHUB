@@ -44,9 +44,10 @@ export default function JobFeedCard({
     <div
       style={{
         border: `1px solid ${t.border}`,
-        borderRadius: 12,
+        borderRadius: t.radius,
         overflow: "hidden",
         background: t.surface,
+        boxShadow: t.shadow,
       }}
     >
       {job.applications_under_review && <JobApplicationsUnderReviewBadge />}
@@ -57,7 +58,7 @@ export default function JobFeedCard({
         onAvailabilityChange={setImageAvailable}
       />
 
-      <div style={{ padding: 12 }}>
+      <div style={{ padding: 16 }}>
         <JobCardClickableText
           imageAvailable={imageAvailable}
           onOpenDetails={() => onOpenDetails(modalJob)}
@@ -72,7 +73,16 @@ export default function JobFeedCard({
 
           <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span>{job.category || "General"}</span>
-            {job.created_at && <span>• {new Date(job.created_at).toLocaleDateString()}</span>}
+            {job.created_at && (
+              <span>
+                • Posted{" "}
+                {new Date(job.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </span>
+            )}
             {job.source_type === "community" && (
               <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
                 Community

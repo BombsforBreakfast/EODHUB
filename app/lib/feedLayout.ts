@@ -10,28 +10,28 @@ export const FEED_POST_IMAGES_MAX_WIDTH = "100%" as const;
 export const FEED_POST_EMBED_MAX_WIDTH = "100%" as const;
 
 /** Post card padding — tighter on mobile, slightly roomier on desktop. */
-export const FEED_POST_CARD_PADDING = "clamp(8px, 2vw, 12px)" as const;
+export const FEED_POST_CARD_PADDING = "clamp(12px, 2.4vw, 16px)" as const;
 
-/** Post card corner radius — used for nested embeds, not outer post shells. */
-export const FEED_POST_CARD_RADIUS = 8 as const;
+/** Post card corner radius — outer shells and nested embeds. */
+export const FEED_POST_CARD_RADIUS = 16 as const;
 
-/** Vertical gap between posts in the feed list (when not using divider-only layout). */
-export const FEED_POST_LIST_GAP = "clamp(6px, 1.6vw, 10px)" as const;
+/** Vertical gap between posts in the feed list. */
+export const FEED_POST_LIST_GAP = "clamp(4px, 1vw, 6px)" as const;
 
 /** Spacing between header, body, media, actions, and comments within a post. */
-export const FEED_SECTION_GAP = "clamp(6px, 1.6vw, 8px)" as const;
+export const FEED_SECTION_GAP = "clamp(8px, 1.8vw, 12px)" as const;
 
 /** Media tile corner radius. */
-export const FEED_MEDIA_RADIUS = 6 as const;
+export const FEED_MEDIA_RADIUS = 10 as const;
 
 /** Gap between images in a multi-image grid. */
-export const FEED_MEDIA_GRID_GAP = "clamp(3px, 1vw, 5px)" as const;
+export const FEED_MEDIA_GRID_GAP = "clamp(4px, 1.2vw, 8px)" as const;
 
 /** Action row internal gap. */
-export const FEED_ACTION_ROW_GAP = "clamp(6px, 1.6vw, 10px)" as const;
+export const FEED_ACTION_ROW_GAP = "clamp(8px, 1.8vw, 12px)" as const;
 
 /** Action row vertical padding (compact tap targets without excess height). */
-export const FEED_ACTION_ROW_PADDING = "clamp(4px, 1.2vw, 6px) 0" as const;
+export const FEED_ACTION_ROW_PADDING = "clamp(6px, 1.4vw, 8px) 0" as const;
 
 /** Author avatar in post header. */
 export const FEED_POST_AVATAR_SIZE = 36 as const;
@@ -69,17 +69,21 @@ export const feedMediaGridStyle = {
 };
 
 type FeedThemeLike = {
-  borderLight: string;
+  border: string;
+  surface: string;
+  shadow?: string;
+  radius?: number;
 };
 
-/** Divider-based post shell — content-first, no heavy boxed card. */
+/** Hairline rounded post shell on Hub surface. */
 export function feedPostCardStyle(t: FeedThemeLike) {
   return {
-    border: "none" as const,
-    borderBottom: `1px solid ${t.borderLight}`,
-    borderRadius: 0,
+    border: `1px solid ${t.border}`,
+    borderRadius: t.radius ?? FEED_POST_CARD_RADIUS,
     padding: FEED_POST_CARD_PADDING,
-    background: "transparent" as const,
+    background: t.surface,
+    boxShadow: t.shadow,
+    marginBottom: FEED_POST_LIST_GAP,
     minWidth: 0,
     maxWidth: "100%" as const,
     overflow: "hidden" as const,

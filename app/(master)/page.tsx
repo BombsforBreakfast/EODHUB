@@ -132,6 +132,7 @@ import {
   FEED_POST_AVATAR_SIZE,
   FEED_POST_EMBED_MAX_WIDTH,
   FEED_POST_IMAGES_MAX_WIDTH,
+  FEED_POST_LIST_GAP,
   FEED_SECTION_GAP,
   feedContainedImageStyle,
   feedPostCardStyle,
@@ -191,13 +192,17 @@ import {
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
 
-/** Lazy chunks � load on interaction or when feed content needs them (no extra data fetching). */
+/** Lazy chunks — load on interaction or when feed content needs them (no extra data fetching). */
 const EmojiPickerButton = dynamic(() => import("../components/EmojiPickerButton"), { ssr: false });
 const GifPickerButton = dynamic(() => import("../components/GifPickerButton"), { ssr: false });
 const OnlineNowStrip = dynamic(() => import("../components/OnlineNowStrip"), { ssr: false });
 const ChatroomLivePrompt = dynamic(() => import("../components/ChatroomLivePrompt"), { ssr: false });
 const CollapsingCircuitStrip = dynamic(
   () => import("../components/circuit/CollapsingCircuitStrip"),
+  { ssr: false },
+);
+const FeedRecentJobsStrip = dynamic(
+  () => import("../components/jobs/FeedRecentJobsStrip"),
   { ssr: false },
 );
 const MemberPaywallModal = dynamic(() => import("../components/MemberPaywallModal"), { ssr: false });
@@ -398,7 +403,7 @@ const INITIAL_FEED_POST_LIMIT = 5;
 const EAGER_FEED_AVATAR_COUNT = 2;
 const FEED_AUTO_LOAD_LIMIT = 10;
 const FEED_LOAD_MORE_INCREMENT = 10;
-/** Ranked rows to prefetch before wall/moderation filters; keep small � only 5 render on first paint. */
+/** Ranked rows to prefetch before wall/moderation filters; keep small — only 5 render on first paint. */
 const INITIAL_RANKED_POSTS_LIMIT = INITIAL_FEED_POST_LIMIT + 10;
 const FULL_FEED_HYDRATION_DELAY_MS = 400;
 
@@ -440,6 +445,7 @@ type InitialFeedBatchCache = {
   profileCountryMap: Map<string, string | null>;
   profileEmployerMap: Map<string, boolean | null>;
   profilePureAdminMap: Map<string, boolean | null>;
+  profileEmailMap: Map<string, string | null>;
   profilePublicMemberMap: Map<string, boolean>;
 };
 const FEED_REALTIME_DEBOUNCE_MS = 2000;
@@ -501,7 +507,7 @@ const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
 
 /** How many avatars show per "page" on desktop before clicking the arrows. */
 const DISCOVER_PAGE_SIZE = 5;
-/** Insert �Connect with Verified Members� after this many feed posts. */
+/** Insert “Connect with Verified Members” after this many feed posts. */
 const DISCOVER_AFTER_POSTS = 2;
 
 type Comment = {
@@ -589,6 +595,7 @@ type FeedPost = RankedPostRow & {
   authorCountry: string | null;
   authorIsEmployer: boolean | null;
   authorIsPureAdmin: boolean | null;
+  authorEmail: string | null;
   authorHasPublicMemberProfile: boolean;
   likeCount: number;
   commentCount: number;
@@ -666,7 +673,7 @@ function formatEventDisplayDate(dateIso: string | null | undefined) {
 function extractLegacyEventTitle(content: string | null | undefined): string | null {
   if (!content) return null;
   // Older auto-post formats often looked like:
-  // "?? New Event: Title ??? Wednesday... ?? Org"
+  // "📅 New Event: Title 🗓️ Wednesday... 🏢 Org"
   // We only want the actual event title segment.
   const line = content
     .split(/\r?\n/)
@@ -679,7 +686,7 @@ function extractLegacyEventTitle(content: string | null | undefined): string | n
 
   const titleOnly = afterLabel
     // strip trailing date/location chunks often prefixed with emojis
-    .replace(/\s+[????????].*$/u, "")
+    .replace(/\s+[🗓📅🏢📍].*$/u, "")
     .trim();
   return titleOnly || null;
 }
@@ -879,7 +886,7 @@ function memorialDismissStorageKey(userId: string): string {
   return `eodhub.dismissedMemorialIds:${userId}`;
 }
 
-/** Local calendar day (YYYY-MM-DD) � dismissals reset after midnight in the user's timezone. */
+/** Local calendar day (YYYY-MM-DD) — dismissals reset after midnight in the user's timezone. */
 function localCalendarDateKey(d = new Date()): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -990,7 +997,7 @@ export default function HomePage() {
   const confirmDialog = useConfirm();
   const queryClient = useQueryClient();
   const { user: authUser, isLoading: authLoading } = useAuth();
-  /** Stable key � OAuth/token refresh must not re-run feed init when the user id is unchanged. */
+  /** Stable key — OAuth/token refresh must not re-run feed init when the user id is unchanged. */
   const authUserId = authUser?.id ?? null;
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
@@ -1096,7 +1103,7 @@ export default function HomePage() {
   const [plankHolderModalOpen, setPlankHolderModalOpen] = useState(false);
   // Hidden state lives in sessionStorage so it resets on each new login/tab session.
   const [plankHolderCardHidden, setPlankHolderCardHidden] = useState<boolean>(false);
-  // Earned banner dismiss is permanent (localStorage) � badge remains on profile.
+  // Earned banner dismiss is permanent (localStorage) — badge remains on profile.
   const [plankHolderBannerDismissed, setPlankHolderBannerDismissed] = useState<boolean>(false);
 
   // Biz/Org submission form
@@ -1226,7 +1233,7 @@ export default function HomePage() {
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [flagModal, setFlagModal] = useState<{ contentType: "post" | "comment"; contentId: string } | null>(null);
 
-  // TODO: set to false before launch � bypasses engagement threshold so button shows on every post for testing
+  // TODO: set to false before launch — bypasses engagement threshold so button shows on every post for testing
   const RABBITHOLE_THRESHOLD_BYPASS = true;
   const [rabbitholeModalPost, setRabbitholeModalPost] = useState<{ id: string; content: string; og_title: string | null } | null>(null);
   const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
@@ -1305,7 +1312,7 @@ export default function HomePage() {
     if (plankHolderInitializedRef.current && completed.length > 0 && isPlankHolderChallengeOpen(next)) {
       const task = completed[0];
       setPlankHolderToast({
-        title: "? Challenge Updated",
+        title: "⚓ Challenge Updated",
         detail: `${PLANK_HOLDER_TASK_LABELS[task]} Complete`,
         progress: `${next.progress.completedCount} / ${next.progress.total} Complete`,
       });
@@ -1571,14 +1578,14 @@ export default function HomePage() {
     });
   }, [plankHolderChallenge]);
 
-  /** Legacy mobile ?tab= links ? dedicated routes (no in-page section tabs on mobile). */
+  /** Legacy mobile ?tab= links → dedicated routes (no in-page section tabs on mobile). */
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
     if (!tab || tab === "feed") return;
     const dest: Record<string, string> = {
       jobs: "/jobs",
       businesses: "/businesses",
-      lemonlot: "/lemon-lot",
+      lemonlot: PRODUCT_FEATURE_FLAGS.lemonLotEnabled ? "/lemon-lot" : "/",
       dashboard: "/",
     };
     const path = dest[tab];
@@ -2526,7 +2533,9 @@ export default function HomePage() {
           saved: true,
         });
       } else {
-        const job = jobs.find((j) => j.id === jobId);
+        const job =
+          jobs.find((j) => j.id === jobId) ??
+          (jobDetailsModal?.id === jobId ? jobDetailsModal : null);
         await toggleSavedJob({
           queryClient,
           supabase,
@@ -2535,7 +2544,7 @@ export default function HomePage() {
           saved: false,
           optimisticRow: job ? savedJobRowFromJob(job) : undefined,
         });
-        // Notify job poster (fire and forget G�� no actor name for privacy)
+        // Notify job poster (fire and forget — no actor name for privacy)
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
           void postNotifyJson(supabase, {
             user_id: job.user_id,
@@ -2906,6 +2915,7 @@ export default function HomePage() {
       authorCountry: null,
       authorIsEmployer: null,
       authorIsPureAdmin: null,
+      authorEmail: null,
       authorHasPublicMemberProfile: true,
       likeCount: 0,
       commentCount: 0,
@@ -3090,6 +3100,7 @@ export default function HomePage() {
     const profileCountryMap = new Map<string, string | null>();
     const profileEmployerMap = new Map<string, boolean | null>();
     const profilePureAdminMap = new Map<string, boolean | null>();
+    const profileEmailMap = new Map<string, string | null>();
     const profilePublicMemberMap = new Map<string, boolean>();
 
     (profileRes.data as ProfileName[] | null)?.forEach((profile) => {
@@ -3103,6 +3114,7 @@ export default function HomePage() {
       profileCountryMap.set(profile.user_id, profile.country ?? null);
       profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+      profileEmailMap.set(profile.user_id, profile.email ?? null);
       profilePublicMemberMap.set(
         profile.user_id,
         hasPublicMemberProfile({
@@ -3145,6 +3157,7 @@ export default function HomePage() {
         authorCountry: profileCountryMap.get(authorUserId) ?? null,
         authorIsEmployer: profileEmployerMap.get(authorUserId) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(authorUserId) ?? null,
+        authorEmail: profileEmailMap.get(authorUserId) ?? null,
         authorHasPublicMemberProfile: profilePublicMemberMap.get(authorUserId) ?? true,
         likeCount: agg.totalCount,
         commentCount: commentCountMap.get(post.id) ?? 0,
@@ -3193,6 +3206,7 @@ export default function HomePage() {
       profileCountryMap,
       profileEmployerMap,
       profilePureAdminMap,
+      profileEmailMap,
       profilePublicMemberMap,
     };
   }
@@ -3228,6 +3242,7 @@ export default function HomePage() {
     const profileCountryMap = new Map(cache.profileCountryMap);
     const profileEmployerMap = new Map(cache.profileEmployerMap);
     const profilePureAdminMap = new Map(cache.profilePureAdminMap);
+    const profileEmailMap = new Map(cache.profileEmailMap ?? []);
     const profilePublicMemberMap = new Map(cache.profilePublicMemberMap);
 
     const mergeProfiles = (rows: ProfileName[] | null | undefined) => {
@@ -3253,6 +3268,9 @@ export default function HomePage() {
         }
         if (!profilePureAdminMap.has(profile.user_id)) {
           profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+        }
+        if (!profileEmailMap.has(profile.user_id)) {
+          profileEmailMap.set(profile.user_id, profile.email ?? null);
         }
         if (!profilePublicMemberMap.has(profile.user_id)) {
           profilePublicMemberMap.set(
@@ -3693,6 +3711,7 @@ export default function HomePage() {
         authorCountry: profileCountryMap.get(authorUserId) ?? null,
         authorIsEmployer: profileEmployerMap.get(authorUserId) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(authorUserId) ?? null,
+        authorEmail: profileEmailMap.get(authorUserId) ?? null,
         authorHasPublicMemberProfile: profilePublicMemberMap.get(authorUserId) ?? true,
         likeCount: agg.totalCount,
         commentCount: commentsForPost.reduce((sum, c) => sum + 1 + c.replyCount, 0),
@@ -3832,7 +3851,7 @@ export default function HomePage() {
     const fetchedRankedPostCount = (rankedPostsData ?? []).length;
     let rawPosts = (rankedPostsData ?? []) as RankedPostRow[];
 
-    // Notification deep links use /?postId=GǪ; that post may not appear in ranked_posts anymore.
+    // Notification deep links use /?postId=ΓÇª; that post may not appear in ranked_posts anymore.
     if (typeof window !== "undefined") {
       const deepId = new URLSearchParams(window.location.search).get("postId");
       if (deepId && !rawPosts.some((p) => p.id === deepId)) {
@@ -3869,7 +3888,7 @@ export default function HomePage() {
             ...rawPosts,
           ];
         } else {
-          // Post is deleted, hidden for review, or a wall-only post G�� it will never
+          // Post is deleted, hidden for review, or a wall-only post ΓÇö it will never
           // appear in the public feed. Flag it so the scroll effect can clean up
           // the URL params instead of retrying forever.
           setDeepLinkPostUnavailable(deepId);
@@ -4079,7 +4098,7 @@ export default function HomePage() {
     }
 
     // Legacy resilience: older event feed posts can exist without posts.event_id.
-    // Infer linkage by matching "?? New Event: <title>" + same author.
+    // Infer linkage by matching "📅 New Event: <title>" + same author.
     const missingEventCandidates = rawPosts
       .filter((post) => !eventIdByPostId.get(post.id))
       .map((post) => ({
@@ -4221,11 +4240,12 @@ export default function HomePage() {
     const profileCountryMap = new Map<string, string | null>();
     const profileEmployerMap = new Map<string, boolean | null>();
     const profilePureAdminMap = new Map<string, boolean | null>();
+    const profileEmailMap = new Map<string, string | null>();
     const profilePublicMemberMap = new Map<string, boolean>();
 
     (profileData as ProfileName[] | null)?.forEach((profile) => {
       // System / pure-admin accounts (EOD-HUB, RUMINT, etc.) intentionally
-      // have no first_name/last_name � they carry a display_name instead.
+      // have no first_name/last_name — they carry a display_name instead.
       // Prefer display_name so those accounts never surface as "User".
       const fullName =
         (profile.display_name?.trim() || null) ||
@@ -4238,6 +4258,7 @@ export default function HomePage() {
       profileCountryMap.set(profile.user_id, profile.country ?? null);
       profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+      profileEmailMap.set(profile.user_id, profile.email ?? null);
       profilePublicMemberMap.set(
         profile.user_id,
         hasPublicMemberProfile({
@@ -4615,6 +4636,7 @@ export default function HomePage() {
         authorCountry: profileCountryMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
+        authorEmail: profileEmailMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
         authorHasPublicMemberProfile: profilePublicMemberMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? true,
         likeCount: agg.totalCount,
         commentCount: commentsForPost.reduce(
@@ -4693,7 +4715,7 @@ export default function HomePage() {
 
     // Rank: fresh posts float to top; staff posts soft-pin ~2h; RUMINT news ~3h.
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
-    // Event promos ? Circuit. Scrapbook day-of CTA stays in feed. Memorials untouched.
+    // Event promos → Circuit. Scrapbook day-of CTA stays in feed. Memorials untouched.
     const feedOnlyPosts = mergedPosts.filter((p) => {
       const ct = typeof p.content_type === "string" ? p.content_type : "";
       if (ct === "event_scrapbook") return true;
@@ -6159,14 +6181,14 @@ export default function HomePage() {
 
         if (!authUser || !currentUserId) return;
 
-        // Check verification status G�� unverified users go to /pending
+        // Check verification status ΓÇö unverified users go to /pending
         const profileCheck = await fetchViewerProfileCached(queryClient, supabase, authUser);
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
         const isPureAdminProfile = !!(profileCheck as { is_pure_admin?: boolean | null } | null)?.is_pure_admin;
 
         // Sync Google OAuth name to profile if first_name is missing
-        // (skip for pure admins � they intentionally have no public name)
+        // (skip for pure admins — they intentionally have no public name)
         const googleName = authUser.user_metadata?.full_name || authUser.user_metadata?.name;
         if (!isPureAdminProfile && profileCheck && !profileCheck.first_name && googleName) {
           const parts = (googleName as string).trim().split(/\s+/);
@@ -6408,7 +6430,7 @@ export default function HomePage() {
     };
 
     // Post was fetched individually and confirmed unavailable (deleted, hidden, or
-    // wall-only). Nothing to highlight G�� clean up the URL and stop.
+    // wall-only). Nothing to highlight ΓÇö clean up the URL and stop.
     if (deepLinkPostUnavailable === postId) {
       stripDeepLinkParams();
       return;
@@ -6456,7 +6478,7 @@ export default function HomePage() {
       if (attempt < maxAttempts) {
         timeoutId = window.setTimeout(tryScroll, 80);
       }
-      // Don't strip URL params on exhaustion G�� avoids killing the params before
+      // Don't strip URL params on exhaustion ΓÇö avoids killing the params before
       // the target element renders, which would prevent any re-attempt.
     };
 
@@ -6729,7 +6751,7 @@ export default function HomePage() {
 
   function SkeletonCard() {
     return (
-      <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, padding: 16, background: t.surface, boxShadow: t.shadow }}>
         <SkeletonBlock width="55%" height={14} />
         <SkeletonBlock width="75%" height={11} />
         <SkeletonBlock width="40%" height={11} />
@@ -7219,7 +7241,7 @@ export default function HomePage() {
           }}
         >
             <>
-          {/* Pending Members � community vouching (deferred until after first feed paint) */}
+          {/* Pending Members — community vouching (deferred until after first feed paint) */}
           {feedAboveFoldExtrasReady &&
             userId &&
             !requestingAccessHidden &&
@@ -7330,7 +7352,7 @@ export default function HomePage() {
                           padding: 0,
                         }}
                       >
-                        �
+                        ×
                       </button>
                       <a
                         href={`/profile/${m.user_id}`}
@@ -7625,6 +7647,10 @@ export default function HomePage() {
             <CollapsingCircuitStrip currentUserId={userId} currentUserEmail={currentUserEmail} />
           ) : null}
 
+          {userId ? (
+            <FeedRecentJobsStrip onOpenDetails={setJobDetailsModal} />
+          ) : null}
+
           <OnlineNowStrip
             currentUserId={userId}
             onEnterChat={chatroomUiUnlocked ? expandChatroom : undefined}
@@ -7633,10 +7659,12 @@ export default function HomePage() {
           <div
             style={{
               marginTop: 0,
+              marginBottom: FEED_POST_LIST_GAP,
               border: `1px solid ${t.border}`,
-              borderRadius: 14,
-              padding: 16,
+              borderRadius: t.radius,
+              padding: 18,
               background: t.surface,
+              boxShadow: t.shadow,
             }}
           >
             {canUsePostAsSelector(currentUserEmail) && postAsAdminProfile ? (
@@ -7790,7 +7818,7 @@ export default function HomePage() {
                         cursor: "pointer",
                       }}
                     >
-                      �
+                      ×
                     </button>
                   </div>
                   );
@@ -8145,7 +8173,7 @@ export default function HomePage() {
                           </div>
                         )}
                         <div style={{ marginTop: 9, fontSize: 12, color: t.textMuted }}>
-                          {p.like_count} likes � {p.comment_count} comments
+                          {p.like_count} likes · {p.comment_count} comments
                         </div>
                       </div>
                     </div>
@@ -8173,7 +8201,7 @@ export default function HomePage() {
               const donation = memorialDonationConfig(m.category, m.service, memorialThemeOpts(m));
               const affiliation = m.is_international ? memorialAffiliationText(m) : null;
               return (
-                <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.outlineColor}`, borderRadius: 14, overflow: "hidden" }}>
+                <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.outlineColor}`, borderRadius: t.radius, overflow: "hidden", marginBottom: FEED_POST_LIST_GAP, boxShadow: t.shadow }}>
                   {/* Header banner */}
                   <div
                     style={{
@@ -9037,7 +9065,7 @@ export default function HomePage() {
                     <MurphyRabbitholeBanner />
                   )}
 
-                  {/* KC poll card: order is original post ? verdict ? poll ? toolbar ? comments */}
+                  {/* KC poll card: order is original post → verdict → poll → toolbar → comments */}
                   {post.kangaroo?.court && (
                     <KangarooCourtFeedSection
                       postId={post.id}
@@ -9089,7 +9117,7 @@ export default function HomePage() {
                       {PRODUCT_FEATURE_FLAGS.rabbitholeFeedActionsEnabled && userId && (RABBITHOLE_THRESHOLD_BYPASS || post.likeCount >= 3 || post.commentCount >= 2) && (
                         post.rabbithole_thread_id ? (
                           <div
-                            title="Filed to Rabbithole � locked"
+                            title="Filed to Rabbithole — locked"
                             style={{ position: "relative", flexShrink: 0 }}
                           >
                             <div
@@ -9585,7 +9613,7 @@ export default function HomePage() {
         width: "100%",
         maxWidth: 1800,
         margin: "0 auto",
-        padding: "24px 20px",
+        padding: "20px 2px",
         boxSizing: "border-box",
         background: t.bg,
         minHeight: "100vh",
@@ -9638,11 +9666,11 @@ export default function HomePage() {
             <>
               <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
                 <div>
-                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "�"}) jobs as of{" "}
+                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "—"}) jobs as of{" "}
                   {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
                 </div>
                 <div style={{ marginTop: 4 }}>
-                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "�"}) new jobs today!
+                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
                 </div>
                 {!isMobile && (
                   <div style={{ marginTop: 6 }}>
@@ -9650,7 +9678,7 @@ export default function HomePage() {
                       href="/jobs"
                       style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
                     >
-                      See all jobs G��
+                      See all jobs →
                     </a>
                   </div>
                 )}
@@ -9675,7 +9703,7 @@ export default function HomePage() {
                         color: t.text,
                       }}
                     >
-                      <option value="recent">Most recently listed</option>
+                      <option value="recent">Date posted (newest)</option>
                       <option value="az">Alphabetical A-Z</option>
                       <option value="za">Alphabetical Z-A</option>
                     </select>
@@ -9724,7 +9752,7 @@ export default function HomePage() {
 
           {/* Community leaderboard */}
           {showJobLeaderboard && isMobile && canViewFullJobs && jobLeaderboard.length > 0 && (
-            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "12px 16px" }}>
+            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: t.radius, background: t.surface, padding: "14px 16px", boxShadow: t.shadow }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
                 Top Community Contributors
               </div>
@@ -9879,7 +9907,7 @@ export default function HomePage() {
 
           {/* Submission form */}
           {showBizForm && (
-            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
+            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: t.radius, padding: 16, background: t.surface, boxShadow: t.shadow }}>
               {bizSubmitSuccess ? (
                 <div style={{ textAlign: "center", padding: "16px 0", color: "#16a34a", fontWeight: 700, fontSize: 14 }}>
                   Submitted! Our team will review and approve your listing.
@@ -10073,10 +10101,11 @@ export default function HomePage() {
                   }}
                   style={{
                     border: `1px solid ${t.border}`,
-                    borderRadius: 12,
+                    borderRadius: t.radius,
                     overflow: "hidden",
                     background: t.surface,
                     cursor: "pointer",
+                    boxShadow: t.shadow,
                   }}
                 >
                   <div style={{ display: "block", textDecoration: "none", color: "inherit" }}>
@@ -10660,7 +10689,7 @@ export default function HomePage() {
                 <div
                   style={{
                     marginTop: 12,
-                    borderRadius: 12,
+                    borderRadius: t.radius,
                     overflow: "hidden",
                     border: `1px solid ${t.border}`,
                   }}
@@ -10691,7 +10720,7 @@ export default function HomePage() {
               {(selectedFeedEvent.poc_name || selectedFeedEvent.poc_phone) && (
                 <div style={{ marginTop: 6, fontSize: 14 }}>
                   <strong>POC:</strong> {selectedFeedEvent.poc_name ?? ""}
-                  {selectedFeedEvent.poc_name && selectedFeedEvent.poc_phone ? " � " : ""}
+                  {selectedFeedEvent.poc_name && selectedFeedEvent.poc_phone ? " — " : ""}
                   {selectedFeedEvent.poc_phone ?? ""}
                 </div>
               )}
@@ -10729,7 +10758,7 @@ export default function HomePage() {
                       cursor: selectedFeedEventBusy ? "wait" : "pointer",
                     }}
                   >
-                    {selectedFeedEventMyStatus === "interested" ? "Interested ?" : "Interested"}
+                    {selectedFeedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
                   </button>
                   <button
                     type="button"
@@ -10745,7 +10774,7 @@ export default function HomePage() {
                       cursor: selectedFeedEventBusy ? "wait" : "pointer",
                     }}
                   >
-                    {selectedFeedEventMyStatus === "going" ? "Going ?" : "Going"}
+                    {selectedFeedEventMyStatus === "going" ? "Going ✓" : "Going"}
                   </button>
                   {selectedFeedEvent.signup_url && (
                     <ExternalSiteLink

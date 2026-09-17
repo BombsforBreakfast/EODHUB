@@ -142,7 +142,7 @@ export default function JobDetailsModal({
           maxHeight: "calc(100dvh - 24px)",
           background: t.surface,
           border: `1px solid ${t.border}`,
-          borderRadius: 14,
+          borderRadius: t.radius,
           boxShadow: "0 16px 48px rgba(0,0,0,0.28)",
           display: "flex",
           flexDirection: "column",
@@ -177,6 +177,16 @@ export default function JobDetailsModal({
             )}
             {job.source_type && (
               <div style={{ marginTop: 4, fontSize: 12, color: t.textFaint }}>Source: {job.source_type}</div>
+            )}
+            {job.created_at && (
+              <div style={{ marginTop: 4, fontSize: 12, color: t.textFaint }}>
+                Posted{" "}
+                {new Date(job.created_at).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </div>
             )}
             {job.applications_under_review && (
               <div style={{ marginTop: 10 }}>

@@ -48,9 +48,12 @@ export default function JobGridCard({
   const modalJob = job as JobModalData;
   const [imageAvailable, setImageAvailable] = useState(() => Boolean(job.og_image?.trim()));
   const hasSalary = job.pay_min !== null || job.pay_max !== null;
+  const postedLabel = job.created_at
+    ? `Posted ${new Date(job.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+    : null;
 
   return (
-    <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
+    <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, overflow: "hidden", background: t.surface, boxShadow: t.shadow, display: "flex", flexDirection: "column" }}>
       {job.applications_under_review && <JobApplicationsUnderReviewBadge />}
       <JobImage
         src={job.og_image}
@@ -58,7 +61,7 @@ export default function JobGridCard({
         height={150}
         onAvailabilityChange={setImageAvailable}
       />
-      <div style={{ padding: 12, display: "flex", flexDirection: "column", flex: 1 }}>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
         <JobCardClickableText
           imageAvailable={imageAvailable}
           onOpenDetails={() => onOpenDetails(modalJob)}
@@ -68,6 +71,11 @@ export default function JobGridCard({
           <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
             {(job.location || "Location not listed") + " · " + (job.category || "General")}
           </div>
+          {postedLabel && (
+            <div style={{ marginTop: 4, color: t.textFaint, fontSize: 12, fontWeight: 600 }}>
+              {postedLabel}
+            </div>
+          )}
 
           {hasSalary ? (
             <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>

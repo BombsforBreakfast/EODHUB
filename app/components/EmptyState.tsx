@@ -80,7 +80,7 @@ export default function EmptyState({
       style={{
         textAlign: "center",
         padding: compact ? "22px 16px" : "36px 20px",
-        borderRadius: 14,
+        borderRadius: t.radius,
         border: `1px dashed ${t.border}`,
         background: t.surface,
         ...style,

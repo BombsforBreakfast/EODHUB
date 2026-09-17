@@ -769,7 +769,7 @@ export default function LoginPage() {
 
   const inputStyle: React.CSSProperties = {
     padding: "12px 14px",
-    borderRadius: 14,
+    borderRadius: t.radiusSm,
     border: `1px solid ${t.inputBorder}`,
     fontSize: 18,
     width: "100%",
@@ -780,7 +780,7 @@ export default function LoginPage() {
 
   const buttonPrimary: React.CSSProperties = {
     padding: "14px 12px",
-    borderRadius: 14,
+    borderRadius: t.radius,
     border: "none",
     background: t.text,
     color: t.surface,
@@ -790,7 +790,7 @@ export default function LoginPage() {
 
   const buttonSecondary: React.CSSProperties = {
     padding: "13px 12px",
-    borderRadius: 14,
+    borderRadius: t.radius,
     border: `1px solid ${t.border}`,
     background: t.surface,
     color: t.text,
@@ -803,7 +803,7 @@ export default function LoginPage() {
       style={{
         minHeight: "100vh",
         boxSizing: "border-box",
-        padding: 20,
+        padding: 24,
         maxWidth: 500,
         margin: "0 auto",
         color: t.text,
@@ -855,6 +855,15 @@ export default function LoginPage() {
       </div>
 
       <div
+        style={{
+          background: t.surface,
+          border: `1px solid ${t.border}`,
+          borderRadius: t.radius,
+          boxShadow: t.shadow,
+          padding: 20,
+        }}
+      >
+      <div
         aria-live="polite"
         aria-atomic="true"
         style={{
@@ -866,7 +875,7 @@ export default function LoginPage() {
           padding: "8px 10px",
           borderRadius: 10,
           border: `1px solid ${t.border}`,
-          background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : t.surface,
+          background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : t.bg,
           transition: "background 0.35s ease",
           fontVariantNumeric: "tabular-nums",
           textAlign: "center",
@@ -1470,6 +1479,7 @@ export default function LoginPage() {
           </div>
         </div>
       )}
+      </div>
 
       <div
         style={{

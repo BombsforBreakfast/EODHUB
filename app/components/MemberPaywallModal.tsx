@@ -81,7 +81,7 @@ export default function MemberPaywallModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           background: t.surface,
-          borderRadius: 14,
+          borderRadius: t.radius,
           border: `1px solid ${t.border}`,
           maxWidth: 400,
           width: "100%",
