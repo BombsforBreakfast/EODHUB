@@ -2533,9 +2533,8 @@ export default function HomePage() {
           saved: true,
         });
       } else {
-        const job =
-          jobs.find((j) => j.id === jobId) ??
-          (jobDetailsModal?.id === jobId ? jobDetailsModal : null);
+        const listedJob = jobs.find((j) => j.id === jobId);
+        const job = listedJob ?? (jobDetailsModal?.id === jobId ? jobDetailsModal : null);
         await toggleSavedJob({
           queryClient,
           supabase,
@@ -2545,13 +2544,13 @@ export default function HomePage() {
           optimisticRow: job ? savedJobRowFromJob(job) : undefined,
         });
         // Notify job poster (fire and forget — no actor name for privacy)
-        if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
+        if (listedJob?.source_type === "community" && listedJob.user_id && listedJob.user_id !== userId) {
           void postNotifyJson(supabase, {
-            user_id: job.user_id,
+            user_id: listedJob.user_id,
             actor_name: "A member",
             type: "job_save",
             category: "jobs",
-            message: `Someone saved your job listing: ${job.title || "your posting"}`,
+            message: `Someone saved your job listing: ${listedJob.title || "your posting"}`,
             group_key: `job:${jobId}:saves`,
             dedupe_key: `job_save:${jobId}:${userId}`,
             metadata: { job_id: jobId },
