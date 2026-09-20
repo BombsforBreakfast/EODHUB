@@ -512,6 +512,10 @@ export default function LoginPage() {
   async function handleLogin() {
     setLoginMessage(null);
     clearEmailNotFoundGuidance();
+    if (!email.trim() || !password) {
+      setLoginMessage("Enter your email and password.");
+      return;
+    }
     try {
       setSubmitting(true);
 
@@ -586,23 +590,27 @@ export default function LoginPage() {
 
     if (password.length < SIGNUP_PASSWORD_MIN) {
       setSignupError(`Your password must be at least ${SIGNUP_PASSWORD_MIN} characters.`);
-      reportAuthFailure({
-        email,
-        failureReason: "CLIENT_VALIDATION_FAILED",
-        errorCode: "client_password_too_short",
-        sourceRoute: "/login",
-      });
+      if (email.trim()) {
+        reportAuthFailure({
+          email,
+          failureReason: "CLIENT_VALIDATION_FAILED",
+          errorCode: "client_password_too_short",
+          sourceRoute: "/login",
+        });
+      }
       return;
     }
 
     if (password !== confirmPassword) {
       setSignupError("Passwords do not match.");
-      reportAuthFailure({
-        email,
-        failureReason: "CLIENT_VALIDATION_FAILED",
-        errorCode: "password_mismatch",
-        sourceRoute: "/login",
-      });
+      if (email.trim()) {
+        reportAuthFailure({
+          email,
+          failureReason: "CLIENT_VALIDATION_FAILED",
+          errorCode: "password_mismatch",
+          sourceRoute: "/login",
+        });
+      }
       return;
     }
 

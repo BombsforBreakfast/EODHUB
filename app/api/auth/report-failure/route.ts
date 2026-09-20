@@ -72,6 +72,13 @@ export async function POST(req: NextRequest) {
   const failureReason = reasonRaw as FailedAuthReason;
   const emailAttempted = typeof record.email === "string" ? record.email.slice(0, MAX_EMAIL) : null;
   const errorCode = typeof record.errorCode === "string" ? record.errorCode.slice(0, MAX_ERROR_CODE) : null;
+  const hasEmail = typeof emailAttempted === "string" && !!emailAttempted.trim();
+  if (
+    !hasEmail &&
+    (failureReason === "CLIENT_VALIDATION_FAILED" || failureReason === "INVALID_PASSWORD")
+  ) {
+    return ALWAYS_OK;
+  }
   const rawErrorMessage =
     typeof record.rawErrorMessage === "string" ? record.rawErrorMessage.slice(0, MAX_RAW) : null;
   const sourceRoute =
