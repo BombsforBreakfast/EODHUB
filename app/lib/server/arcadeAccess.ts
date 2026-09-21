@@ -1,6 +1,6 @@
 /** Server-only arcade access gate. Never import from client components. */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 import { PRODUCT_FEATURE_FLAGS } from "../productFeatureFlags";
 import { isFounderUserId } from "./founderAccess";
 
@@ -9,8 +9,12 @@ export const ARCADE_UNLOCK_COOKIE = "arcade_preview_unlock";
 /** Cookie lifetime after a successful preview password (30 days). Kept for rollback path. */
 const UNLOCK_MAX_AGE_SEC = 60 * 60 * 24 * 30;
 
+// Security Enhancement: Generate a cryptographically secure random fallback password on module load to prevent empty-secret bypasses.
+const FALLBACK_PASSWORD = randomBytes(32).toString("hex");
+
 export function getArcadeAccessPassword(): string {
-  return (process.env.ARCADE_ACCESS_PASSWORD ?? "").trim();
+  // Security Enhancement: Use the secure fallback instead of an empty string to prevent unauthorized access bypasses.
+  return (process.env.ARCADE_ACCESS_PASSWORD || FALLBACK_PASSWORD).trim();
 }
 
 /**
