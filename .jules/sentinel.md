@@ -1,0 +1,4 @@
+## 2026-09-14 - Fix Empty Signature Authentication Bypass in Timing-Safe Comparisons
+**Vulnerability:** Found multiple instances where an empty fallback secret (`""`) or missing expected string combined with `crypto.timingSafeEqual` or custom constant-time functions can cause authentication bypass. In Node.js `timingSafeEqual(Buffer.from(''), Buffer.from(''))` returns true.
+**Learning:** Returning `""` for fallback secrets or not explicitly checking for a non-empty string when generating HMAC/expected values can allow users to provide empty inputs to match an empty expected secret or empty signed payload bypass authentication.
+**Prevention:** Always use securely generated random defaults (like `crypto.randomBytes(32).toString("base64")`) or explicitly throw/return `false` early when an expected secret is falsy, rather than using empty strings.
