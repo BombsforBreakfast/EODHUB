@@ -1,0 +1,4 @@
+## 2024-05-18 - Prevent XSS in JSON-LD Script Tags
+**Vulnerability:** Found a Cross-Site Scripting (XSS) vulnerability in `app/layout.tsx` where `JSON.stringify` was directly interpolated into a `dangerouslySetInnerHTML` script block for JSON-LD without escaping `<` characters.
+**Learning:** Directly injecting serialized JSON into HTML using `dangerouslySetInnerHTML` can lead to XSS if an attacker controls any of the values within the JSON, because browsers parse `<script>` blocks sequentially and a payload containing `</script><script>alert(1)</script>` within a JSON string will prematurely terminate the script block and execute the payload.
+**Prevention:** Always escape the `<` character when serializing JSON for injection into HTML script blocks. Use `.replace(/</g, "\\u003c")` on the `JSON.stringify` output.
