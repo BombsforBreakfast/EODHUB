@@ -9,6 +9,7 @@ for EOD-HUB as well as CRUU. Do not use the pending LLC account.
 - App name: EOD-HUB
 - Android package: com.eodhub.app
 - Production server: https://eod-hub.com
+- Target/compile SDK: Android 16 (API 36), required for new Play submissions
 - Version name: 1.5 (existing Android value)
 - Codemagic workflow: eod-hub-android
 

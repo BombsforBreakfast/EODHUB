@@ -13,6 +13,10 @@ if (!encoded && !existsSync(path)) {
 const content = encoded
   ? Buffer.from(encoded, "base64").toString("utf8")
   : readFileSync(path, "utf8");
-validateAndroidFirebaseConfig(content, process.env.EODHUB_FIREBASE_PROJECT_ID?.trim());
+const expectedProject = process.env.EODHUB_FIREBASE_PROJECT_ID?.trim();
+if (!expectedProject) {
+  throw new Error("Set EODHUB_FIREBASE_PROJECT_ID to the server's Firebase project ID before building Android.");
+}
+validateAndroidFirebaseConfig(content, expectedProject);
 if (encoded) writeFileSync(path, content, { mode: 0o600 });
 console.log("Android Firebase configuration verified for com.eodhub.app.");
