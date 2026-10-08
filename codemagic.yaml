@@ -68,13 +68,15 @@ workflows:
     max_build_duration: 60
     instance_type: linux_x2
     environment:
+      groups:
+        - eodhub_android
       android_signing:
         - eodhub_android_keystore
       vars:
         PACKAGE_NAME: com.eodhub.app
         CAPACITOR_SERVER_URL: https://eod-hub.com
       node: 20
-      java: 17
+      java: 21
     triggering:
       events:
         - push
@@ -90,18 +92,28 @@ workflows:
             npx cap add android
           fi
       - name: Sync Capacitor Android
-        script: npx cap sync android
+        script: |
+          node --test scripts/verify-android-firebase-config.test.mjs
+          node scripts/prepare-android-firebase-config.mjs
+          npx cap sync android
       - name: Set production server URL in Capacitor config
         script: |
           node scripts/patch-capacitor-server-url.mjs
           npx cap sync android
           node scripts/verify-capacitor-android-config.mjs
-      - name: Build Android App Bundle
+      - name: Build signed Android App Bundle and APK
         script: |
+          set -eu
+          : "${CM_KEYSTORE_PATH:?Android upload keystore is missing}"
+          : "${CM_KEYSTORE_PASSWORD:?Android upload keystore password is missing}"
+          : "${CM_KEY_ALIAS:?Android upload key alias is missing}"
+          : "${CM_KEY_PASSWORD:?Android upload key password is missing}"
           # Play requires monotonically increasing versionCode on every upload.
           # Keep versionName in android/app/build.gradle; bump VERSION_CODE from Codemagic BUILD_NUMBER.
           cd android
-          ./gradlew bundleRelease -PVERSION_CODE=$BUILD_NUMBER
+          chmod +x gradlew
+          ./gradlew bundleRelease assembleRelease testReleaseUnitTest -PVERSION_CODE="$BUILD_NUMBER"
     artifacts:
       - android/app/build/outputs/**/*.aab
       - android/app/build/outputs/**/*.apk
+      - android/app/build/test-results/**/*.xml
