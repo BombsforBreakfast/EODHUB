@@ -66,7 +66,7 @@ workflows:
   eod-hub-android:
     name: EOD-Hub Android Internal
     max_build_duration: 60
-    instance_type: linux_x2
+    instance_type: mac_mini_m2
     environment:
       groups:
         - eodhub_android
@@ -74,6 +74,7 @@ workflows:
         - eodhub_android_keystore
       vars:
         PACKAGE_NAME: com.eodhub.app
+        EODHUB_FIREBASE_PROJECT_ID: eod-hub-android
         CAPACITOR_SERVER_URL: https://eod-hub.com
       node: 20
       java: 21

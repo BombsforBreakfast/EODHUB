@@ -13,26 +13,27 @@ for EOD-HUB as well as CRUU. Do not use the pending LLC account.
 - Version name: 1.5 (existing Android value)
 - Codemagic workflow: eod-hub-android
 
-## Configuration still required before a signed test build
+## Current setup and configuration still required
 
-1. Inspect Codemagic for the existing eodhub_android_keystore reference.
-   If absent, obtain authorization to generate a separate EOD-HUB upload
-   key, keep a private backup, and upload it to Codemagic. Do not reuse
-   CRUU's upload key.
-2. Add an Android app with package com.eodhub.app to the Firebase project
-   used by EOD-HUB's server-side FIREBASE_SERVICE_ACCOUNT_JSON. Download
-   its actual google-services.json; do not use CRUU's file.
+1. The owner approved a separate EOD-HUB upload key. Codemagic accepted
+   eodhub_android_keystore on October 9, 2026. The private backup is in
+   C:\\Users\\miche\\Documents\\Codex\\private\\eodhub\\android and is excluded
+   from Git. CRUU's key is separate.
+2. A dedicated no-cost Firebase project eod-hub-android was created for
+   Android delivery. Complete registration of com.eodhub.app and download
+   its actual google-services.json. The server credential must belong to
+   this same project. Do not change the existing iOS/APNs configuration.
 3. In Codemagic's eodhub_android environment group, securely store
    FIREBASE_ANDROID_CONFIG_BASE64 (base64 of that file), and set
    EODHUB_FIREBASE_PROJECT_ID to the corresponding Firebase project ID.
    The build checks package and project identity without printing config.
-4. Confirm linux_x2 is available under the account's billing plan before
-   starting the existing Android workflow.
+4. The Android workflow uses mac_mini_m2 under the existing personal
+   account's free build-minute allocation; billing is not being enabled.
 5. Build this branch using eod-hub-android. Confirm the AAB and APK are
    signed and inspect merged permissions before uploading the AAB.
-6. Create EOD-HUB in the authorized personal Play Console account,
-   enable Play App Signing, upload to Internal testing, add the owner
-   as a tester, and publish the internal release.
+6. The EOD-HUB Play entry was created in the authorized personal account:
+   app ID 4972997820563048893. Enable Play App Signing, upload to Internal
+   testing, add the owner as a tester, and publish the internal release.
 7. Install through the Play testing link. Codemagic's authenticated
    artifact URL must not be used as a phone installation link.
 
