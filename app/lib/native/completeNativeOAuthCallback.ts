@@ -1,3 +1,4 @@
+import { isNativeAndroidApp } from "./isNativeApp";
 import type { Session } from "@supabase/supabase-js";
 import {
   clearLoginRedirectAttempts,
@@ -210,6 +211,7 @@ function redirectToLoginAuthError(
   opts?: { provider?: string; rawMessage?: string | null },
 ) {
   clearNativeOAuthInProgress();
+  if (isNativeAndroidApp()) clearNativeOAuthCompleting();
   reportNativeOAuthFailure(errorCode, opts?.rawMessage ?? null);
   const query = opts?.provider
     ? `?error=auth&provider=${encodeURIComponent(opts.provider)}`
@@ -304,6 +306,8 @@ export async function completeNativeOAuthFromDeepLink(
     return false;
   }
 
+  // Keep the Android login form covered before the Custom Tab hands focus back.
+  if (isNativeAndroidApp()) markNativeOAuthCompleting();
   await closeBrowser();
 
   const hashIndex = target.indexOf("#");
