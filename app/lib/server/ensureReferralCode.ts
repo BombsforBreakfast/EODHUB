@@ -3,9 +3,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
+  // Security Enhancement: Use cryptographically secure random values and rejection sampling
+  // to avoid predictable code generation and modulo bias.
   let code = "";
-  for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+  const randomValues = new Uint8Array(length);
+  const maxValid = 256 - (256 % CHARS.length);
+
+  while (code.length < length) {
+    crypto.getRandomValues(randomValues);
+    for (let i = 0; i < randomValues.length; i++) {
+      if (randomValues[i] < maxValid) {
+        code += CHARS[randomValues[i] % CHARS.length];
+        if (code.length === length) break;
+      }
+    }
   }
   return code;
 }
