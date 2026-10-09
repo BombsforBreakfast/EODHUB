@@ -88,7 +88,10 @@ workflows:
       - name: Install npm dependencies
         script: npm ci
       - name: Install Android SDK
-        script: sdkmanager "platforms;android-36" "build-tools;35.0.0"
+        script: |
+          set -eu
+          EODHUB_SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/share/android-sdk}}"
+          "$EODHUB_SDK_DIR/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;35.0.0"
       - name: Ensure Android platform exists
         script: |
           if [ ! -d android/app ]; then
