@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OAuthRedirectProvider } from "./oauthProviders";
 import { oauthDebugLog } from "./oauthDebugLog";
-import { markNativeOAuthInProgress } from "./sessionState";
-import { isNativeApp, isNativeIosApp } from "../native/isNativeApp";
+import { clearNativeOAuthInProgress, markNativeOAuthInProgress } from "./sessionState";
+import { isNativeApp, isNativeIosApp, isNativeAndroidApp } from "../native/isNativeApp";
 import { signInWithNativeApple } from "../native/nativeAppleSignIn";
 import { buildNativeOAuthRedirectTo } from "../native/nativeOAuthRedirect";
 
@@ -58,13 +58,21 @@ export async function signInWithOAuthProvider(
     });
 
     if (error) {
+      if (isNativeAndroidApp()) clearNativeOAuthInProgress();
       oauthDebugLog("native_oauth_error", { provider, message: error.message });
       return { data, error };
     }
 
     if (data?.url) {
       const { Browser } = await import("@capacitor/browser");
-      await Browser.open({ url: data.url });
+      try {
+        await Browser.open({ url: data.url });
+      } catch (openError) {
+        if (isNativeAndroidApp()) clearNativeOAuthInProgress();
+        throw openError;
+      }
+    } else if (isNativeAndroidApp()) {
+      clearNativeOAuthInProgress();
     }
     return { data, error };
   }

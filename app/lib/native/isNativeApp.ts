@@ -8,6 +8,14 @@ export function isNativeApp(): boolean {
   return /Capacitor/i.test(window.navigator.userAgent);
 }
 
+/** True only inside the Android app, never an ordinary Android browser. */
+export function isNativeAndroidApp(): boolean {
+  if (!isNativeApp() || typeof window === "undefined") return false;
+  const cap = (window as Window & { Capacitor?: { getPlatform?: () => string } }).Capacitor;
+  const platform = cap?.getPlatform?.();
+  return platform ? platform === "android" : /Android/i.test(window.navigator.userAgent);
+}
+
 /** True when running in the Capacitor iOS shell. */
 export function isNativeIosApp(): boolean {
   if (!isNativeApp()) return false;

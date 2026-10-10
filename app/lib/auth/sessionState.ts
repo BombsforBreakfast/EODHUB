@@ -1,3 +1,10 @@
+import { isNativeAndroidApp } from "../native/isNativeApp";
+
+export const ANDROID_OAUTH_STATE_EVENT = "eod:android-oauth-state";
+function notifyAndroidOAuthState() {
+  if (isNativeAndroidApp()) window.dispatchEvent(new Event(ANDROID_OAUTH_STATE_EVENT));
+}
+
 const APP_AUTH_SESSION_KEYS = ["eod_active"] as const;
 const APP_AUTH_LOCAL_KEYS = ["eod_no_persist"] as const;
 
@@ -14,11 +21,13 @@ const NATIVE_OAUTH_COMPLETING_MS = 15_000;
 export function markNativeOAuthInProgress() {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(NATIVE_OAUTH_IN_PROGRESS_KEY, "1");
+  notifyAndroidOAuthState();
 }
 
 export function clearNativeOAuthInProgress() {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(NATIVE_OAUTH_IN_PROGRESS_KEY);
+  notifyAndroidOAuthState();
 }
 
 export function isNativeOAuthInProgress(): boolean {
@@ -30,12 +39,14 @@ export function markNativeOAuthCompleting() {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(NATIVE_OAUTH_COMPLETING_KEY, "1");
   window.sessionStorage.setItem(NATIVE_OAUTH_COMPLETING_TS_KEY, String(Date.now()));
+  notifyAndroidOAuthState();
 }
 
 export function clearNativeOAuthCompleting() {
   if (typeof window === "undefined") return;
   window.sessionStorage.removeItem(NATIVE_OAUTH_COMPLETING_KEY);
   window.sessionStorage.removeItem(NATIVE_OAUTH_COMPLETING_TS_KEY);
+  notifyAndroidOAuthState();
 }
 
 export function isNativeOAuthCompleting(): boolean {
