@@ -50,6 +50,11 @@ export const LINKEDIN_HARD_EXCLUDE_PATTERNS: ReadonlyArray<{
   test: (title: string, haystack: string) => boolean;
 }> = [
   {
+    id: "excluded_job_families",
+    label: "emergency management / property disposal",
+    test: (title) => /\bemergency\s+(management|preparedness)\b|\bem\s+specialists?\b|\bproperty\s+disposal\b/i.test(title),
+  },
+  {
     id: "counterintelligence",
     label: "counterintelligence",
     test: (_title, haystack) =>

@@ -2,6 +2,7 @@ import {
   CONFIDENCE_THRESHOLDS,
   FIELD_WEIGHT_CAPS,
   HARD_EXCLUSION_TERMS,
+  TITLE_HARD_EXCLUSION_TERMS,
   MATCH_POINTS,
   MEDIUM_POSITIVE_KEYWORDS,
   NEGATIVE_KEYWORDS,
@@ -100,7 +101,8 @@ function hasStrongTitleMatch(title: string): boolean {
 
 export function shouldExcludeReliefWebJob(title: string, body: string, metadataText = ""): boolean {
   const text = `${title}\n${body}\n${metadataText}`.toLowerCase();
-  return HARD_EXCLUSION_TERMS.some((term) => termMatches(text, term));
+  return HARD_EXCLUSION_TERMS.some((term) => termMatches(text, term)) ||
+    TITLE_HARD_EXCLUSION_TERMS.some((term) => termMatches(title, term));
 }
 
 function hasMineActionTheme(themes: string[] | undefined): boolean {

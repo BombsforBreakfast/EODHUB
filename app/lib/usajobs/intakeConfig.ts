@@ -53,28 +53,25 @@ export const USAJOBS_KEYWORD_CHANNELS: USAJobsKeywordChannel[] = [
   { id: "kw:ordnance", keyword: "ordnance disposal OR ammunition OR munitions", maxPages: 3, datePosted: 60 },
   { id: "kw:uas", keyword: "UAS OR unmanned aerial OR C-UAS OR counter UAS", maxPages: 2, datePosted: 60 },
   { id: "kw:tss-e", keyword: "Transportation Security Specialist Explosives OR TSS-E", maxPages: 2, datePosted: 60 },
-  { id: "kw:em", keyword: "Emergency Management Specialist", maxPages: 3, datePosted: 60 },
   { id: "kw:nmc", keyword: "Nuclear Materials Courier", maxPages: 2, datePosted: 60 },
 ];
 
 /**
  * Occupational series (JobCategoryCode) — roles that rarely say EOD in the title.
- * 0017 = Explosives Safety; 0089 = Emergency Management Specialist.
+ * 0017 = Explosives Safety. Emergency Management (0089) is excluded.
  */
 export const USAJOBS_SERIES_CHANNELS: USAJobsSeriesChannel[] = [
   { id: "series:0017", jobCategoryCode: "0017", maxPages: 3, datePosted: 60 },
   { id: "series:0017-ordnance", jobCategoryCode: "0017", keyword: "ordnance OR explosive OR ammunition", maxPages: 2, datePosted: 60 },
-  { id: "series:0089", jobCategoryCode: "0089", maxPages: 3, datePosted: 60 },
-  { id: "series:0089-preparedness", jobCategoryCode: "0089", keyword: "preparedness OR continuity OR disaster", maxPages: 2, datePosted: 60 },
 ];
 
 /**
- * Agency filters — catch generic titles from departments that post EOD/EM roles.
+ * Agency filters — catch generic titles from departments that post EOD roles.
  * AR = Army; HS = DHS; IN = Interior; TR = Treasury; NV = Navy.
  */
 export const USAJOBS_ORGANIZATION_CHANNELS: USAJobsOrganizationChannel[] = [
   { id: "org:ar-eod", organization: "AR", keyword: "ordnance OR explosive OR EOD OR UXO OR ammunition", maxPages: 2, datePosted: 60 },
-  { id: "org:hs-security", organization: "HS", keyword: "explosive OR ordnance OR TSS OR emergency management", maxPages: 2, datePosted: 60 },
+  { id: "org:hs-security", organization: "HS", keyword: "explosive OR ordnance OR TSS", maxPages: 2, datePosted: 60 },
   { id: "org:nv-eod", organization: "NV", keyword: "ordnance OR explosive OR EOD OR UXO", maxPages: 2, datePosted: 60 },
   { id: "org:tr-courier", organization: "TR", keyword: "nuclear OR courier OR explosive", maxPages: 2, datePosted: 60 },
   { id: "org:in-uxo", organization: "IN", keyword: "UXO OR unexploded OR ordnance OR explosive", maxPages: 2, datePosted: 60 },
@@ -82,7 +79,6 @@ export const USAJOBS_ORGANIZATION_CHANNELS: USAJobsOrganizationChannel[] = [
 
 /** PositionTitle parameter — direct title search when Keyword matching is too broad. */
 export const USAJOBS_TITLE_CHANNELS: USAJobsTitleChannel[] = [
-  { id: "title:em-specialist", positionTitle: "Emergency Management Specialist", maxPages: 3, datePosted: 60 },
   { id: "title:eod", positionTitle: "Explosive Ordnance Disposal", maxPages: 3, datePosted: 60 },
   { id: "title:explosives-safety", positionTitle: "Explosives Safety", maxPages: 2, datePosted: 60 },
   { id: "title:tss", positionTitle: "Transportation Security Specialist", maxPages: 2, datePosted: 60 },

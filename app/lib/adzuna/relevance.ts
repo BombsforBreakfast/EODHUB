@@ -75,7 +75,7 @@ export const MILITARY_RECRUITMENT_TERMS = [
   "reserve",
 ] as const;
 
-export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical"] as const;
+export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical", "emergency management", "emergency preparedness", "em specialist", "property disposal"] as const;
 
 export type AdzunaRelevanceInput = {
   title: string;

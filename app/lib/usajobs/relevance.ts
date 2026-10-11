@@ -70,7 +70,7 @@ export const MILITARY_RECRUITMENT_TERMS = [
   "title 32",
 ] as const;
 
-export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical", "inspector"] as const;
+export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical", "inspector", "emergency management", "emergency preparedness", "em specialist", "property disposal"] as const;
 
 export type USAJobsRelevanceInput = {
   title: string;
@@ -165,8 +165,7 @@ export function scoreUSAJobsJob(
     score = Math.max(score, 55);
   } else if ((fromSeriesChannel || fromOrgChannel || fromTitleChannel) && termMatches(combined, "ordnance")) {
     score = Math.max(score, 50);
-  } else if (fromTitleChannel && termMatches(combined, "emergency management")) {
-    score = Math.max(score, 50);
+
   }
 
   const threshold =
@@ -195,7 +194,6 @@ export function detectUSAJobsCategory(title: string): string {
   if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
     return "UAS";
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
-  if (t.includes("emergency management") || t.includes("em specialist")) return "EM";
   if (
     t.includes("cwmd") ||
     t.includes("c-wmd") ||
