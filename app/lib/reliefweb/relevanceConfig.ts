@@ -26,10 +26,6 @@ export const HARD_EXCLUSION_TERMS = [
 
 /** Title-only blocks avoid unrelated keywords in an EOD job description. */
 export const TITLE_HARD_EXCLUSION_TERMS = [
-  "emergency management",
-  "emergency preparedness",
-  "em specialist",
-  "property disposal",
 ];
 
 /** Strong EOD/HMA/UXO signals. */

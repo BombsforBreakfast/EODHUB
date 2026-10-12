@@ -2,6 +2,10 @@
 
 External job listings are ingested via cron-backed API routes. All imported jobs default to `is_approved: false` until an admin approves them in the Admin → Jobs tab.
 
+Emergency management/preparedness and property disposal roles use a shared duties gate in `app/lib/adjacentJobRelevance.ts`. Emergency management must show CBRN, EOD/ordnance, or hazmat responsibilities or qualifications; property disposal must show ordnance, ammunition, or demilitarization work. Generic disaster administration, surplus property, clearance requirements, and employer-name matches do not qualify. These titles are evaluated before broad scoring terms such as "disposal". USAJobs also reads qualifications for these families and searches series 0089; LinkedIn fetches full duties before deciding on an adjacent title.
+
+Verify with `npm run test:adjacent-jobs`.
+
 International EOD/HMA coverage (US vs ReliefWeb-only gap): see [`intl-job-coverage-audit.md`](intl-job-coverage-audit.md).
 
 ## Sources

@@ -1,3 +1,5 @@
+import { matchAdjacentJob } from "../adjacentJobRelevance";
+
 /**
  * USAJobs relevance — title, description, and organization (not title-only).
  */
@@ -33,7 +35,6 @@ export const STRONG_RELEVANT_TERMS = [
   "counter-uas",
   "counter uas",
   "c-uas",
-  "emergency management specialist",
   "nuclear materials courier",
   "render safe",
   "pyrotechnic",
@@ -44,10 +45,6 @@ export const MEDIUM_RELEVANT_TERMS = [
   "explosive",
   "ordnance technician",
   "ammunition technician",
-  "emergency management",
-  "emergency preparedness",
-  "continuity of operations",
-  "disaster response",
   "hazmat",
   "hazardous materials",
   "range safety",
@@ -70,7 +67,7 @@ export const MILITARY_RECRUITMENT_TERMS = [
   "title 32",
 ] as const;
 
-export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical", "inspector", "emergency management", "emergency preparedness", "em specialist", "property disposal"] as const;
+export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical", "inspector"] as const;
 
 export type USAJobsRelevanceInput = {
   title: string;
@@ -129,6 +126,11 @@ export function scoreUSAJobsJob(
   const department = (input.departmentName ?? "").trim();
   const combined = `${title}\n${description}\n${orgName}\n${department}`;
 
+  const adjacent = matchAdjacentJob(title, description);
+  if (adjacent && !adjacent.relevant) {
+    return { score: 0, relevant: false, reasons: [adjacent.reason], militaryRecruitment: false };
+  }
+
   if (isMilitaryRecruitmentTitle(title)) {
     return {
       score: 0,
@@ -168,11 +170,14 @@ export function scoreUSAJobsJob(
 
   }
 
+  if (adjacent?.relevant) score = Math.max(score, 55);
+
   const threshold =
     fromSeriesChannel || fromOrgChannel || fromTitleChannel ? 45 : 50;
   const relevant = score >= threshold;
 
   const reasons = [
+    ...(adjacent?.relevant ? [adjacent.reason] : []),
     ...titleStrong.reasons.map((r) => `${r} in title`),
     ...descStrong.reasons.map((r) => `${r} in description`),
     ...titleMedium.reasons.map((r) => `${r} in title`),

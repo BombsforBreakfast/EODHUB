@@ -28,7 +28,7 @@ import {
   linkedInSearchUrl,
   parseLinkedInJobIdFromUrl,
 } from "../app/lib/linkedin/linkedinJob";
-import { scoreLinkedInJob } from "../app/lib/linkedin/relevance";
+import { scoreLinkedInJob, shouldFetchLinkedInJobDetail } from "../app/lib/linkedin/relevance";
 import { cleanLinkedInJobTitle, scrapeLinkedInJobDetailPage } from "../app/lib/linkedin/scrapeJobDetail";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -326,7 +326,9 @@ async function scrapeSearchPage(
       },
       { searchQuery },
     );
-    if (!cardRelevance.relevant) {
+    if (!cardRelevance.relevant && !shouldFetchLinkedInJobDetail({
+      title, description: item.description || "", companyName: item.companyName || "",
+    })) {
       const why = cardRelevance.reasons[0] ?? "not relevant";
       console.log(`  − skip card: ${title} (${why})`);
       continue;

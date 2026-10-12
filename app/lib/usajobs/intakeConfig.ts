@@ -58,9 +58,10 @@ export const USAJOBS_KEYWORD_CHANNELS: USAJobsKeywordChannel[] = [
 
 /**
  * Occupational series (JobCategoryCode) — roles that rarely say EOD in the title.
- * 0017 = Explosives Safety. Emergency Management (0089) is excluded.
+ * 0017 = Explosives Safety. 0089 = Emergency Management (duties-gated relevance).
  */
 export const USAJOBS_SERIES_CHANNELS: USAJobsSeriesChannel[] = [
+  { id: "series:0089", jobCategoryCode: "0089", maxPages: 3, datePosted: 60 },
   { id: "series:0017", jobCategoryCode: "0017", maxPages: 3, datePosted: 60 },
   { id: "series:0017-ordnance", jobCategoryCode: "0017", keyword: "ordnance OR explosive OR ammunition", maxPages: 2, datePosted: 60 },
 ];
@@ -79,6 +80,7 @@ export const USAJOBS_ORGANIZATION_CHANNELS: USAJobsOrganizationChannel[] = [
 
 /** PositionTitle parameter — direct title search when Keyword matching is too broad. */
 export const USAJOBS_TITLE_CHANNELS: USAJobsTitleChannel[] = [
+  { id: "title:property-disposal", positionTitle: "Property Disposal", maxPages: 2, datePosted: 60 },
   { id: "title:eod", positionTitle: "Explosive Ordnance Disposal", maxPages: 3, datePosted: 60 },
   { id: "title:explosives-safety", positionTitle: "Explosives Safety", maxPages: 2, datePosted: 60 },
   { id: "title:tss", positionTitle: "Transportation Security Specialist", maxPages: 2, datePosted: 60 },

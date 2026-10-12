@@ -1,3 +1,4 @@
+import { matchAdjacentJob } from "../adjacentJobRelevance";
 import {
   CONFIDENCE_THRESHOLDS,
   FIELD_WEIGHT_CAPS,
@@ -101,6 +102,7 @@ function hasStrongTitleMatch(title: string): boolean {
 
 export function shouldExcludeReliefWebJob(title: string, body: string, metadataText = ""): boolean {
   const text = `${title}\n${body}\n${metadataText}`.toLowerCase();
+  if (matchAdjacentJob(title, body)?.relevant === false) return true;
   return HARD_EXCLUSION_TERMS.some((term) => termMatches(text, term)) ||
     TITLE_HARD_EXCLUSION_TERMS.some((term) => termMatches(title, term));
 }
@@ -114,6 +116,7 @@ export function scoreReliefWebJob(input: ReliefWebJobScoreInput): ReliefWebJobSc
   const description = input.description.trim();
   const metadataText = input.metadataText.trim();
   const mineActionTheme = hasMineActionTheme(input.themes);
+  const adjacent = matchAdjacentJob(title, description);
 
   if (shouldExcludeReliefWebJob(title, description, metadataText)) {
     return {
@@ -151,11 +154,14 @@ export function scoreReliefWebJob(input: ReliefWebJobScoreInput): ReliefWebJobSc
     score = Math.max(score, CONFIDENCE_THRESHOLDS.possible);
   }
 
+  if (adjacent?.relevant) score = Math.max(score, CONFIDENCE_THRESHOLDS.possible);
+
   let confidence: ReliefWebConfidence = "low";
   if (score >= CONFIDENCE_THRESHOLDS.high) confidence = "high";
   else if (score >= CONFIDENCE_THRESHOLDS.possible) confidence = "possible";
 
   const reasons = [
+    ...(adjacent?.relevant ? [adjacent.reason] : []),
     ...(mineActionTheme ? ["+ Mine Action theme tag"] : []),
     ...titleResult.reasons,
     ...metadataResult.reasons,

@@ -1,3 +1,4 @@
+import { matchAdjacentJob } from "../adjacentJobRelevance";
 import { USAJOBS_DEFAULT_DATE_POSTED, USAJOBS_RESULTS_PER_PAGE } from "./intakeConfig";
 
 export type USAJobsApiItem = {
@@ -111,5 +112,9 @@ export async function fetchUSAJobsTitlePage(
 
 export function extractUSAJobsSummary(item: USAJobsApiItem): string {
   const pos = item.MatchedObjectDescriptor;
-  return pos.UserArea?.Details?.JobSummary ?? pos.QualificationSummary ?? "";
+  const summary = pos.UserArea?.Details?.JobSummary ?? "";
+  if (matchAdjacentJob(pos.PositionTitle, "")) {
+    return [summary, pos.QualificationSummary].filter(Boolean).join("\n\n");
+  }
+  return summary || pos.QualificationSummary || "";
 }

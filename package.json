@@ -26,7 +26,8 @@
     "cap:open:ios": "npx cap open ios",
     "cap:open:android": "npx cap open android",
     "generate:notification-sound": "node scripts/generate-notification-sound.mjs",
-    "generate:splash": "node scripts/generate-splash.mjs"
+    "generate:splash": "node scripts/generate-splash.mjs",
+    "test:adjacent-jobs": "tsx scripts/verify-adjacent-job-relevance.ts"
   },
   "dependencies": {
     "@capacitor-community/apple-sign-in": "^7.1.0",

@@ -1,3 +1,5 @@
+import { matchAdjacentJob } from "../adjacentJobRelevance";
+
 /**
  * Adzuna relevance — title, description, and company (not title-only).
  */
@@ -75,7 +77,7 @@ export const MILITARY_RECRUITMENT_TERMS = [
   "reserve",
 ] as const;
 
-export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical", "emergency management", "emergency preparedness", "em specialist", "property disposal"] as const;
+export const TITLE_NOISE_TERMS = ["mechanic", "medicine", "medical"] as const;
 
 export type AdzunaRelevanceInput = {
   title: string;
@@ -132,6 +134,11 @@ export function scoreAdzunaJob(
   const companyName = input.companyName.trim();
   const combined = `${title}\n${description}\n${companyName}`;
 
+  const adjacent = matchAdjacentJob(title, description);
+  if (adjacent && !adjacent.relevant) {
+    return { score: 0, relevant: false, reasons: [adjacent.reason], militaryRecruitment: false };
+  }
+
   if (isMilitaryRecruitmentTitle(title)) {
     return {
       score: 0,
@@ -171,10 +178,13 @@ export function scoreAdzunaJob(
     score = Math.max(score, 50);
   }
 
+  if (adjacent?.relevant) score = Math.max(score, 55);
+
   const threshold = fromCompanyChannel ? 45 : 50;
   const relevant = score >= threshold;
 
   const reasons = [
+    ...(adjacent?.relevant ? [adjacent.reason] : []),
     ...titleStrong.reasons.map((r) => `${r} in title`),
     ...descStrong.reasons.map((r) => `${r} in description`),
     ...titleMedium.reasons.map((r) => `${r} in title`),
