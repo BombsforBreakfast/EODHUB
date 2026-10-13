@@ -51,9 +51,6 @@ function hmaQueriesForLocations(): LinkedInSearchQuery[] {
 
 /** Core US contractor / federal-adjacent LinkedIn searches. */
 const LINKEDIN_US_CORE_QUERIES: LinkedInSearchQuery[] = [
-  { id: "em-cbrn", keywords: "emergency management CBRN", location: "United States" },
-  { id: "em-hazmat", keywords: "emergency management hazmat", location: "United States" },
-  { id: "property-ordnance", keywords: "property disposal ordnance", location: "United States" },
   // EOD
   { id: "eod", keywords: "EOD", location: "United States" },
   { id: "eod-full", keywords: "Explosive Ordnance Disposal", location: "United States" },

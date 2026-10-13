@@ -1,4 +1,3 @@
-import { matchAdjacentJob } from "../adjacentJobRelevance";
 import {
   detectAdzunaCategory,
   scoreAdzunaJob,
@@ -50,11 +49,6 @@ export const LINKEDIN_HARD_EXCLUDE_PATTERNS: ReadonlyArray<{
   label: string;
   test: (title: string, haystack: string) => boolean;
 }> = [
-  {
-    id: "excluded_job_families",
-    label: "emergency management / property disposal",
-    test: (title, haystack) => matchAdjacentJob(title, haystack)?.relevant === false,
-  },
   {
     id: "counterintelligence",
     label: "counterintelligence",
@@ -206,8 +200,7 @@ export function scoreLinkedInJob(
 
   // LinkedIn search recall is noisy — body-only floors (~55) pull in mining,
   // SOC, and generic contractor roles. Require a strong ordnance signal in the title.
-  if (scored.relevant && !titleHasStrongOrdnanceSignal(input.title) &&
-      !matchAdjacentJob(input.title, input.description)?.relevant) {
+  if (scored.relevant && !titleHasStrongOrdnanceSignal(input.title)) {
     return {
       ...scored,
       relevant: false,
@@ -219,12 +212,3 @@ export function scoreLinkedInJob(
 }
 
 export { detectAdzunaCategory as detectLinkedInCategory };
-
-/** Adjacent titles need the full duties before the card-level filter can decide. */
-export function shouldFetchLinkedInJobDetail(input: LinkedInRelevanceInput): boolean {
-  if (scoreLinkedInJob(input).relevant) return true;
-  if (!matchAdjacentJob(input.title, "")) return false;
-  const haystack = `${input.title}\n${input.description}\n${input.companyName}`;
-  return !LINKEDIN_HARD_EXCLUDE_PATTERNS.some(rule =>
-    !["excluded_job_families", "emergency_management", "property_disposal"].includes(rule.id) && rule.test(input.title, haystack));
-}

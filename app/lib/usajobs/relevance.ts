@@ -1,5 +1,3 @@
-import { matchAdjacentJob } from "../adjacentJobRelevance";
-
 /**
  * USAJobs relevance — title, description, and organization (not title-only).
  */
@@ -35,6 +33,7 @@ export const STRONG_RELEVANT_TERMS = [
   "counter-uas",
   "counter uas",
   "c-uas",
+  "emergency management specialist",
   "nuclear materials courier",
   "render safe",
   "pyrotechnic",
@@ -45,6 +44,10 @@ export const MEDIUM_RELEVANT_TERMS = [
   "explosive",
   "ordnance technician",
   "ammunition technician",
+  "emergency management",
+  "emergency preparedness",
+  "continuity of operations",
+  "disaster response",
   "hazmat",
   "hazardous materials",
   "range safety",
@@ -126,11 +129,6 @@ export function scoreUSAJobsJob(
   const department = (input.departmentName ?? "").trim();
   const combined = `${title}\n${description}\n${orgName}\n${department}`;
 
-  const adjacent = matchAdjacentJob(title, description);
-  if (adjacent && !adjacent.relevant) {
-    return { score: 0, relevant: false, reasons: [adjacent.reason], militaryRecruitment: false };
-  }
-
   if (isMilitaryRecruitmentTitle(title)) {
     return {
       score: 0,
@@ -167,17 +165,15 @@ export function scoreUSAJobsJob(
     score = Math.max(score, 55);
   } else if ((fromSeriesChannel || fromOrgChannel || fromTitleChannel) && termMatches(combined, "ordnance")) {
     score = Math.max(score, 50);
-
+  } else if (fromTitleChannel && termMatches(combined, "emergency management")) {
+    score = Math.max(score, 50);
   }
-
-  if (adjacent?.relevant) score = Math.max(score, 55);
 
   const threshold =
     fromSeriesChannel || fromOrgChannel || fromTitleChannel ? 45 : 50;
   const relevant = score >= threshold;
 
   const reasons = [
-    ...(adjacent?.relevant ? [adjacent.reason] : []),
     ...titleStrong.reasons.map((r) => `${r} in title`),
     ...descStrong.reasons.map((r) => `${r} in description`),
     ...titleMedium.reasons.map((r) => `${r} in title`),
@@ -199,6 +195,7 @@ export function detectUSAJobsCategory(title: string): string {
   if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
     return "UAS";
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
+  if (t.includes("emergency management") || t.includes("em specialist")) return "EM";
   if (
     t.includes("cwmd") ||
     t.includes("c-wmd") ||

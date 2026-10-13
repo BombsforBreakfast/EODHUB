@@ -58,7 +58,6 @@ export const ADZUNA_RESULTS_PER_PAGE = 50;
 
 /** Primary keyword searches (title + description on Adzuna's side) — US full set. */
 export const ADZUNA_KEYWORD_CHANNELS: AdzunaKeywordChannel[] = [
-  { id: "kw:em-hazmat", what: "emergency management hazmat", maxPages: 2, maxDaysOld: 90 },
   { id: "kw:eod-core", what: "explosive ordnance disposal", maxPages: 3, maxDaysOld: 90 },
   { id: "kw:uxo", what: "UXO technician OR unexploded ordnance", maxPages: 3, maxDaysOld: 90 },
   { id: "kw:bomb", what: "bomb technician OR bomb squad OR hazardous devices", maxPages: 2, maxDaysOld: 90 },
