@@ -7,6 +7,7 @@ import { useTheme } from "../lib/ThemeContext";
 import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 import { supabase } from "../lib/lib/supabaseClient";
 import { isImageFile } from "../lib/uploadLimits";
+import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import {
   adminPostDisplayName,
   canUsePostAsSelector,
@@ -247,7 +248,17 @@ export default function ShareListingToFeedModal({
           )}
           <textarea
             value={content}
+            disabled={submitting}
+            aria-label="Post text"
+            aria-describedby={allowPhotoAttachment ? "share-listing-photo-hint" : undefined}
             onChange={(e) => setContent(e.target.value.slice(0, 4000))}
+            onPaste={(e) => {
+              if (!allowPhotoAttachment || submitting) return;
+              handlePasteImageFromClipboard(e, (files) => {
+                setPhotoError(null);
+                setPhotoFile(files[0]);
+              }, { imagesOnly: true });
+            }}
             rows={5}
             autoFocus
             placeholder="What do you want to say about this?"
@@ -267,10 +278,14 @@ export default function ShareListingToFeedModal({
           />
           {allowPhotoAttachment && (
             <div style={{ marginTop: 10 }}>
+              <div id="share-listing-photo-hint" style={{ marginBottom: 8, color: t.textMuted, fontSize: 12 }}>
+                Paste a screenshot or copied image into the text box, or add a photo below.
+              </div>
               <input
                 ref={photoInputRef}
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/gif"
+                disabled={submitting}
                 style={{ display: "none" }}
                 onChange={(e) => {
                   const file = e.target.files?.[0] ?? null;
