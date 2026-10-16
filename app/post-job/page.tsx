@@ -11,6 +11,7 @@ import type { ScrapedJobData } from "../lib/metadata/extractJobMetadata";
 import { useToast } from "../components/toast/ToastProvider";
 import { validateImagePick } from "../lib/uploadLimits";
 import { uploadJobCoverImage } from "../lib/uploadJobCoverImage";
+import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 
 type ScrapeStatus = "idle" | "loading" | "success" | "error";
 
@@ -151,7 +152,7 @@ export default function PostJobPage() {
   }
 
   async function handlePhotoPick(file: File | null) {
-    if (!file) return;
+    if (!file || submitting || photoUploading) return;
     const pickError = validateImagePick(file);
     if (pickError) {
       toast.error(pickError);
@@ -271,6 +272,7 @@ export default function PostJobPage() {
   }, [applyUrl, lastScrapedUrl]);
 
   async function handleSubmit() {
+    if (submitting || photoUploading) return;
     if (!isEmployer && blockIfNeeded()) return;
     try {
       setSubmitting(true);
@@ -511,6 +513,7 @@ export default function PostJobPage() {
               ref={photoInputRef}
               type="file"
               accept="image/*"
+              disabled={submitting || photoUploading}
               onChange={(e) => {
                 void handlePhotoPick(e.target.files?.[0] ?? null);
               }}
@@ -520,7 +523,7 @@ export default function PostJobPage() {
               {(photoPreviewUrl || ogImage) && (
                 <img
                   src={photoPreviewUrl || ogImage || ""}
-                  alt=""
+                  alt="Job photo preview"
                   style={{
                     width: 96,
                     height: 72,
@@ -571,13 +574,25 @@ export default function PostJobPage() {
             <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
               Flyer or team photo for the job card. URL scrape can fill this automatically when available.
             </div>
+            <div id="job-photo-paste-hint" style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
+              Paste a screenshot or copied image into Description, or choose Add photo.
+            </div>
           </div>
 
           <div>
             <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>Description</div>
             <textarea
               value={description}
+              disabled={submitting}
+              aria-label="Job description"
+              aria-describedby="job-photo-paste-hint"
               onChange={(e) => setDescription(e.target.value)}
+              onPaste={(e) => {
+                if (submitting || photoUploading) return;
+                handlePasteImageFromClipboard(e, (files) => {
+                  void handlePhotoPick(files[0]);
+                }, { imagesOnly: true });
+              }}
               style={{ ...inputStyle, minHeight: 140, resize: "vertical" }}
               placeholder="Describe the job, requirements, schedule, pay, clearance, etc."
             />
