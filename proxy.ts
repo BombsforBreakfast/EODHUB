@@ -5,18 +5,22 @@ import { getRequestCountryCode, isDeniedGeoCountry } from "@/app/lib/geoAccess";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
+/** Public policy and support pages must remain reachable worldwide. */
+function isPublicPolicyPath(pathname: string) {
+  return ["/privacy", "/terms", "/support", "/guidelines", "/account-deletion"].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  );
+}
+
 /**
  * Paths that are accessible without a session.
  * Everything else redirects to /login when the user is not authenticated.
  */
 function isPublicPath(pathname: string) {
+  if (isPublicPolicyPath(pathname)) return true;
   const publicRoutes = [
     "/login",
     "/reset-password",
-    "/terms",
-    "/privacy",
-    "/support",
-    "/guidelines",
     "/auth/callback",
     "/auth/app-callback",
     "/business-org",
@@ -30,6 +34,7 @@ function isPublicPath(pathname: string) {
 /** Server-to-server routes that must not be geo-blocked (cron / webhooks). */
 function isGeoExemptPath(pathname: string) {
   return (
+    isPublicPolicyPath(pathname) ||
     pathname.startsWith("/api/cron/") ||
     pathname.startsWith("/api/stripe/") ||
     pathname.startsWith("/api/webhooks/") ||
@@ -83,7 +88,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  const supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {

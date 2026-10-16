@@ -30,6 +30,16 @@ export default function SupportPage() {
         </section>
 
         <section style={{ marginTop: 24 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 8px" }}>Account and data deletion</h2>
+          <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6 }}>
+            <Link href="/account-deletion" style={{ color: "#2563eb", textDecoration: "none" }}>
+              Request deletion of your EOD-HUB account or personal data
+            </Link>{" "}
+            without installing the app or signing in.
+          </p>
+        </section>
+
+        <section style={{ marginTop: 24 }}>
           <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 8px" }}>iOS app</h2>
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: t.textMuted }}>
             The EOD-Hub iOS app uses the same account as the website. For account changes, sign in at{" "}

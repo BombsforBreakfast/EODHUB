@@ -41,6 +41,7 @@ export default function PrivacyPage() {
         </div>
 
         <div style={{ marginTop: 18, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Link href="/account-deletion" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>Account and data deletion</Link>
           <Link href="/terms" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>Terms of Service</Link>
           <Link href="/guidelines" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>Community Guidelines</Link>
         </div>
