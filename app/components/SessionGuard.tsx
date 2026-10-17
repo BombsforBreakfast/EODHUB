@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useAuth } from "../lib/auth/AuthProvider";
 import {
@@ -35,9 +36,12 @@ async function getSessionWithRetry(): Promise<boolean> {
 // they reopen the browser (sessionStorage is cleared on browser close).
 export default function SessionGuard() {
   const { isLoading } = useAuth();
+  const isPromotionPage = usePathname() === "/promote";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    // The public promotion gate is independent of a previous member session.
+    if (isPromotionPage) return;
     if (isLoading) return;
 
     let cancelled = false;
@@ -75,7 +79,7 @@ export default function SessionGuard() {
     return () => {
       cancelled = true;
     };
-  }, [isLoading]);
+  }, [isLoading, isPromotionPage]);
 
   return null;
 }

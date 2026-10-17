@@ -46,6 +46,7 @@ const PAGE_TIME_ANALYTICS_EXCLUDED = new Set([
   "/terms",
   "/privacy",
   "/guidelines",
+  "/promote",
 ]);
 
 export function isExcludedFromPageTimeAnalytics(rawPath: string): boolean {
