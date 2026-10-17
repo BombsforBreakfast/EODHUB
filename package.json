@@ -10,6 +10,7 @@
     "lint": "eslint",
     "check:image-transforms": "node scripts/check-supabase-image-transforms.mjs",
     "test:feed-ranking": "tsx scripts/verify-feed-ranking.ts",
+    "test:promote-access": "tsx --test scripts/verify-promote-access.test.ts",
     "test:mux-video": "tsx scripts/verify-mux-feed-video.ts",
     "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
     "test:linkedin-scraper": "tsx scripts/verify-linkedin-job-scraper.ts",
