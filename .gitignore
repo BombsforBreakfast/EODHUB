@@ -52,3 +52,10 @@ supabase/.temp/
 exports/
 
 .env*.local
+
+# Android signing material and Firebase config supplied by Codemagic.
+/certificates/android/
+/android/app/google-services.json
+*.keystore
+*.jks
+*.p12

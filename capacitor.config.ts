@@ -22,6 +22,8 @@ const config: CapacitorConfig = {
   android: {
     backgroundColor: "#0a0a0a",
     allowMixedContent: false,
+    // Keep the WebView clear of Android status bars, cutouts, and gesture/navigation bars.
+    adjustMarginsForEdgeToEdge: "force",
   },
   ios: {
     // The web app already lays itself out with viewport-fit=cover and
