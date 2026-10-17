@@ -1,5 +1,5 @@
-import { ArrowRight, Check, Mail } from "lucide-react";
-import { PROMOTE_EMAIL, promotionEmailLink } from "./contact";
+import { Check } from "lucide-react";
+import CopyPromotionEmail from "./CopyPromotionEmail";
 import styles from "./promote.module.css";
 
 const packages = [
@@ -64,9 +64,10 @@ export default function PromotionPackages() {
                 {item.features.map((feature) => <li key={feature}><Check size={17} aria-hidden="true" /><span>{feature}</span></li>)}
               </ul>
               <p className={styles.packageNote}>{item.note}</p>
-              <a href={promotionEmailLink(item.name)} className={item.name === "Featured" ? styles.primaryButton : styles.secondaryButton}>
-                Ask about {item.name}<ArrowRight size={17} aria-hidden="true" />
-              </a>
+              <CopyPromotionEmail
+                className={item.name === "Featured" ? styles.primaryButton : styles.secondaryButton}
+                label={`Copy email to ask about ${item.name}`}
+              />
             </article>
           ))}
         </div>
@@ -84,7 +85,7 @@ export default function PromotionPackages() {
 
       <section className={styles.contactBand}>
         <div><h2>Have something a little different?</h2><p>Start with an email. We’ll help find the right fit.</p></div>
-        <a href={`mailto:${PROMOTE_EMAIL}`} className={styles.secondaryButton}><Mail size={18} aria-hidden="true" />{PROMOTE_EMAIL}</a>
+        <CopyPromotionEmail className={styles.secondaryButton} />
       </section>
     </>
   );

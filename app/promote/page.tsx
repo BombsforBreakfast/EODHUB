@@ -5,8 +5,8 @@ import { cookies } from "next/headers";
 import { ArrowRight, Check, Mail, ShieldCheck } from "lucide-react";
 import { getPromoteAccessPassword, hasPromoteAccess, PROMOTE_ACCESS_COOKIE } from "@/app/lib/server/promoteAccess";
 import AccessForm, { LockPromotionPage } from "./AccessForm";
+import CopyPromotionEmail from "./CopyPromotionEmail";
 import PromotionPackages from "./PromotionPackages";
-import { PROMOTE_EMAIL, promotionEmailLink } from "./contact";
 import styles from "./promote.module.css";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +31,7 @@ export default async function PromotePage() {
           <Image src="/branding/eod-crab-logo.png" alt="" width={86} height={54} className={styles.brandMark} priority />
           <span>EOD-HUB<small>ADVERTISING & PROMOTION</small></span>
         </Link>
-        {unlocked ? <LockPromotionPage /> : <a className={styles.headerContact} href={`mailto:${PROMOTE_EMAIL}`} aria-label="Contact promotions"><Mail size={16} aria-hidden="true" /><span>Contact promotions</span></a>}
+        {unlocked ? <LockPromotionPage /> : <CopyPromotionEmail className={styles.headerContact} label="Contact promotions" />}
       </header>
 
       <main className={styles.main}>
@@ -60,9 +60,8 @@ export default async function PromotePage() {
               <div className={styles.cardIcon}><Mail size={24} aria-hidden="true" /></div>
               <p className={styles.eyebrow}>ADVERTISER ACCESS</p>
               <h2 id="access-heading">Let’s start with<br />a conversation.</h2>
-              <p>Tell us what you’d like to promote. We’ll review your inquiry and send you a password to explore the packages.</p>
-              <a href={promotionEmailLink()} className={styles.primaryButton}>Request access by email<ArrowRight size={18} aria-hidden="true" /></a>
-              <a href={`mailto:${PROMOTE_EMAIL}`} className={styles.emailAddress}>{PROMOTE_EMAIL}</a>
+              <p>Email us what you’d like to promote. We’ll review your inquiry and send you a password to explore the packages.</p>
+              <CopyPromotionEmail className={styles.emailAddress} showHint />
               <div className={styles.cardDivider} />
               <AccessForm />
             </aside>
@@ -76,7 +75,7 @@ export default async function PromotePage() {
 
       <footer className={styles.footer}>
         <p>Independent promotion for the EOD community.</p>
-        <nav aria-label="Promotion policies"><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><a href={`mailto:${PROMOTE_EMAIL}`}>Contact</a></nav>
+        <nav aria-label="Promotion policies"><Link href="/terms">Terms</Link><Link href="/privacy">Privacy</Link><CopyPromotionEmail className={styles.footerContact} label="Copy email" /></nav>
       </footer>
     </div>
   );
