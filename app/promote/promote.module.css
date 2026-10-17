@@ -10,6 +10,13 @@
 .shell * { box-sizing: border-box; }
 .shell a { text-decoration: none; }
 .shell a:focus-visible, .shell button:focus-visible, .shell input:focus-visible { outline: 2px solid var(--gold); outline-offset: 5px; }
+.copyContact { display: inline-flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; }
+.copyEmailButton { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; }
+.copyEmailButton svg { flex-shrink: 0; }
+.emailContact { display: flex; align-items: center; padding-top: 2px; }
+.copyFeedback { color: var(--muted); font-size: 11px; font-weight: 400; line-height: 1.6; text-align: center; }
+.copyFeedback:empty { display: none; }
+.copyFallback { width: 100%; min-width: 0; padding: 8px; border: 1px solid var(--line); border-radius: 5px; background: #12150f; color: #f5f3ed; font: inherit; font-size: 13px; }
 .header, .main, .footer { max-width: 1240px; margin: 0 auto; padding-left: 48px; padding-right: 48px; }
 .header { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 116px; border-bottom: 1px solid var(--line); }
 .brand { display: flex; align-items: center; gap: 14px; color: #f5f3ed; font-size: 24px; font-weight: 800; letter-spacing: 0.045em; flex-shrink: 0; }
@@ -43,7 +50,7 @@
 .secondaryButton:hover { background: rgba(255,255,255,0.045); border-color: #90937e; }
 .secondaryButton:disabled { cursor: default; opacity: 0.55; }
 .accessCard > .primaryButton, .accessForm > button { width: 100%; }
-.emailAddress { display: block; text-align: center; color: #c5c6bd; font-size: 12px; margin-top: 14px; overflow-wrap: anywhere; }
+.emailAddress { min-height: 44px; text-align: center; color: var(--gold); font-size: 15px; overflow-wrap: anywhere; }
 .emailAddress:hover { color: var(--gold); }
 .cardDivider { border-top: 1px solid var(--line); margin: 26px 0 23px; }
 .accessForm label { display: block; color: #d9dbd1; font-size: 12px; margin-bottom: 12px; }
@@ -63,6 +70,8 @@
 .footer nav { display: flex; gap: 24px; }
 .footer a { color: #c5c6bd; }
 .footer a:hover { color: var(--gold); }
+.footerContact { color: #c5c6bd; font-size: inherit; }
+.footerContact:hover { color: var(--gold); }
 .unlockedHero { padding-bottom: 76px; }
 .unlockedHero .heroCopy > .primaryButton { margin-top: 30px; }
 .welcomeCard { padding: 40px; border-left: 1px solid #4b4934; background: linear-gradient(90deg, rgba(233,189,87,0.045), transparent); }
@@ -87,6 +96,7 @@
 .featureList li { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 17px; color: #d3d8c9; font-size: 12px; line-height: 1.65; }
 .featureList svg { color: var(--gold); flex-shrink: 0; margin-top: 2px; }
 .packageNote { margin: 10px 0 20px; min-height: 36px; font-size: 10px; color: #a3aa97; line-height: 1.7; }
+.packageCard > .copyContact { display: flex; }
 .packageDisclosure { max-width: 850px; margin: 25px 0 0; font-size: 11px; color: #909889; line-height: 1.9; }
 .processSection { display: grid; grid-template-columns: 1fr 1.2fr; gap: 70px; padding: 62px 0; border-top: 1px solid var(--line); }
 .processSection .eyebrow { margin-bottom: 18px; }
