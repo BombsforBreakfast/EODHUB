@@ -43,12 +43,12 @@ export default function SupportAdminPage() {
     finally { setTesting(false); }
   }
   return <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}><NavBar /><main className={styles.page}>
-    <Link href="/admin">Admin panel</Link><h1>Hub contributions</h1><p>Recent voluntary, one-time support. Amounts below are before Stripe processing fees. Reconcile payouts and manage refunds in Stripe.</p>
+    <Link href="/admin">Admin panel</Link><h1>Hub contributions</h1><p>Confirmed voluntary, one-time support. Amounts below are before Stripe processing fees. Reconcile payouts and manage refunds in Stripe.</p>
     <button type="button" onClick={() => void load()} disabled={loading}>Refresh contributions</button>
     {!error && !loading ? <p><button type="button" onClick={() => void testAlert()} disabled={testing}>{testing ? "Sending test alert…" : "Send me a test alert"}</button></p> : null}
     <p role="status">{testMessage}</p>
     {error ? <p role="alert">{error}</p> : null}
     {loading ? <p role="status">Loading…</p> : items.length ? <ul style={{ listStyle: "none", padding: 0 }}>{items.map(item => <li key={item.id} style={{ padding: "16px 0", borderBottom: `1px solid ${t.border}` }}><strong>{supportDollars(item.amount_cents)}</strong> · {item.status.replaceAll("_", " ")} · {item.livemode ? "Live" : "Test"}<br /><small style={{ margin: "4px 0" }}>{new Date(item.paid_at || item.created_at).toLocaleString()}{item.refunded_cents ? ` · Refunded ${supportDollars(item.refunded_cents)}` : ""}</small></li>)}</ul> : !error ? <p>No contributions yet.</p> : null}
-    <small>Most recent 100 checkouts, including pending attempts. No membership status is created or changed.</small>
+    <small>Most recent 100 confirmed contributions. Unfinished checkouts are excluded. No membership status is created or changed.</small>
   </main></div>;
 }
