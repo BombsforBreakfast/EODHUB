@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 import { useTheme } from "@/app/lib/ThemeContext";
-import { HUB_SUPPORT_COSTS, HUB_SUPPORT_DISCLOSURE, HUB_SUPPORT_PRESETS, parseSupportAmount, supportDollars } from "@/app/lib/hubSupport";
+import { HUB_SUPPORT_COSTS, HUB_SUPPORT_DISCLOSURE, HUB_SUPPORT_PAYMENT_DISCLOSURE, HUB_SUPPORT_PRESETS, parseSupportAmount, supportDollars } from "@/app/lib/hubSupport";
 import type { SupportView } from "./HubSupportProvider";
 import styles from "./hubSupport.module.css";
 
@@ -72,6 +72,7 @@ export default function HubSupportModal({ view, onChange, onClose }: { view: Sup
           <p className={styles.note}>If you think EOD-HUB is a worthwhile mission, or it has helped you or someone you know, please consider contributing.</p>
           <button className={styles.primary} type="submit" disabled={busy || amount === null}>{busy ? "Opening secure checkout…" : `Continue${amount !== null ? ` with ${supportDollars(amount)}` : " to checkout"}`}</button>
           <p className={styles.hint}>One-time payment. No subscription. No account required.</p>
+          <p className={styles.hint}>{HUB_SUPPORT_PAYMENT_DISCLOSURE}</p>
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
         </form>
         <section className={styles.merch} aria-labelledby="hub-support-merch-title">
