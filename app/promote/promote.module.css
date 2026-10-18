@@ -159,4 +159,3 @@
 @media (prefers-reduced-motion: reduce) {
   .shell *, .shell *::before, .shell *::after { transition: none !important; scroll-behavior: auto !important; }
 }
-
