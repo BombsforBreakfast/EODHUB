@@ -23,6 +23,7 @@ import { requestCircuitCompose } from "../lib/circuitComposeBus";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
+import { canShowAdminNavigation } from "../lib/ownerAdminAccess";
 import { setNativeAppBadgeCount } from "../lib/native/appIconBadge";
 import {
   setMobileNavSpacerPx,
@@ -137,7 +138,7 @@ export default function NavBar() {
   /** Mobile breakpoint — fixed nav + layout. */
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 
-  /** Native iOS shell: hide admin/employer tools tuned for desktop workflows. */
+  /** Employer tools remain on the web; native Admin has an owner-only exception. */
   const hideDesktopOnlyHubLinks = isNativeApp();
 
   const [showNotifPanel, setShowNotifPanel] = useState(false);
@@ -1163,7 +1164,7 @@ export default function NavBar() {
                     ...(!hideDesktopOnlyHubLinks && (isEmployer || isAdmin)
                       ? [{ label: "Employer Dashboard", href: "/employer", icon: Target, badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    ...(!hideDesktopOnlyHubLinks && isAdmin
+                    ...(canShowAdminNavigation({ native: hideDesktopOnlyHubLinks, isAdmin, userId: currentUserId, email: user?.email })
                       ? [{ label: "Admin", href: "/admin", icon: Shield, badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     ...(isAdmin && user?.email?.toLowerCase() === "micheal.p.twigg@gmail.com"

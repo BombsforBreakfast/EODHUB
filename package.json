@@ -11,6 +11,7 @@
     "check:image-transforms": "node scripts/check-supabase-image-transforms.mjs",
     "test:feed-ranking": "tsx scripts/verify-feed-ranking.ts",
     "test:promotions": "tsx --test scripts/verify-promotions.test.ts scripts/verify-promotion-session.test.ts",
+    "test:owner-admin": "tsx --test scripts/verify-owner-admin-access.test.ts",
     "test:mux-video": "tsx scripts/verify-mux-feed-video.ts",
     "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
     "test:linkedin-scraper": "tsx scripts/verify-linkedin-job-scraper.ts",
