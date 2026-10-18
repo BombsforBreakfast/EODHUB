@@ -1,6 +1,6 @@
 import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { dispatchPushForNotification } from "./server/pushDispatch";
+import { dispatchPushForNotification, type PushDeliveryReport } from "./server/pushDispatch";
 
 export type CreateNotificationInput = {
   recipientUserId: string;
@@ -27,7 +27,8 @@ export type CreateNotificationInput = {
 export async function createNotification(
   db: SupabaseClient,
   input: CreateNotificationInput,
-): Promise<void> {
+  options: { waitForPush?: boolean } = {},
+): Promise<PushDeliveryReport | undefined> {
   if (input.actorUserId && input.actorUserId !== input.recipientUserId) {
     const { data: blockRows, error: blockError } = await db
       .from("user_blocks")
@@ -67,6 +68,8 @@ export async function createNotification(
     data && typeof data === "object" && "id" in data && typeof data.id === "string"
       ? data.id
       : null;
+
+  if (options.waitForPush) return dispatchPushForNotification(db, input, notificationId);
 
   after(async () => {
     try {

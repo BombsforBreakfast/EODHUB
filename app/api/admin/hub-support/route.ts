@@ -22,15 +22,19 @@ export async function POST(request: NextRequest) {
   const rate = checkRateLimit(`hub-support:test-alert:${OWNER_ADMIN_USER_ID}`, { limit: 1, windowMs: 60_000 });
   if (!rate.allowed) return supportJson({ error: "Please wait a minute before sending another test." }, 429);
   try {
-    await createNotification(access.admin, {
+    const delivery = await createNotification(access.admin, {
       recipientUserId: OWNER_ADMIN_USER_ID,
       type: "hub_contribution_test", category: "system", actorName: "Support the Hub",
       title: "Hub contribution alerts test",
       message: "Test only: Hub contribution alerts are enabled. No payment was made.",
       link: "/admin/hub-support",
       dedupeKey: `hub-support-test:${Math.floor(Date.now() / 60_000)}`,
-    });
-    return supportJson({ message: "Test alert queued for your account. Check your bell and registered devices; no payment was made." });
+    }, { waitForPush: true });
+    const summary = (name: string, platform: NonNullable<typeof delivery>["ios"]) =>
+      `${name}: ${!platform.configured ? "provider not configured" : !platform.registered ? "no registered devices" : `${platform.accepted} of ${platform.registered} devices accepted by provider`}${platform.failures.length ? ` (${platform.failures.join("; ")})` : ""}.`;
+    const status = delivery?.skipped ? ` Push skipped: ${delivery.skipped.replaceAll("_", " ")}.` : "";
+    const details = delivery ? ` ${summary("iPhone", delivery.ios)} ${summary("Android", delivery.android)}` : "";
+    return supportJson({ message: `Test only; no payment was made.${status}${details} Provider acceptance does not confirm that the phone displayed it.`, delivery });
   } catch {
     return supportJson({ error: "Could not queue the test alert. Please try again." }, 503);
   }
