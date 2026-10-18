@@ -26,6 +26,10 @@ Server validates integer USD cents from $1–$500. Same-origin POST, bounded req
 
 Signed, mode-checked Stripe events exclusively confirm payment. A return URL alone never marks it paid. Event application locks the contribution, deduplicates event IDs, checks amount/mode/session/intent, and preserves refunds across out-of-order payment events. Operational failures return non-2xx for Stripe retry. Unrelated events are ignored. The public receipt endpoint reveals only amount/currency/status for an opaque session reference, never email, account, or card data.
 
+Apply `20261018190000_hub_support_owner_notifications.sql` before deploying owner alerts. Each confirmed live contribution creates one bell notification for the exact owner administrator ID and email. The notification and payment state commit atomically; a durable notification ID prevents additional alerts even if the bell item is archived. No sandbox, pending or expiration event generates an alert. The first paid event schedules native push through the existing APNs/FCM path, respecting the owner's push preference. The existing pending-push sweep is the delivery backstop. Alerts open the owner-only contribution ledger and contain no contributor identity or card details. Push delivery still requires a registered device and notification permission.
+
+The ledger's “Send me a test alert” button calls the owner-authenticated POST endpoint. It takes no recipient or payment input and creates a clearly labelled test notification only for the owner; no contribution is recorded. The button is rate limited and reuses a minute-specific deduplication key.
+
 ## Verify
 
 `npx tsx --test scripts/verify-hub-support.test.ts`, TypeScript, targeted lint, then sandbox checkout (guest, signed-in, custom amount, cancellation, success, webhook duplicate and refund). Verify service-role-only database permissions and native CTA absence. Do not test with a real card until the owner explicitly authorizes a real transaction. Keep old membership configuration untouched.
