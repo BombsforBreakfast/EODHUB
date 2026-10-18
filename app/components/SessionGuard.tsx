@@ -37,7 +37,7 @@ async function getSessionWithRetry(): Promise<boolean> {
 export default function SessionGuard() {
   const { isLoading } = useAuth();
   const pathname = usePathname();
-  const isPromotionPage = pathname === "/promote" || pathname.startsWith("/promote/");
+  const isPromotionPage = pathname === "/promote" || pathname.startsWith("/promote/") || pathname === "/support-the-hub" || pathname.startsWith("/support-the-hub/");
 
   useEffect(() => {
     if (typeof window === "undefined") return;

@@ -12,6 +12,7 @@ import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPending
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import AtlwHotlineModal from "./AtlwHotlineModal";
+import { HubSupportButton } from "./support/HubSupportProvider";
 import { canAccessAtlwHotline } from "../lib/membershipCountries";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
@@ -23,7 +24,7 @@ import { requestCircuitCompose } from "../lib/circuitComposeBus";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
-import { canShowAdminNavigation } from "../lib/ownerAdminAccess";
+import { canShowAdminNavigation, isOwnerAdmin } from "../lib/ownerAdminAccess";
 import { setNativeAppBadgeCount } from "../lib/native/appIconBadge";
 import {
   setMobileNavSpacerPx,
@@ -1170,10 +1171,10 @@ export default function NavBar() {
                     ...(isAdmin && user?.email?.toLowerCase() === "micheal.p.twigg@gmail.com"
                       ? [{ label: "Promotions review", href: "/admin/promotions", icon: Shield, badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    { label: "Sidebars", href: "/sidebar", icon: MessageSquare, badge: 0, onNav: null },
-                    ...(showAtlwHotlineNav
-                      ? [{ label: "ATLW Hotline", href: "", icon: Phone, badge: 0, onNav: null as (() => Promise<void>) | null, hotline: true as const }]
+                    ...(isOwnerAdmin({ isAdmin, userId: currentUserId, email: user?.email })
+                      ? [{ label: "Hub contributions", href: "/admin/hub-support", icon: Shield, badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
+                    { label: "Sidebars", href: "/sidebar", icon: MessageSquare, badge: 0, onNav: null },
                   ].map((item) => {
                     const comingSoonBadge = "comingSoon" in item && item.comingSoon ? (
                       <span
@@ -1221,29 +1222,6 @@ export default function NavBar() {
                       );
                     }
 
-                    if ("hotline" in item && item.hotline) {
-                      return (
-                        <button
-                          key={item.label}
-                          type="button"
-                          onClick={() => {
-                            setShowHub(false);
-                            setShowAtlwHotline(true);
-                          }}
-                          style={{
-                            ...rowStyle,
-                            border: "2px solid #991b1b",
-                            background: "#dc2626",
-                            color: "#ffffff",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <HubNavIcon icon={item.icon} />
-                          <span style={{ flex: 1, textAlign: "left" }}>{item.label}</span>
-                        </button>
-                      );
-                    }
-
                     return (
                       <a
                         key={item.label}
@@ -1263,6 +1241,13 @@ export default function NavBar() {
                       </a>
                     );
                   })}
+                </div>
+                <div className="nav-hub-modal-grid" style={{ marginTop: 8 }}>
+                  <HubSupportButton onOpen={() => { setShowHub(false); hubBtnRef.current?.focus(); }} />
+                  {showAtlwHotlineNav ? <button type="button" onClick={() => { setShowHub(false); setShowAtlwHotline(true); }}
+                    style={{ minHeight: 44, minWidth: 0, display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: "2px solid #991b1b", background: "#dc2626", color: "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14 }}>
+                    <HubNavIcon icon={Phone} /><span>ATLW Hotline</span>
+                  </button> : null}
                 </div>
               </div>
             </div>,

@@ -17,6 +17,7 @@ import { ChatroomSheetProvider } from "./components/ChatroomSheetContext";
 import ChatroomPeekSheetHost from "./components/ChatroomPeekSheetHost";
 import { ToastProvider } from "./components/toast/ToastProvider";
 import { ConfirmProvider } from "./components/confirm/ConfirmProvider";
+import { HubSupportProvider } from "./components/support/HubSupportProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -68,6 +69,7 @@ export default function RootLayout({
           <AuthProvider>
           <ToastProvider>
           <ConfirmProvider>
+          <HubSupportProvider>
           <MemorialNavModalProvider>
             <OnlinePresenceProvider>
               <ChatroomSheetProvider>
@@ -139,6 +141,7 @@ export default function RootLayout({
               </ChatroomSheetProvider>
             </OnlinePresenceProvider>
           </MemorialNavModalProvider>
+          </HubSupportProvider>
           </ConfirmProvider>
           </ToastProvider>
           </AuthProvider>
