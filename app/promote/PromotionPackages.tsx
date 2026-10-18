@@ -1,4 +1,5 @@
 import { Check } from "lucide-react";
+import Link from "next/link";
 import CopyPromotionEmail from "./CopyPromotionEmail";
 import styles from "./promote.module.css";
 
@@ -64,10 +65,10 @@ export default function PromotionPackages() {
                 {item.features.map((feature) => <li key={feature}><Check size={17} aria-hidden="true" /><span>{feature}</span></li>)}
               </ul>
               <p className={styles.packageNote}>{item.note}</p>
-              <CopyPromotionEmail
+              <Link
                 className={item.name === "Featured" ? styles.primaryButton : styles.secondaryButton}
-                label={`Copy email to ask about ${item.name}`}
-              />
+                href={`/promote/request?package=${item.name}`}
+              >Start with {item.name}</Link>
             </article>
           ))}
         </div>
@@ -77,7 +78,7 @@ export default function PromotionPackages() {
       <section className={styles.processSection} aria-labelledby="process-heading">
         <div><p className={styles.eyebrow}>A PERSONAL APPROACH</p><h2 id="process-heading">Reviewed by a person.<br />Built for this community.</h2></div>
         <ol className={styles.processList}>
-          <li><span>01</span><div><h3>Tell us what you’re promoting.</h3><p>Email your idea, a destination link, and your preferred timing. We’ll review it together.</p></div></li>
+          <li><span>01</span><div><h3>Tell us what you’re promoting.</h3><p>Choose a package, share your brief, and attach your images. Your request goes directly to our review desk.</p></div></li>
           <li><span>02</span><div><h3>Agree on the details.</h3><p>We confirm the package and available placements, then send a one-time Square invoice.</p></div></li>
           <li><span>03</span><div><h3>Prepare it. Approve it. Publish it.</h3><p>Production begins after payment. We review the finished promotion before publishing; the campaign clock starts when it goes live.</p></div></li>
         </ol>
