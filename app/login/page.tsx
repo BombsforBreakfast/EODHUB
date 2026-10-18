@@ -837,8 +837,8 @@ export default function LoginPage() {
 
       <div
         style={{
-          marginBottom: 10,
-          padding: "6px 6px 4px",
+          marginBottom: 4,
+          padding: "0 6px",
           color: t.textMuted,
           textAlign: "center",
         }}
@@ -865,15 +865,13 @@ export default function LoginPage() {
         aria-live="polite"
         aria-atomic="true"
         style={{
-          marginBottom: 10,
+          marginBottom: 4,
           fontSize: 12,
           lineHeight: 1.35,
           color: t.textMuted,
           fontWeight: 700,
-          padding: "8px 10px",
-          borderRadius: 10,
-          border: `1px solid ${t.border}`,
-          background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : t.bg,
+          padding: 0,
+          background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : "transparent",
           transition: "background 0.35s ease",
           fontVariantNumeric: "tabular-nums",
           textAlign: "center",
