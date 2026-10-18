@@ -4,6 +4,7 @@ export const HUB_SUPPORT_MIN_CENTS = 100;
 export const HUB_SUPPORT_MAX_CENTS = 50000;
 export const HUB_SUPPORT_PRESETS = [100, 300, 500] as const;
 export const HUB_SUPPORT_DISCLOSURE = "This is a voluntary contribution to EOD-HUB LLC, a business. It is not a tax-deductible charitable donation. No goods, services, or additional access are provided.";
+export const HUB_SUPPORT_PAYMENT_DISCLOSURE = "Contribution payments are powered by Stripe. EOD-HUB does not process or store your credit card information.";
 export const HUB_SUPPORT_COSTS = [
   ["Database management", "$30 / month"],
   ["Domain and web hosting", "$25 / month"],
