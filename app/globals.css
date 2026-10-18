@@ -243,17 +243,6 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
 }
 
 /* Login page ? collapse feature bullets on mobile so auth options sit higher */
-.login-intro-headline {
-  font-size: 18px;
-  line-height: 1.4;
-  font-weight: 700;
-  text-align: center;
-}
-
-.login-intro-details {
-  margin-top: 8px;
-}
-
 .login-intro-summary {
   list-style: none;
   display: none;
@@ -287,12 +276,6 @@ button:active:not(.chatroom-peek-bar):not(.chatroom-peek-fab), a.nav-btn:active 
 }
 
 @media (max-width: 640px) {
-  .login-intro-headline {
-    font-size: clamp(12.5px, 3.45vw, 14px);
-    line-height: 1.32;
-    padding-inline: 2px;
-  }
-
   .login-intro-summary {
     display: flex;
   }

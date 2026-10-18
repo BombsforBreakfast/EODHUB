@@ -843,9 +843,6 @@ export default function LoginPage() {
           textAlign: "center",
         }}
       >
-        <div className="login-intro-headline" style={{ color: t.text }}>
-          EOD Hub connects the community in one place—built by and for those who&apos;ve done the work
-        </div>
         <details className="login-intro-details">
           <summary className="login-intro-summary" style={{ color: t.textMuted }}>
             What&apos;s on EOD Hub
