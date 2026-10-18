@@ -45,6 +45,26 @@ type DeviceTokenRow = {
   platform: string;
 };
 
+type PlatformDelivery = { configured: boolean; registered: number; attempted: number; accepted: number; failures: string[] };
+export type PushDeliveryReport = {
+  ios: PlatformDelivery;
+  android: PlatformDelivery;
+  skipped?: "excluded" | "not_configured" | "already_sent" | "disabled" | "no_devices" | "device_lookup_failed";
+};
+function deliveryReport(): PushDeliveryReport {
+  const platform = (configured: boolean): PlatformDelivery => ({ configured, registered: 0, attempted: 0, accepted: 0, failures: [] });
+  return { ios: platform(isApnsConfigured()), android: platform(isFcmConfigured()) };
+}
+function acceptedCount(report: PushDeliveryReport): number {
+  return report.ios.accepted + report.android.accepted;
+}
+function failureSummary(result: { reason: string; status?: number }): string {
+  if (result.status) return `Provider returned HTTP ${result.status}`;
+  if (result.reason === "fcm_auth_failed") return "Firebase authentication failed";
+  if (result.reason === "apns_request_timeout") return "Apple request timed out";
+  return "Provider request failed";
+}
+
 /**
  * Sends a native push to every eligible iOS/Android device the user owns.
  * Respects the user's push preference and prunes stale device tokens.
@@ -53,37 +73,42 @@ async function deliverPushToUser(
   db: SupabaseClient,
   recipientUserId: string,
   content: PushContent,
-): Promise<number> {
+): Promise<PushDeliveryReport> {
+  const report = deliveryReport();
   const { data: prefs } = await db
     .from("notification_preferences")
     .select("push_notifications")
     .eq("user_id", recipientUserId)
     .maybeSingle();
 
-  if (prefs && prefs.push_notifications === false) return 0;
+  if (prefs && prefs.push_notifications === false) return { ...report, skipped: "disabled" };
 
   const { data: tokens, error: tokenErr } = await db
     .from("push_device_tokens")
     .select("id, token, platform")
     .eq("user_id", recipientUserId);
 
-  if (tokenErr || !tokens?.length) return 0;
+  if (tokenErr || !tokens?.length) return { ...report, skipped: tokenErr ? "device_lookup_failed" : "no_devices" };
+  for (const row of tokens as DeviceTokenRow[]) {
+    if (row.platform === "ios" || row.platform === "android") report[row.platform].registered += 1;
+  }
 
   const payload = {
     ...content,
     badgeCount: await unreadNotificationCount(db, recipientUserId),
   };
   const staleTokenIds: string[] = [];
-  let sentCount = 0;
 
   for (const row of tokens as DeviceTokenRow[]) {
     if (row.platform === "ios") {
       if (!isApnsConfigured()) continue;
+      report.ios.attempted += 1;
       const result = await sendApnsPush(row.token, payload);
       if (result.ok) {
-        sentCount += 1;
+        report.ios.accepted += 1;
         continue;
       }
+      report.ios.failures.push(failureSummary(result));
       if (
         result.status === 410 ||
         /BadDeviceToken|DeviceTokenNotForTopic|Unregistered/i.test(result.reason)
@@ -101,11 +126,13 @@ async function deliverPushToUser(
 
     if (row.platform === "android") {
       if (!isFcmConfigured()) continue;
+      report.android.attempted += 1;
       const result = await sendFcmPush(row.token, payload);
       if (result.ok) {
-        sentCount += 1;
+        report.android.accepted += 1;
         continue;
       }
+      report.android.failures.push(failureSummary(result));
       if (isInvalidFcmToken(result)) {
         staleTokenIds.push(row.id);
       }
@@ -122,18 +149,18 @@ async function deliverPushToUser(
     await db.from("push_device_tokens").delete().in("id", staleTokenIds);
   }
 
-  return sentCount;
+  return report;
 }
 
 export async function dispatchPushForNotification(
   db: SupabaseClient,
   input: CreateNotificationInput,
   notificationId?: string | null,
-): Promise<void> {
-  if (!isPushEligibleNotificationType(input.type)) return;
+): Promise<PushDeliveryReport> {
+  if (!isPushEligibleNotificationType(input.type)) return { ...deliveryReport(), skipped: "excluded" };
   if (!isNativePushConfigured()) {
     warnPushMissingOnce();
-    return;
+    return { ...deliveryReport(), skipped: "not_configured" };
   }
 
   if (notificationId) {
@@ -142,21 +169,22 @@ export async function dispatchPushForNotification(
       .select("pushed_at")
       .eq("id", notificationId)
       .maybeSingle();
-    if (existing?.pushed_at) return;
+    if (existing?.pushed_at) return { ...deliveryReport(), skipped: "already_sent" };
   }
 
-  const sentCount = await deliverPushToUser(db, input.recipientUserId, {
+  const report = await deliverPushToUser(db, input.recipientUserId, {
     title: pushTitle(input),
     body: pushBody(input),
     link: input.link ?? null,
   });
 
-  if (sentCount > 0 && notificationId) {
+  if (acceptedCount(report) > 0 && notificationId) {
     await db
       .from("notifications")
       .update({ pushed_at: new Date().toISOString() })
       .eq("id", notificationId);
   }
+  return report;
 }
 
 export type PendingNotificationRow = {
@@ -183,7 +211,7 @@ export async function dispatchPushForPendingRow(
   const title = row.actor_name?.trim() || "EOD-Hub";
   const body = row.message?.trim() || "You have a new notification";
 
-  const sentCount = await deliverPushToUser(db, row.recipient_user_id, {
+  const report = await deliverPushToUser(db, row.recipient_user_id, {
     title,
     body,
     link: row.link ?? null,
@@ -194,5 +222,5 @@ export async function dispatchPushForPendingRow(
     .update({ pushed_at: new Date().toISOString() })
     .eq("id", row.id);
 
-  return { pushed: sentCount > 0 };
+  return { pushed: acceptedCount(report) > 0 };
 }

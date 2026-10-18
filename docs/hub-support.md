@@ -30,6 +30,8 @@ Apply `20261018190000_hub_support_owner_notifications.sql` before deploying owne
 
 The ledger's “Send me a test alert” button calls the owner-authenticated POST endpoint. It takes no recipient or payment input and creates a clearly labelled test notification only for the owner; no contribution is recorded. The button is rate limited and reuses a minute-specific deduplication key.
 
+The test request waits for delivery attempts and reports separate iPhone/Android provider configuration, registered-device and accepted-device counts, and sanitized failure summaries. It never returns device tokens or provider credentials. Provider acceptance is not proof of display on the handset. Ordinary notifications retain their existing background dispatch behavior.
+
 ## Verify
 
 `npx tsx --test scripts/verify-hub-support.test.ts`, TypeScript, targeted lint, then sandbox checkout (guest, signed-in, custom amount, cancellation, success, webhook duplicate and refund). Verify service-role-only database permissions and native CTA absence. Do not test with a real card until the owner explicitly authorizes a real transaction. Keep old membership configuration untouched.
