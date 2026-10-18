@@ -1,8 +1,6 @@
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { PROMOTION_PACKAGES } from "@/app/lib/promotions";
-import { getPromoteAccessPassword, hasPromoteAccess, PROMOTE_ACCESS_COOKIE } from "@/app/lib/server/promoteAccess";
 import CopyPromotionEmail from "../CopyPromotionEmail";
 import PromotionWizard from "./PromotionWizard";
 import styles from "../promote.module.css";
@@ -12,8 +10,7 @@ export const metadata = { title: "Your promotion request | EOD-HUB", robots: { i
 export default async function PromotionRequestPage({ searchParams }: { searchParams: Promise<{ package?: string }> }) {
   const selected = (await searchParams).package;
   const pkg = PROMOTION_PACKAGES.find(p => p === selected);
-  const jar = await cookies();
-  if (!pkg || !hasPromoteAccess(jar.get(PROMOTE_ACCESS_COOKIE)?.value, getPromoteAccessPassword())) redirect("/promote");
+  if (!pkg) redirect("/promote");
   return <div className={styles.shell}>
     <header className={styles.header}><Link href="/promote" className={styles.brand}><span>EOD-HUB<small>PROMOTIONS</small></span></Link><CopyPromotionEmail className={styles.footerContact} /></header>
     <main className={`${styles.main} ${styles.wizardMain}`}><PromotionWizard selectedPackage={pkg} /></main>

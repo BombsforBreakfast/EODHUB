@@ -1,8 +1,7 @@
 import "server-only";
-import { createHash } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
-import { getPromoteAccessPassword, hasPromoteAccess, PROMOTE_ACCESS_COOKIE } from "./promoteAccess";
+import { isPromotionSession, promotionOwner, PROMOTION_SESSION_COOKIE } from "./promotionSession";
 import { checkRateLimit, getClientIp } from "./rateLimit";
 
 export const PROMOTION_BUCKET = "promotion-materials";
@@ -15,16 +14,28 @@ export function promotionDb() {
   if (!url || !key) throw new Error("Promotion requests are temporarily unavailable. Please try again later.");
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
-export function promotionAccess(request: NextRequest) {
-  const token = request.cookies.get(PROMOTE_ACCESS_COOKIE)?.value;
-  if (!hasPromoteAccess(token, getPromoteAccessPassword())) return { error: promotionJson({ error: "Your advertiser access expired. Unlock the promotion page again; your form is still here." }, 401) };
+export function promotionClientIp(request: NextRequest) {
+  // Vercel supplies its trusted proxy address, even when another proxy is used.
+  return request.headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim() || getClientIp(request);
+}
+export function promotionGuard(request: NextRequest) {
   try {
     const origin = new URL(request.headers.get("origin") ?? "");
     if (origin.host !== request.headers.get("host") || origin.protocol !== request.nextUrl.protocol) throw new Error();
-  } catch { return { error: promotionJson({ error: "Please submit from the promotion page." }, 403) }; }
-  const rate = checkRateLimit(`promotion:${getClientIp(request)}`, { limit: 60, windowMs: 60 * 60 * 1000 });
-  if (!rate.allowed) return { error: promotionJson({ error: "Too many attempts. Please try again later." }, 429) };
-  return { owner: createHash("sha256").update(token!).digest("hex") };
+  } catch { return promotionJson({ error: "Please submit from the promotion page." }, 403); }
+  const rate = checkRateLimit(`promotion:${promotionClientIp(request)}`, { limit: 60, windowMs: 60 * 60 * 1000 });
+  if (!rate.allowed) {
+    const response = promotionJson({ error: "Too many attempts. Please try again later." }, 429);
+    response.headers.set("Retry-After", String(rate.retryAfterSec ?? 3600));
+    return response;
+  }
+}
+export function promotionAccess(request: NextRequest) {
+  const error = promotionGuard(request);
+  if (error) return { error };
+  const token = request.cookies.get(PROMOTION_SESSION_COOKIE)?.value;
+  if (!isPromotionSession(token)) return { error: promotionJson({ error: "Your private form session expired. Please allow cookies and retry your submission." }, 401) };
+  return { owner: promotionOwner(token) };
 }
 export async function readPromotionJson(request: NextRequest, max = 64000): Promise<unknown> {
   if (!request.headers.get("content-type")?.startsWith("application/json")) throw new Error("Please submit the form again.");

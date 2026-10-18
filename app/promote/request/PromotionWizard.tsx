@@ -55,6 +55,8 @@ export default function PromotionWizard({ selectedPackage }: { selectedPackage: 
     setDraftId(id); setBusy(true);
     try {
       setProgress("Saving your request…");
+      // Silently establish/reuse a private draft session; no member login is needed.
+      await responseJson(await fetch("/promote/api/session", { method: "POST" }));
       await responseJson(await fetch("/promote/api/requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(input.data) }));
       for (let index = 0; index < images.length; index++) {
         const image = images[index];
@@ -101,7 +103,7 @@ export default function PromotionWizard({ selectedPackage }: { selectedPackage: 
         <dl className={styles.requestSummary}><dt>Package</dt><dd>{selectedPackage}</dd><dt>Contact</dt><dd>{fields.name}<br />{fields.email}<br />{fields.phone}{fields.business ? <><br />{fields.business}</> : null}</dd><dt>Promotion type</dt><dd>{fields.promotionType}</dd><dt>Your brief</dt><dd>{fields.description}</dd>{fields.destination ? <><dt>Destination</dt><dd>{fields.destination}</dd></> : null}{fields.timing ? <><dt>Timing</dt><dd>{fields.timing}</dd></> : null}<dt>Images</dt><dd>{images.length} of 5{images.map(image => <div key={image.id}>{image.file.name}</div>)}</dd></dl>
         <label className={styles.consent}><input type="checkbox" required checked={consent} disabled={busy || Boolean(draftId)} onChange={e => setConsent(e.target.checked)} /><span>I have permission to share this material and understand this is a request for review. EOD-HUB may contact me about this promotion. Nothing is charged or published by submitting.</span></label>
       </> : null}
-      {error ? <p role="alert" className={styles.wizardError}>{error}{error.includes("expired") ? <> <a href="/promote" target="_blank" rel="noopener noreferrer">Unlock in a new tab</a>, then choose “Edit and start a fresh request” here. Your form details are kept.</> : null}</p> : null}
+      {error ? <p role="alert" className={styles.wizardError}>{error}{error.includes("expired") ? <> Choose “Edit and start a fresh request” below. Your form details are kept.</> : null}</p> : null}
       {progress ? <p role="status" aria-live="polite">{progress}</p> : null}
       <div className={styles.wizardActions}>
         {step > 1 && !draftId ? <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => { setStep(previous => previous - 1); setError(""); }}>Back</button> : null}
