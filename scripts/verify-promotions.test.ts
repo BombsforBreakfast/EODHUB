@@ -15,6 +15,18 @@ test("rejects malformed, unsafe and oversized submissions", () => {
     assert.equal(promotionInput.safeParse({ ...input, ...bad }).success, false, JSON.stringify(bad).slice(0,80));
   }
 });
+test("name, email and description are required even when the browser is bypassed", () => {
+  for (const field of ["name", "email", "description"] as const) {
+    for (const value of [undefined, "", "   "]) {
+      assert.equal(promotionInput.safeParse({ ...input, [field]: value }).success, false, `${field} must be provided`);
+    }
+  }
+});
+test("phone can be blank or omitted, but a supplied number is validated", () => {
+  for (const value of [undefined, "", "   "]) assert.equal(promotionInput.parse({ ...input, phone: value }).phone, "");
+  assert.equal(promotionInput.parse({ ...input, phone: " +1 555 010 1000 " }).phone, "+1 555 010 1000");
+  for (const value of ["1", "x".repeat(41), null]) assert.equal(promotionInput.safeParse({ ...input, phone: value }).success, false);
+});
 test("bell notification opens the phone-friendly request review", () => {
   const id = randomUUID();
   assert.equal(getNotificationHref({ message: "Promotion to review", post_owner_id: null, type: "promotion_request", link: `/admin/promotions?request=${id}` }, { currentUserId: "admin", isAdmin: true }), `/admin/promotions?request=${id}`);
