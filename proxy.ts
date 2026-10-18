@@ -17,8 +17,9 @@ function isPublicPolicyPath(pathname: string) {
  * Everything else redirects to /login when the user is not authenticated.
  */
 function isPublicPath(pathname: string) {
-  // The promotion brochure has its own server-validated access gate.
+  // Public promotion intake and voluntary contributions need no member session.
   if (pathname === "/promote" || pathname.startsWith("/promote/")) return true;
+  if (pathname === "/support-the-hub" || pathname.startsWith("/support-the-hub/")) return true;
   if (isPublicPolicyPath(pathname)) return true;
   const publicRoutes = [
     "/login",
