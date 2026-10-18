@@ -1,29 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import { useTheme } from "../../lib/ThemeContext";
 import { isNativeApp } from "../../lib/native/isNativeApp";
 import NavBar from "../NavBar";
 
+// Platform is fixed for this page lifetime; hydration resolves the server's
+// unknown platform before rendering the desktop-only content.
+const subscribePlatform = () => () => {};
+const serverPlatform = () => null;
+
 /**
- * Blocks desktop-heavy admin/employer pages inside the native iOS shell.
+ * Blocks desktop-heavy pages in native shells unless the caller has verified
+ * an account-specific exception. Server authorization still protects the data.
  */
 export default function NativeDesktopOnlyGate({
   title,
+  allowNative = false,
   children,
 }: {
   title: string;
+  allowNative?: boolean;
   children: React.ReactNode;
 }) {
   const { t } = useTheme();
-  const [blocked, setBlocked] = useState(false);
+  const native = useSyncExternalStore<boolean | null>(subscribePlatform, isNativeApp, serverPlatform);
 
-  useEffect(() => {
-    setBlocked(isNativeApp());
-  }, []);
-
-  if (!blocked) return <>{children}</>;
+  if (native === null) return <div role="status" style={{ padding: 24, color: t.textMuted }}>Loading…</div>;
+  if (!native || allowNative) return <>{children}</>;
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>

@@ -7,6 +7,10 @@ import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import NativeDesktopOnlyGate from "../components/native/NativeDesktopOnlyGate";
+import { useAuth } from "../lib/auth/AuthProvider";
+import { isOwnerAdmin } from "../lib/ownerAdminAccess";
+import { isNativeApp } from "../lib/native/isNativeApp";
+import { downloadCsvFile } from "../lib/native/downloadCsvFile";
 import { useTheme } from "../lib/ThemeContext";
 import {
   fetchAdminPendingBreakdown,
@@ -371,16 +375,10 @@ function buildWaitlistCsv(rows: WaitlistSignupRow[]): string {
   return lines.join("\r\n");
 }
 
-function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
+async function downloadWaitlistCsv(rows: WaitlistSignupRow[]): Promise<boolean> {
   const csv = buildWaitlistCsv(rows);
-  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
   const stamp = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `eod-hub-waitlist-${stamp}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  return downloadCsvFile(`eod-hub-waitlist-${stamp}.csv`, csv);
 }
 
 function adminUserOutreachStatus(u: UserProfile): string {
@@ -442,16 +440,10 @@ function buildUsersOutreachCsv(rows: Array<UserProfile & { adminList?: string }>
   return lines.join("\r\n");
 }
 
-function downloadUsersOutreachCsv(rows: UserProfile[], filenameStem: string): void {
+async function downloadUsersOutreachCsv(rows: UserProfile[], filenameStem: string): Promise<boolean> {
   const csv = buildUsersOutreachCsv(rows);
-  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
   const stamp = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `eod-hub-users-${filenameStem}-${stamp}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  return downloadCsvFile(`eod-hub-users-${filenameStem}-${stamp}.csv`, csv);
 }
 
 const SIGNUP_OUTREACH_EXPORT_FILTERS: UserStatusFilter[] = ["unverified", "onboarding"];
@@ -858,6 +850,7 @@ function KpiCard({
 }
 
 export default function AdminPage() {
+  const { user: currentAuthUser } = useAuth();
   useRequireFullAccess("app/admin/page.tsx");
   usePageTracking(PAGE_TRACKING.admin);
   const [loading, setLoading] = useState(true);
@@ -2010,8 +2003,7 @@ export default function AdminPage() {
         ...u,
         adminList: userFilter === "onboarding" ? "Onboarding" : userFilter === "unverified" ? "Unverified" : userFilter,
       }));
-      downloadUsersOutreachCsv(labeled, userFilter);
-      showToast(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"} to CSV`);
+      if (await downloadUsersOutreachCsv(labeled, userFilter)) showToast(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"} to CSV`);
     } catch {
       alert("Could not export users. Try refreshing and signing in again.");
     } finally {
@@ -2046,8 +2038,7 @@ export default function AdminPage() {
         alert("No unverified or onboarding users to export.");
         return;
       }
-      downloadUsersOutreachCsv(rows, "signup-outreach");
-      showToast(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"} (Unverified + Onboarding)`);
+      if (await downloadUsersOutreachCsv(rows, "signup-outreach")) showToast(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"} (Unverified + Onboarding)`);
     } catch {
       alert("Could not export users. Try refreshing and signing in again.");
     } finally {
@@ -2193,7 +2184,7 @@ export default function AdminPage() {
         .eq("user_id", user.id)
         .maybeSingle();
 
-      if (!profile?.is_admin) {
+      if (!profile?.is_admin || (isNativeApp() && !isOwnerAdmin({ userId: user.id, email: user.email, isAdmin: profile.is_admin }))) {
         setLoading(false);
         setAuthorized(false);
         setAdminActorUserId(null);
@@ -3761,7 +3752,7 @@ export default function AdminPage() {
   const directoryPendingTotal = pendingCounts.dir + pendingCounts.locReq;
 
   return (
-    <NativeDesktopOnlyGate title="Admin">
+    <NativeDesktopOnlyGate title="Admin" allowNative={isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized && adminActorUserId === currentAuthUser?.id })}>
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text, overflowX: "clip" }}>
       <NavBar />
 
@@ -4070,7 +4061,27 @@ export default function AdminPage() {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
+        {isMobile ? <div style={{ display: "flex", flexWrap: "wrap", gap: 14, marginTop: 24, alignItems: "center" }}>
+          <label style={{ display: "grid", gap: 8, width: "100%", fontWeight: 700, color: t.text }}>
+            Admin section
+            <select value={activeTab} onChange={event => setActiveTab(event.target.value as Tab)} style={{ width: "100%", minWidth: 0, padding: "12px 10px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 16 }}>
+              {([
+                ["businesses", "Businesses", pendingCounts.biz], ["business_org_pages", "Business Pages", pendingCounts.businessOrgPages],
+                ["jobs", "Jobs", pendingCounts.jobs + pendingCounts.jobsStale], ["users", "Users", pendingCounts.users],
+                ["groups", "Groups", 0], ["flags", "Flags", pendingCounts.flags],
+                ["events", "Events", pendingCounts.events + pendingCounts.scrapbook + pendingCounts.memorialsIntl],
+                ["bugs", "Bugs", pendingCounts.bugs], ["directory", "Directory", directoryPendingTotal],
+                ["engagement", "Engagement", 0], ["infrastructure", "Infrastructure", 0], ["push", "Push", 0],
+                ["news", "News", newsPendingCount], ["waitlist", "Waitlist", 0], ["lemon_lot", "Lemon Lot", 0],
+                ["failed_auth", "Failed Auth", pendingCounts.failedAuth],
+              ] as const).map(([value, label, count]) => <option key={value} value={value}>{label}{count > 0 ? ` (${formatNavBadgeCount(count)})` : ""}</option>)}
+            </select>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: t.textMuted }}>
+            <input type="checkbox" checked={pendingOnly} onChange={event => setPendingOnly(event.target.checked)} /> Pending only
+          </label>
+        </div> : null}
+        <div style={{ display: isMobile ? "none" : "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
           <button type="button" style={tabStyle("businesses")} onClick={() => setActiveTab("businesses")}>
             Businesses
             {tabNotifyBadge(pendingCounts.biz)}
@@ -7105,7 +7116,7 @@ export default function AdminPage() {
                     boxSizing: "border-box",
                   }}
                 />
-                <button type="button" onClick={() => downloadWaitlistCsv(filteredWaitlistRows)} disabled={filteredWaitlistRows.length === 0} style={{ ...actionBtn("#374151"), opacity: filteredWaitlistRows.length === 0 ? 0.5 : 1, cursor: filteredWaitlistRows.length === 0 ? "not-allowed" : "pointer" }}>
+                <button type="button" onClick={() => void downloadWaitlistCsv(filteredWaitlistRows).catch(() => alert("Could not export the waitlist. Please try again."))} disabled={filteredWaitlistRows.length === 0} style={{ ...actionBtn("#374151"), opacity: filteredWaitlistRows.length === 0 ? 0.5 : 1, cursor: filteredWaitlistRows.length === 0 ? "not-allowed" : "pointer" }}>
                   Export CSV
                 </button>
                 <button type="button" onClick={() => void loadWaitlist()} disabled={waitlistLoading} style={{ ...actionBtn("#111"), opacity: waitlistLoading ? 0.7 : 1 }}>

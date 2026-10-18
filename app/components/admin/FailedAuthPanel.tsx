@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
+import { downloadCsvFile } from "../../lib/native/downloadCsvFile";
 import { FAILED_AUTH_REASONS } from "../../lib/auth/failedAuthReasons";
 import type {
   FailedAuthApiResponse,
@@ -102,16 +103,7 @@ function rowsToCsv(headers: ReadonlyArray<string>, rows: ReadonlyArray<ReadonlyA
 }
 
 function downloadCsv(filename: string, csv: string): void {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  // Defer revoke to give Safari/Firefox a tick to start the download.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  void downloadCsvFile(filename, csv).catch(() => alert("Could not export this report. Please try again."));
 }
 
 function csvDateStamp(): string {
