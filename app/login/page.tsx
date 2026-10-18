@@ -51,7 +51,7 @@ import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
 import ProudPartnersSection from "../components/login/ProudPartnersSection";
-import { HubSupportButton } from "../components/support/HubSupportProvider";
+import { HubSupportButton, WebSupportOnly } from "../components/support/HubSupportProvider";
 
 /**
  * How many login → protected-route redirects may happen in quick succession
@@ -1307,9 +1307,9 @@ export default function LoginPage() {
         </>
       )}
 
-      <div style={{ width: "min(100%, 380px)", margin: "24px auto", padding: "0 16px" }}>
+      <WebSupportOnly><div style={{ width: "min(100%, 380px)", margin: "24px auto", padding: "0 16px" }}>
         <HubSupportButton />
-      </div>
+      </div></WebSupportOnly>
       <ProudPartnersSection />
 
       {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
