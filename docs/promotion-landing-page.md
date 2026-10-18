@@ -2,7 +2,7 @@
 
 ## Public customer flow
 
-`/promote` openly shows Basic, Featured and Premium. Package buttons open `/promote/request?package=Basic|Featured|Premium` without a member login or shared password. The wizard captures the selected package, name, email, phone, optional business, promotion type, a brief up to 12,000 characters, optional link/timing, and up to five JPG/PNG/WebP images at 3 MiB each. `promote@eod-hub.com` remains available as a copy-email control; it delivers to Murphy's existing mailbox through an alias.
+`/promote` openly shows Basic, Featured and Premium. Package buttons open `/promote/request?package=Basic|Featured|Premium` without a member login or shared password. The wizard requires name, email and a description (20–12,000 characters); phone and business name are optional. A provided phone number must be 7–40 characters. It also captures the selected package, promotion type, optional link/timing, and up to five JPG/PNG/WebP images at 3 MiB each. `promote@eod-hub.com` remains available as a copy-email control; it delivers to Murphy's existing mailbox through an alias.
 
 Before saving, the wizard silently calls `/promote/api/session` to establish/reuse a random 256-bit bearer in a seven-day HttpOnly, SameSite=Lax cookie restricted to `/promote` (Secure in production). Only its hash is stored with the draft. This is anonymous draft ownership, not member/admin authentication; there is no customer read API. Mutations require same-origin requests. Missing or malformed sessions cannot change drafts, and one session cannot upload or submit another session's draft. The old password form, lock control and password endpoint are removed. `PROMOTE_ACCESS_PASSWORD` is no longer used or required.
 
@@ -20,10 +20,11 @@ Confirm placements, availability, dates and deliverables before invoicing. Produ
 
 ## Deployment and verification
 
-Apply both migrations in order:
+Apply the migrations in order:
 
 - `20261018093000_promotion_requests.sql`: private requests, notifications and image storage.
 - `20261018140000_public_promotion_intake.sql`: persistent source quota and service-role-only public-intake wrapper.
+- `20261018150000_optional_promotion_phone.sql`: permit an empty phone number while retaining required name/email/description constraints.
 
 The runtime uses existing Supabase and push configuration. No new API keys, billing integration or promotion password is needed. Page/API responses disable shared caching; the landing page remains noindex.
 

@@ -12,7 +12,7 @@ export const promotionInput = z.object({
   package: z.enum(PROMOTION_PACKAGES),
   name: z.string().trim().min(2, "Please enter your name.").max(120),
   email: z.email().trim().max(254),
-  phone: z.string().trim().min(7, "Please enter a phone number.").max(40),
+  phone: z.string().trim().max(40).refine(value => !value || value.length >= 7, "Please enter a complete phone number or leave it blank.").default(""),
   business: z.string().trim().max(160).default(""),
   promotionType: z.enum(PROMOTION_TYPES),
   description: z.string().trim().min(20, "Please give us a little more detail (at least 20 characters).").max(12000),
