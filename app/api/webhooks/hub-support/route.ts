@@ -1,9 +1,11 @@
-import { type NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import Stripe from "stripe";
 import { z } from "zod";
 import { HUB_SUPPORT_PURPOSE, isSupportAmount } from "@/app/lib/hubSupport";
 import { supportDb, supportJson, supportStripe } from "@/app/lib/server/hubSupport";
 import { readLimitedBody } from "@/app/lib/server/promotionRequests";
+import { OWNER_ADMIN_USER_ID } from "@/app/lib/ownerAdminAccess";
+import { dispatchPushForNotification } from "@/app/lib/server/pushDispatch";
 
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
@@ -38,8 +40,24 @@ export async function POST(request: NextRequest) {
       kind = "refund"; id = payment.metadata.contribution_id; amount = charge.amount; intent = intentId; refunded = charge.amount_refunded;
     } else return supportJson({ received: true });
     if (!z.uuid().safeParse(id).success || !isSupportAmount(amount)) throw new Error("Invalid support payment");
-    const { error } = await supportDb().rpc("apply_hub_support_event", { p_event: event.id, p_id: id, p_live: live, p_kind: kind, p_amount: amount, p_intent: intent, p_session: session, p_refunded: refunded });
+    const db = supportDb();
+    const { data, error } = await db.rpc("apply_hub_support_event", { p_event: event.id, p_id: id, p_live: live, p_kind: kind, p_amount: amount, p_intent: intent, p_session: session, p_refunded: refunded });
     if (error) throw error;
+    // The transaction returns an ID only once. Retry events never enqueue a
+    // second immediate push; the existing pending-push sweep covers failures.
+    if (data?.notification_id && typeof data.message === "string") {
+      after(async () => {
+        try {
+          await dispatchPushForNotification(db, {
+            recipientUserId: OWNER_ADMIN_USER_ID,
+            type: "hub_contribution", title: "New Hub contribution",
+            body: data.message, link: "/admin/hub-support",
+          }, data.notification_id);
+        } catch (pushError) {
+          console.error("[hub-support] owner push deferred to pending sweep", pushError instanceof Error ? pushError.name : "Error");
+        }
+      });
+    }
     return supportJson({ received: true });
   } catch { console.error("[hub-support] payment event could not be recorded", event.id); return supportJson({ error: "Payment recording failed. Retry this event." }, 500); }
 }

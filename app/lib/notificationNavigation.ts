@@ -225,6 +225,7 @@ export function getNotificationHref(
 export function getNotificationIcon(n: NotificationNavInput): string {
   const lower = (n.message ?? "").toLowerCase();
   const t = n.type ?? "";
+  if (t === "hub_contribution" || t === "hub_contribution_test") return "💚";
   if (t.startsWith("unit_")) return "🪖";
   if (t === "kangaroo_court_opened" || t === "kangaroo_court_verdict") return "⚖️";
   if (t === "job_save" || (lower.includes("job") && lower.includes("saved"))) return "💼";

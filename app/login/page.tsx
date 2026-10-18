@@ -863,15 +863,7 @@ export default function LoginPage() {
         </details>
       </div>
 
-      <div
-        style={{
-          background: t.surface,
-          border: `1px solid ${t.border}`,
-          borderRadius: t.radius,
-          boxShadow: t.shadow,
-          padding: 20,
-        }}
-      >
+      <div>
       <div
         aria-live="polite"
         aria-atomic="true"
