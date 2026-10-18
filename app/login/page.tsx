@@ -50,6 +50,7 @@ import { formatOAuthProviderLabel } from "../lib/auth/oauthProviders";
 import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
+import { useAndroidLoginPresentation } from "../lib/native/useAndroidLoginPresentation";
 import ProudPartnersSection from "../components/login/ProudPartnersSection";
 import { HubSupportButton, WebSupportOnly } from "../components/support/HubSupportProvider";
 
@@ -108,6 +109,7 @@ function reportAuthFailure(payload: {
 
 export default function LoginPage() {
   const { t, isDark } = useTheme();
+  const { showApple, finishingSignIn } = useAndroidLoginPresentation();
   const auth = useAuthOptional();
   const authLoading = auth?.isLoading ?? false;
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
@@ -807,6 +809,16 @@ export default function LoginPage() {
     cursor: "pointer",
   };
 
+  if (finishingSignIn) {
+    return (
+      <div role="status" aria-live="polite" style={{ minHeight: "100dvh", display: "grid", placeContent: "center", justifyItems: "center", gap: 20, background: t.bg, color: t.textMuted, padding: 24 }}>
+        <EodCrabLogo variant="login" />
+        <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} aria-hidden="true" />
+        <p style={{ margin: 0, fontSize: 15 }}>Finishing sign-in…</p>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -1003,19 +1015,20 @@ export default function LoginPage() {
             <>
               <OAuthProviderButtons
                 disabled={submitting}
+                showApple={showApple}
                 buttonSecondary={buttonSecondary}
                 onGoogle={() => signInWithGoogleOAuth()}
                 onApple={() => signInWithAppleOAuth()}
                 googleLabel="Sign in with Google"
                 appleLabel="Sign in with Apple"
               />
-              <AppleAuthHelperNote
+              {showApple && <AppleAuthHelperNote
                 open={appleHideEmailInfoOpen}
                 onToggle={() => setAppleHideEmailInfoOpen((prev) => !prev)}
                 textColor={t.text}
                 mutedColor={t.textMuted}
                 borderColor={t.border}
-              />
+              />}
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
                 <div style={{ flex: 1, height: 1, background: t.border }} />
                 <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
@@ -1175,7 +1188,7 @@ export default function LoginPage() {
                             Sign in with Google
                           </button>
                         ) : null}
-                        {oauthExistsProviders?.includes("apple") ? (
+                        {showApple && oauthExistsProviders?.includes("apple") ? (
                           <button
                             type="button"
                             onClick={() => signInWithAppleOAuth()}
@@ -1271,19 +1284,20 @@ export default function LoginPage() {
               </div>
               <OAuthProviderButtons
                 disabled={submitting}
+                showApple={showApple}
                 buttonSecondary={buttonSecondary}
                 onGoogle={() => signInWithGoogleOAuth()}
                 onApple={() => signInWithAppleOAuth()}
                 googleLabel="Sign up with Google"
                 appleLabel="Sign up with Apple"
               />
-              <AppleAuthHelperNote
+              {showApple && <AppleAuthHelperNote
                 open={appleHideEmailInfoOpen}
                 onToggle={() => setAppleHideEmailInfoOpen((prev) => !prev)}
                 textColor={t.text}
                 mutedColor={t.textMuted}
                 borderColor={t.border}
-              />
+              />}
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("login"); }} disabled={submitting} style={buttonSecondary}>
                 Back to Login
               </button>
@@ -1504,6 +1518,7 @@ export default function LoginPage() {
 
 function OAuthProviderButtons({
   disabled,
+  showApple,
   buttonSecondary,
   onGoogle,
   onApple,
@@ -1511,6 +1526,7 @@ function OAuthProviderButtons({
   appleLabel,
 }: {
   disabled?: boolean;
+  showApple: boolean;
   buttonSecondary: React.CSSProperties;
   onGoogle: () => void;
   onApple: () => void;
@@ -1528,7 +1544,7 @@ function OAuthProviderButtons({
         <GoogleIcon />
         {googleLabel}
       </button>
-      <button
+      {showApple && <button
         type="button"
         onClick={onApple}
         disabled={disabled}
@@ -1536,7 +1552,7 @@ function OAuthProviderButtons({
       >
         <AppleIcon />
         {appleLabel}
-      </button>
+      </button>}
     </div>
   );
 }
