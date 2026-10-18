@@ -4066,6 +4066,7 @@ export default function AdminPage() {
           <a href="/admin/digests" style={{ color: t.textMuted, fontSize: 13, fontWeight: 800, textDecoration: "underline", textUnderlineOffset: 3 }}>
             Digest logs
           </a>
+          <Link href="/admin/promotions" style={{ color: t.text, fontWeight: 800, textDecoration: "underline" }}>Promotions review</Link>
         </div>
 
         {/* Tabs */}

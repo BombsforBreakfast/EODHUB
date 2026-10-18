@@ -1,6 +1,20 @@
 # EOD-HUB promotion landing page
 
-## Initial scope
+## Promotion intake and review
+
+The password-gated package buttons open `/promote/request?package=Basic|Featured|Premium`. The wizard captures the selected package, name, email, phone, optional business, promotion type, a brief up to 12,000 characters, optional link/timing, and up to five JPG/PNG/WebP images at 3 MiB each. Advertisers do not need member accounts. The existing shared password is unchanged.
+
+Images upload individually through `/promote/api/requests/...` to stay within hosting request-size limits. Each image is decoded with a 40-million-pixel ceiling, rotated/resized to at most 2400 pixels on either edge, re-encoded to WebP, and stripped of embedded metadata. No SVG, animation, documents or arbitrary binary attachments are accepted. Files reside in the private `promotion-materials` bucket; a restrictive storage policy also protects against legacy broad browser policies.
+
+The draft, attachment list, final status and in-app notification are saved through service-role-only RPCs. Final submission and the single deduplicated bell notification are one database transaction. The server then uses the existing APNs/FCM dispatcher; the normal pending-push cron provides the existing retry path. Device notification permissions/preferences still apply. Push content contains no customer contact details or brief text.
+
+Only the authenticated admin account `micheal.p.twigg@gmail.com` can open this queue. `/admin/promotions` is a responsive review page available inside native apps, linked from the admin panel and admin Hub menu. Notification taps open the individual request there. Admin can read contact details/brief, open short-lived signed image URLs, update review status, and keep private coordination notes. These actions do not publish material, send customer emails, or charge anyone. Email follow-up and Square invoicing remain manual.
+
+Apply `supabase/migrations/20261018093000_promotion_requests.sql` before deploying the intake. It adds only the new table/functions/private bucket/policies and does not rewrite existing jobs/feed/payment data. Server runtime uses the existing Supabase URL, anon key, service role, push settings and shared promotion password. No new billing provider or API key is required.
+
+Anonymous, expired or forged advertiser grants fail closed. Customer mutations also require same-origin requests. Draft access is bound to the individual signed advertiser grant, separate from member access; if the grant expires or changes during a partial upload, unlock and start a fresh request with the retained form fields. API retries reuse the same draft/file IDs; repeated submission does not create a second request or notification. The cleanup cron claims abandoned drafts after 24 hours before deleting their private files; submitted requests are retained.
+
+## Initial brochure release (historical)
 
 `/promote` opens a public inquiry screen with `promote@eod-hub.com` and a password form. A valid shared password reveals the package brochure. All inquiries, materials, approvals, and Square invoices are handled manually by email in this release. There are no campaign uploads, database writes, payment integrations, or automated feed/Story placements.
 

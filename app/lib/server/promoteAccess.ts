@@ -1,6 +1,6 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
-// This gate grants access to the promotion brochure only, never member access.
+// Advertiser gate: brochure and its private intake API, never member access.
 export const PROMOTE_ACCESS_COOKIE = "eod_promote_access";
 export const PROMOTE_ACCESS_TTL_SECONDS = 7 * 24 * 60 * 60;
 const MIN_PASSWORD_LENGTH = 16;

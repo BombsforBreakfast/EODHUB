@@ -36,7 +36,8 @@ async function getSessionWithRetry(): Promise<boolean> {
 // they reopen the browser (sessionStorage is cleared on browser close).
 export default function SessionGuard() {
   const { isLoading } = useAuth();
-  const isPromotionPage = usePathname() === "/promote";
+  const pathname = usePathname();
+  const isPromotionPage = pathname === "/promote" || pathname.startsWith("/promote/");
 
   useEffect(() => {
     if (typeof window === "undefined") return;

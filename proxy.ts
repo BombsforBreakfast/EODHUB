@@ -18,7 +18,7 @@ function isPublicPolicyPath(pathname: string) {
  */
 function isPublicPath(pathname: string) {
   // The promotion brochure has its own server-validated access gate.
-  if (pathname === "/promote") return true;
+  if (pathname === "/promote" || pathname.startsWith("/promote/")) return true;
   if (isPublicPolicyPath(pathname)) return true;
   const publicRoutes = [
     "/login",

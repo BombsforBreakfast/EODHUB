@@ -1166,6 +1166,9 @@ export default function NavBar() {
                     ...(!hideDesktopOnlyHubLinks && isAdmin
                       ? [{ label: "Admin", href: "/admin", icon: Shield, badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
+                    ...(isAdmin && user?.email?.toLowerCase() === "micheal.p.twigg@gmail.com"
+                      ? [{ label: "Promotions review", href: "/admin/promotions", icon: Shield, badge: 0, onNav: null as (() => Promise<void>) | null }]
+                      : []),
                     { label: "Sidebars", href: "/sidebar", icon: MessageSquare, badge: 0, onNav: null },
                     ...(showAtlwHotlineNav
                       ? [{ label: "ATLW Hotline", href: "", icon: Phone, badge: 0, onNav: null as (() => Promise<void>) | null, hotline: true as const }]
