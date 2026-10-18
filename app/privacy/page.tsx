@@ -6,7 +6,7 @@ import { useTheme } from "../lib/ThemeContext";
 import {
   LEGAL_CONTACT_EMAIL,
   LEGAL_EFFECTIVE_DATE,
-  LEGAL_LAST_UPDATED,
+  PRIVACY_LAST_UPDATED,
   PRIVACY_POLICY_TEXT,
 } from "../lib/legalText";
 
@@ -19,7 +19,7 @@ export default function PrivacyPage() {
       <div style={{ maxWidth: 960, margin: "0 auto", padding: "32px 20px" }}>
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 900 }}>Privacy Policy</h1>
         <div style={{ marginTop: 8, color: t.textMuted, fontSize: 14 }}>
-          Effective Date: {LEGAL_EFFECTIVE_DATE} | Last Updated: {LEGAL_LAST_UPDATED}
+          Effective Date: {LEGAL_EFFECTIVE_DATE} | Last Updated: {PRIVACY_LAST_UPDATED}
         </div>
         <div style={{ marginTop: 8, color: t.textMuted, fontSize: 14 }}>
           Contact: <a href={`mailto:${LEGAL_CONTACT_EMAIL}`} style={{ color: "#2563eb", textDecoration: "none" }}>{LEGAL_CONTACT_EMAIL}</a>

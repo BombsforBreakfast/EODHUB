@@ -4,14 +4,15 @@ import { isOwnerAdmin, OWNER_ADMIN_USER_ID } from "@/app/lib/ownerAdminAccess";
 import { supportJson } from "@/app/lib/server/hubSupport";
 import { createNotification } from "@/app/lib/notificationsServer";
 import { checkRateLimit } from "@/app/lib/server/rateLimit";
+import { withSupportContributors } from "@/app/lib/server/hubSupportContributors";
 
 export async function GET(request: NextRequest) {
   const access = await authenticateAdminApiRequest(request);
   if (!access.ok) return supportJson({ error: access.error }, access.status);
   if (!isOwnerAdmin({ userId: access.user.id, email: access.user.email, isAdmin: true })) return supportJson({ error: "Forbidden" }, 403);
-  const { data, error } = await access.admin.from("hub_contributions").select("id,amount_cents,refunded_cents,status,livemode,created_at,paid_at").not("paid_at", "is", null).order("paid_at", { ascending: false }).limit(100);
+  const { data, error } = await access.admin.from("hub_contributions").select("id,amount_cents,refunded_cents,status,livemode,created_at,paid_at,checkout_session_id").not("paid_at", "is", null).order("paid_at", { ascending: false }).limit(100);
   if (error) return supportJson({ error: "Could not load contributions." }, 503);
-  return supportJson({ items: data });
+  return supportJson({ items: await withSupportContributors(data) });
 }
 
 /** An owner-only delivery check; never creates a payment or accepts a recipient. */

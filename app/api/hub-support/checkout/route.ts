@@ -25,11 +25,12 @@ export async function POST(request: NextRequest) {
     const metadata = { purpose: HUB_SUPPORT_PURPOSE, contribution_id: reserved.id };
     const session = reserved.checkout_session_id ? await stripe.checkout.sessions.retrieve(reserved.checkout_session_id) : await stripe.checkout.sessions.create({
       mode: "payment", payment_method_types: ["card"], client_reference_id: reserved.id,
+      name_collection: { individual: { enabled: true, optional: true } },
       line_items: [{ price_data: { currency: "usd", unit_amount: input.amountCents, product_data: { name: "Support the Hub", description: "Voluntary, one-time contribution to EOD-HUB LLC. No goods, services, or additional access. Not a charitable donation." } }, quantity: 1 }],
       metadata, payment_intent_data: { metadata },
       success_url: `${origin}/support-the-hub/thanks?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/support-the-hub?cancelled=1`,
-      custom_text: { submit: { message: "One-time voluntary support for EOD-HUB LLC. Not a subscription or tax-deductible charitable donation." } },
+      custom_text: { submit: { message: "One-time voluntary support for EOD-HUB LLC. Not a subscription or tax-deductible charitable donation. Your receipt email and optional name are shared with EOD-HUB for contribution records." } },
     }, { idempotencyKey: `hub-support:${live ? "live" : "test"}:${reserved.id}` });
     if (session.status !== "open") return supportJson({ error: "That checkout has finished or expired. Close this dialog and start again." }, 409);
     if (!session.url || session.livemode !== live) throw new Error("Invalid support checkout");
