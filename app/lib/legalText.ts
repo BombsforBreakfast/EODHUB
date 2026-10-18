@@ -1,5 +1,6 @@
 export const LEGAL_EFFECTIVE_DATE = "April 9, 2026";
 export const LEGAL_LAST_UPDATED = "June 2, 2026";
+export const PRIVACY_LAST_UPDATED = "October 18, 2026";
 export const LEGAL_CONTACT_EMAIL = "Hello@eod-hub.com";
 
 export const TERMS_OF_SERVICE_TEXT = `Terms of Service
@@ -227,7 +228,7 @@ ${LEGAL_CONTACT_EMAIL}`;
 export const PRIVACY_POLICY_TEXT = `Privacy Policy
 
 Effective Date: ${LEGAL_EFFECTIVE_DATE}
-Last Updated: ${LEGAL_LAST_UPDATED}
+Last Updated: ${PRIVACY_LAST_UPDATED}
 
 Your privacy matters. This policy explains how we collect and use your data.
 
@@ -237,6 +238,11 @@ Account Information
 - Name
 - Email address
 - Profile details (experience, unit, etc.)
+
+Voluntary Contributions
+- Stripe processes contributions and collects the receipt email and any optional name supplied at checkout.
+- Payment amounts, status, receipt email and available checkout name can be viewed in an owner-only administrative report. Contributor contact details are not published in the feed or on public pages.
+- Stripe handles payment-card information. EOD-HUB does not store card numbers.
 
 User Content
 - Posts, comments, images
@@ -255,6 +261,7 @@ We use your data to:
 - Match users with jobs and opportunities
 - Send important updates and notifications
 - Ensure security and prevent abuse
+- Maintain contribution records and help with payment questions
 
 3. DATA SHARING
 
@@ -262,7 +269,7 @@ We do NOT sell your data.
 
 We may share data with:
 - Service providers (e.g., hosting, authentication like Supabase)
-- Payment processors (for subscriptions)
+- Payment processors, such as Stripe, for voluntary contributions and other payments
 - Law enforcement if required
 
 4. USER PROFILES AND VISIBILITY

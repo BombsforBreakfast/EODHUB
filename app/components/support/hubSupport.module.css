@@ -9,11 +9,15 @@
 .content { padding:26px; }
 .top { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .eyebrow { font-size:11px; font-weight:800; letter-spacing:.12em; color:#4ade80; }
-.close { width:36px; height:36px; border:1px solid var(--support-border); border-radius:50%; background:transparent; color:inherit; font-size:26px; cursor:pointer; }
+.close { width:36px; height:36px; border:1px solid var(--support-border); border-radius:50%; background:transparent; color:inherit; font-size:26px; cursor:pointer; outline:none; -webkit-tap-highlight-color:transparent; }
+.close:focus-visible { outline:2px solid #4ade80; outline-offset:3px; }
 .content h2 { margin:16px 0 10px; font-size:clamp(25px,6vw,34px); line-height:1.15; letter-spacing:-.035em; }
+.content h2:focus { outline:none; }
+.content .contributionTitle { font-size:clamp(15px,4.7vw,22px); line-height:1.25; letter-spacing:-.02em; margin-bottom:8px; }
 .content h3 { margin:24px 0 8px; font-size:16px; }
 .content p { line-height:1.65; }
 .lead { color:var(--support-muted); margin-bottom:24px; }
+.content .contributionLead { font-size:clamp(12px,3.3vw,14px); line-height:1.5; margin-top:0; margin-bottom:20px; }
 .fieldset { border:0; padding:0; margin:0; min-width:0; }
 .fieldset legend { font-size:13px; font-weight:650; margin-bottom:12px; }
 .amounts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
@@ -33,6 +37,16 @@
 .costs > div { display:flex; justify-content:space-between; gap:16px; border-bottom:1px solid var(--support-border); padding:9px 0; font-size:13px; }
 .costs dd { margin:0; white-space:nowrap; font-weight:650; }
 .error { color:#f87171; font-size:14px; }
+.merch { margin-top:20px; padding-top:18px; border-top:1px solid var(--support-border); }
+.merch h3 { margin:0; font-size:15px; }
+.merch p { margin:6px 0 12px; color:var(--support-muted); font-size:12px; line-height:1.5; }
+.merchGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.merchCard { display:flex; flex-direction:column; overflow:hidden; border:1px solid var(--support-border); border-radius:12px; background:var(--support-input); color:inherit; text-decoration:none; }
+.merchCard:hover { border-color:#22c55e; }
+.merchCard:focus-visible { outline:2px solid #22c55e; outline-offset:3px; }
+.merchImage { display:block; width:100%; height:auto; aspect-ratio:1.2; object-fit:contain; background:#111; }
+.merchName { display:block; padding:10px 10px 3px; font-size:13px; font-weight:750; line-height:1.4; }
+.merchDetail { display:block; padding:0 10px 10px; color:var(--support-muted); font-size:11px; line-height:1.4; }
 .page { max-width:580px; margin:0 auto; padding:60px 20px; min-height:70vh; }
 .page h1 { font-size:32px; line-height:1.15; margin:24px 0 12px; }
 .page p { line-height:1.7; margin:16px 0 24px; }

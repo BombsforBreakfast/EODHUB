@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { HUB_SUPPORT_COSTS, HUB_SUPPORT_PURPOSE, isSupportAmount, parseSupportAmount } from "../app/lib/hubSupport";
+import { supportContributorDetails, type ContributorSession } from "../app/lib/hubSupportContributor";
 
 test("custom contributions use exact cents and reject invalid or excessive amounts", () => {
   for (const [input, expected] of [["1",100],["3.01",301],["5.99",599],["500.00",50000],[" 10.5 ",1050]] as const) assert.equal(parseSupportAmount(input), expected);
@@ -40,4 +41,18 @@ test("web-only UI waits for platform detection and keeps guest return pages publ
   assert.match(provider, /if \(!isNativeApp\(\)\) setView/);
   assert.match(readFileSync("proxy.ts", "utf8"), /pathname === "\/support-the-hub"/);
   assert.equal(HUB_SUPPORT_COSTS.find(([name]) => name === "Google Play registration")?.[1], "$25 one-time");
+});
+
+test("contributor details require the exact paid support transaction", () => {
+  const row = { id: "contribution-1", amount_cents: 300, livemode: true, checkout_session_id: "cs_live_support" };
+  const session: ContributorSession = { id: row.checkout_session_id, metadata: { purpose: HUB_SUPPORT_PURPOSE, contribution_id: row.id }, mode: "payment", currency: "usd", amount_total: 300, livemode: true, payment_status: "paid", customer_details: { email: "supporter@example.com", name: "Card name" }, collected_information: { individual_name: "  Chosen name  " } };
+  assert.deepEqual(supportContributorDetails(row, session), { contributor_name: "Chosen name", contributor_email: "supporter@example.com" });
+  const mismatches: Partial<ContributorSession>[] = [
+    { id: "cs_other" }, { metadata: { purpose: "membership", contribution_id: row.id } },
+    { metadata: { purpose: HUB_SUPPORT_PURPOSE, contribution_id: "another-contributor" } },
+    { livemode: false }, { amount_total: 100 }, { currency: "eur" }, { mode: "subscription" }, { payment_status: "unpaid" },
+  ];
+  for (const mismatch of mismatches) assert.equal(supportContributorDetails(row, { ...session, ...mismatch }), null);
+  assert.deepEqual(supportContributorDetails(row, { ...session, collected_information: null }), { contributor_name: "Card name", contributor_email: "supporter@example.com" });
+  assert.deepEqual(supportContributorDetails(row, { ...session, customer_details: null, collected_information: null, customer_email: "guest@example.com" }), { contributor_name: null, contributor_email: "guest@example.com" });
 });
