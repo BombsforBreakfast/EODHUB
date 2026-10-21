@@ -80,6 +80,7 @@ export default function RootLayout({
               <ReferralCaptureTracker />
               <script
                 type="application/ld+json"
+                // Security Enhancement: Prevent potential XSS by escaping '<' characters in JSON stringified data
                 dangerouslySetInnerHTML={{
                   __html: JSON.stringify({
                     "@context": "https://schema.org",
@@ -113,7 +114,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
