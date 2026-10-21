@@ -70,6 +70,8 @@ export function verifyArcadeUnlockCookie(token: string | undefined, userId: stri
 
   const payload = `${uid}.${expStr}`;
   const expected = signPayload(payload);
+  // Security Enhancement: prevent empty-signature auth bypass if secret is missing
+  if (!expected) return false;
 
   try {
     const a = Buffer.from(sig);

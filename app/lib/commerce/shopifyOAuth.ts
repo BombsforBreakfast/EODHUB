@@ -44,6 +44,8 @@ export function parseShopifyOAuthState(state: string): ShopifyOAuthState | null 
   if (!body || !sig) return null;
 
   const expected = createHmac("sha256", config.clientSecret).update(body).digest("base64url");
+  // Security Enhancement: prevent empty-signature bypass
+  if (!expected) return null;
   const sigBuf = Buffer.from(sig);
   const expectedBuf = Buffer.from(expected);
   if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) return null;
@@ -88,6 +90,8 @@ export function verifyShopifyOAuthCallbackHmac(query: URLSearchParams): boolean 
     .join("&");
 
   const digest = createHmac("sha256", config.clientSecret).update(entries).digest("hex");
+  // Security Enhancement: prevent empty-signature bypass
+  if (!digest) return false;
   const digestBuf = Buffer.from(digest, "utf8");
   const hmacBuf = Buffer.from(hmac, "utf8");
   return digestBuf.length === hmacBuf.length && timingSafeEqual(digestBuf, hmacBuf);
