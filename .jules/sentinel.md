@@ -1,0 +1,4 @@
+## 2026-06-01 - Prevent XSS in JSON-LD Injection
+**Vulnerability:** When serializing JSON-LD or other JSON strings directly into `<script>` tags using `dangerouslySetInnerHTML`, if the JSON string contains `<` characters, it can escape the `<script>` tag and execute arbitrary HTML/JS, leading to an XSS vulnerability.
+**Learning:** `JSON.stringify` alone is not safe for embedding inside a `<script>` tag if it might contain user-controlled content or content that might have `<script>` or `</script> substrings. The framework (Next.js) doesn't automatically escape JSON payload embedded within `<script>` tags by default in this way.
+**Prevention:** Always append `.replace(/</g, "\\u003c")` to `JSON.stringify` outputs being injected into `<script>` tags to escape `<` into a valid JSON unicode escape sequence.
