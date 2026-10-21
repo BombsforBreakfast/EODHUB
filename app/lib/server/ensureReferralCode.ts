@@ -3,9 +3,13 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
+  // Security Enhancement: Replaced weak Math.random() with cryptographically secure
+  // Web Crypto API (crypto.getRandomValues) to prevent predictable referral codes.
+  const randomValues = new Uint32Array(length);
+  crypto.getRandomValues(randomValues);
   let code = "";
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    code += CHARS[randomValues[i] % CHARS.length];
   }
   return code;
 }
