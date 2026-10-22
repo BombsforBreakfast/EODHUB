@@ -1,8 +1,11 @@
 /** Server-only login maintenance gate. Never import from client components. */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
 
 export const LOGIN_MAINTENANCE_COOKIE = "eod_login_maint_bypass";
+
+// Security Enhancement: Removed hardcoded fallback password. Generated a secure random string if env var is missing.
+const FALLBACK_PASSWORD = randomBytes(32).toString("hex");
 
 const UNLOCK_MAX_AGE_SEC = 60 * 60 * 12; // 12 hours
 
@@ -16,7 +19,7 @@ export function isLoginMaintenanceGateEnabled(): boolean {
 }
 
 export function getLoginMaintenancePassword(): string {
-  return (process.env.LOGIN_MAINTENANCE_PASSWORD ?? "bombsforbreakfast").trim();
+  return (process.env.LOGIN_MAINTENANCE_PASSWORD ?? FALLBACK_PASSWORD).trim();
 }
 
 export function isLoginMaintenancePasswordValid(password: string): boolean {
