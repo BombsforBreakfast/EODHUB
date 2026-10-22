@@ -48,6 +48,10 @@ export function verifyLoginMaintenanceUnlockCookie(token: string | undefined): b
   if (!Number.isFinite(expiresAt) || expiresAt < Date.now()) return false;
   const payload = `${flag}.${expStr}`;
   const expected = signPayload(payload);
+
+  // Security Enhancement: Prevent empty-signature authentication bypass
+  if (!expected) return false;
+
   try {
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
