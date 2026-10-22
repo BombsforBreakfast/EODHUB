@@ -81,6 +81,7 @@ export default function RootLayout({
               <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{
+                  // Security Enhancement: sanitize JSON output by replacing '<' to prevent XSS via </script> injection
                   __html: JSON.stringify({
                     "@context": "https://schema.org",
                     "@graph": [
@@ -113,7 +114,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
