@@ -113,7 +113,8 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  // Security Enhancement: Prevent XSS when injecting serialized JSON into <script> tags.
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
