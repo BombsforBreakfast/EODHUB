@@ -113,7 +113,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"), // SEC-FIX: Escaped < to prevent XSS breakout from JSON script block
                 }}
               />
               {children}
