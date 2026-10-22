@@ -1,0 +1,4 @@
+## 2024-05-24 - Cross-Site Scripting (XSS) via JSON-LD Injection
+**Vulnerability:** The application uses `dangerouslySetInnerHTML` to inject JSON-LD metadata in `app/layout.tsx`. While the current JSON stringifies static data, if dynamic data is ever added, it could be vulnerable to XSS. The standard way to fix this is to append `.replace(/</g, "\\u003c")` to the `JSON.stringify()` output. This ensures that any `</script>` tags within the JSON data are properly escaped, preventing the JSON payload from escaping the `<script>` context.
+**Learning:** Using `dangerouslySetInnerHTML` with `JSON.stringify()` for script tags without escaping HTML entities (specifically `<`) is a common XSS vector, especially when dynamic data is later introduced.
+**Prevention:** Always escape `<` to `\u003c` when injecting JSON into `<script>` tags using `dangerouslySetInnerHTML`.
