@@ -113,7 +113,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"), // Security Enhancement: Escape `<` to prevent XSS in dangerouslySetInnerHTML
                 }}
               />
               {children}
