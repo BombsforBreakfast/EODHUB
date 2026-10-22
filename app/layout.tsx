@@ -78,6 +78,7 @@ export default function RootLayout({
               <BugReportGate />
               <AnalyticsTracker />
               <ReferralCaptureTracker />
+              {/* Security: Escaping `<` to prevent XSS when injecting JSON-LD metadata into script tags */}
               <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{
@@ -113,7 +114,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
