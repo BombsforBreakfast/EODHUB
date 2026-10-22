@@ -4,8 +4,20 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
   let code = "";
+  const randomValues = new Uint8Array(length);
+  crypto.getRandomValues(randomValues);
+
+  // Calculate maximum valid value to avoid modulo bias
+  const maxValid = 256 - (256 % CHARS.length);
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    let val = randomValues[i];
+    // Re-roll if value is in the biased range
+    while (val >= maxValid) {
+      crypto.getRandomValues(randomValues.subarray(i, i + 1));
+      val = randomValues[i];
+    }
+    code += CHARS[val % CHARS.length];
   }
   return code;
 }
