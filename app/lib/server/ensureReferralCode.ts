@@ -2,15 +2,33 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+// Security Enhancement: Replaced insecure Math.random() with Web Crypto API and rejection sampling to prevent predictable token generation and modulo bias.
 export function makeReferralCode(length = 8): string {
   let code = "";
+  const maxValid = 256 - (256 % CHARS.length);
+  const randomBytes = new Uint8Array(length * 2); // Buffer to minimize crypto calls
+  let byteIndex = randomBytes.length;
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    let charAdded = false;
+    while (!charAdded) {
+      if (byteIndex >= randomBytes.length) {
+        crypto.getRandomValues(randomBytes);
+        byteIndex = 0;
+      }
+      const randomValue = randomBytes[byteIndex++];
+      if (randomValue < maxValid) {
+        code += CHARS[randomValue % CHARS.length];
+        charAdded = true;
+      }
+    }
   }
   return code;
 }
 
-function isSystemReferralExemptEmail(email: string | null | undefined): boolean {
+function isSystemReferralExemptEmail(
+  email: string | null | undefined,
+): boolean {
   const normalized = email?.trim().toLowerCase() ?? "";
   return normalized.includes("@system.") || normalized.endsWith(".invalid");
 }
