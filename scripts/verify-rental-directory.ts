@@ -12,7 +12,7 @@ async function main() {
     const owner = rentalOwners.find(item => item.id === listing.ownerId);
     assert.ok(owner);
     assert.ok(listing.furnished);
-    assert.equal(listing.availability.status, listing.id === "4726-calinda-139" ? "pending" : "available-now");
+    assert.equal(listing.availability.status, listing.id === "4276-calinda-158" ? "pending" : "available-now");
     assert.ok(listing.photos.length > 1);
     assert.ok(listing.photos.every(photo => new URL(photo).hostname === "photos.zillowstatic.com"));
     assert.ok(owner.email.includes("@"));
@@ -42,7 +42,7 @@ async function main() {
   assert.equal(matches({ query: "pool" }).length, 1);
   assert.equal(matches({ ownerId: rentalOwners[0].id }).length, 3);
   assert.equal(matches({ availability: "unavailable" }).length, 0);
-  assert.equal(matches({ availability: "pending" })[0]?.id, "4726-calinda-139");
+  assert.equal(matches({ availability: "pending" })[0]?.id, "4276-calinda-158");
   assert.equal(availabilityLabel({ status: "pending" }), "Pending");
   assert.equal(availabilityLabel({ status: "available-from", date: "2026-12-01" }), "Available Dec 1, 2026");
   assert.equal(availabilityLabel({ status: "unavailable" }), "Not currently available");

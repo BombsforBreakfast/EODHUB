@@ -51,7 +51,7 @@ The owner/listing separation can map to database tables without changing the dir
 
 ## Service ratings and testimonials
 
-Unit 139 is pending as of October 23, 2026. Its diagonal electric-yellow stamp overlays the photo without intercepting clicks; gallery and contacts remain available.
+Unit 158 is pending and Unit 139 is available as of October 24, 2026. Its diagonal electric-yellow stamp overlays the photo without intercepting clicks; gallery and contacts remain available.
 
 A separate section rates EOD-HUB as a listing service, not individual properties. Scores accept 0.5–5 bombs in half-bomb increments. `/api/rentals/service-rating` stores one editable rating per anonymous browser cookie in `listing_service_ratings`, with optional display name and testimonial. A public testimonial requires explicit publication consent. The top of the page shows the shared average, count, half-bomb distribution, and three featured ratings/testimonials. The submission form remains below the listings. Anonymous browser ratings are not verified renter reviews and clearing cookies permits another rating. No sample reviews or ratings are seeded.
 
