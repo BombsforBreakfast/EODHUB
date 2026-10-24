@@ -53,3 +53,11 @@
 .page a { color:inherit; text-decoration:underline; }
 .page small { display:block; margin:24px 0; line-height:1.6; opacity:.7; }
 @media(max-width:380px) { .content { padding:20px; } .costs > div { font-size:12px; gap:8px; } }
+
+.progress { font-size:12px; }
+.progressLabel { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; margin-bottom:6px; }
+.progressTrack { height:8px; overflow:hidden; border-radius:8px; background:#15803d25; }
+.progressTrack > div { height:100%; background:#15803d; border-radius:inherit; }
+
+.login { border-radius:16px; }
+.login .support { padding:13px 12px; font-size:inherit !important; font-weight:700; }

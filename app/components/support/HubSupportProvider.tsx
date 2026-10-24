@@ -27,11 +27,11 @@ export function WebSupportOnly({ children }: { children: React.ReactNode }) {
   return useContext(SupportContext).web ? children : null;
 }
 
-export function HubSupportButton({ onOpen }: { onOpen?: () => void }) {
+export function HubSupportButton({ onOpen, login = false }: { onOpen?: () => void; login?: boolean }) {
   const { web, open } = useContext(SupportContext);
   if (!web) return null;
   function choose(view: SupportView) { open(view); onOpen?.(); }
-  return <div className={styles.split} role="group" aria-label="Support EOD-HUB">
+  return <div className={`${styles.split} ${login ? styles.login : ""}`} role="group" aria-label="Support EOD-HUB">
     <button type="button" className={styles.support} onClick={() => choose("contribute")}>Support the Hub</button>
     <button type="button" className={styles.why} aria-label="Why support the Hub?" title="Why support the Hub?" onClick={() => choose("why")}><span aria-hidden="true">ⓘ</span></button>
   </div>;

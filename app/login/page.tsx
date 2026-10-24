@@ -51,6 +51,7 @@ import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
 import ProudPartnersSection from "../components/login/ProudPartnersSection";
+import HubSupportProgress from "../components/support/HubSupportProgress";
 import { HubSupportButton, WebSupportOnly } from "../components/support/HubSupportProvider";
 
 /**
@@ -1294,8 +1295,10 @@ export default function LoginPage() {
         </>
       )}
 
-      <WebSupportOnly><div style={{ width: "min(100%, 380px)", margin: "24px auto", padding: "0 16px" }}>
-        <HubSupportButton />
+      <WebSupportOnly><div style={{ display: "grid", gap: 12, width: "100%", margin: "12px 0 24px" }}>
+        <a href="/promote/rentals" style={{ ...buttonSecondary, display: "block", textAlign: "center", textDecoration: "none" }}>Sponsored Rentals</a>
+        <HubSupportProgress />
+        <HubSupportButton login />
       </div></WebSupportOnly>
       <ProudPartnersSection />
 
