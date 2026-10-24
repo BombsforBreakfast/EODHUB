@@ -74,6 +74,12 @@ export async function proxy(request: NextRequest) {
     }
   }
 
+  if (path === "/promote/rentals" || path.startsWith("/promote/rentals/")) {
+    const response = NextResponse.next();
+    response.headers.set("Cache-Control", "private, no-store");
+    return response;
+  }
+
   // API routes handle their own auth; after geo check, pass through.
   if (path.startsWith("/api/")) {
     return NextResponse.next();
