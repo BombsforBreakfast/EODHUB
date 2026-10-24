@@ -55,9 +55,10 @@
 @media(max-width:380px) { .content { padding:20px; } .costs > div { font-size:12px; gap:8px; } }
 
 .progress { font-size:12px; }
-.progressLabel { display:flex; flex-wrap:wrap; justify-content:space-between; gap:4px 12px; margin-bottom:6px; }
-.progressTrack { height:8px; overflow:hidden; border-radius:8px; background:#15803d25; }
-.progressTrack > div { height:100%; background:#15803d; border-radius:inherit; }
+.progressLabel { display:grid; grid-template-columns:1fr 1fr; text-align:center; gap:12px; margin-bottom:8px; }
+.progressTrack { position:relative; height:8px; border-radius:8px; background:#15803d25; }
+.progressFill { height:100%; background:#15803d; border-radius:inherit; }
+.progressMidpoint { position:absolute; left:50%; top:-4px; width:2px; height:16px; transform:translateX(-50%); background:currentColor; border-radius:1px; }
 
 .login { border-radius:16px; }
 .login .support { padding:13px 12px; font-size:inherit !important; font-weight:700; }

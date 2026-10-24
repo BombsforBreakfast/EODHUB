@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
       }
       if (!data || data.length < 500) break;
     }
-    return supportJson({ raisedCents, goalCents: 17325 });
+    return supportJson({ raisedCents, goalCents: 17600 });
   } catch {
     return supportJson({ error: "Support totals are temporarily unavailable." }, 503);
   }
