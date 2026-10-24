@@ -36,6 +36,7 @@ export type RentalListing = {
   furnished: boolean;
   availability: RentalAvailability;
   availabilityUpdatedAt: string;
+  projectedAvailabilityDate?: string;
   description: string;
   highlights: string[];
   nearby: string[];

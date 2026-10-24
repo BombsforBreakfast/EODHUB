@@ -26,11 +26,11 @@ The owner record includes an optional property-management contact. Terry's recor
 
 The entire search/filter panel is currently hidden because inventory is limited to three Niceville listings. Search, availability, owner, 50-state filtering, and reset logic remain wired. Pass `showFilters={true}` to `RentalDirectory` in the rentals page to restore the panel; also pass `showStateFilter={true}` when broader inventory is ready to restore its four-field layout.
 
-Edit `app/lib/rentals/listings.server.ts` to add properties or update rent, contacts, and availability. Owners have independent IDs; several properties can reference the same owner. Each listing needs a stable unique ID and an existing owner ID. All 50 states are supported in the state filter, including states without inventory. The free-text search includes cities, ZIP codes, full state names, nearby bases, features, and owners.
+Edit `app/lib/rentals/listings.server.ts` to add properties or update rent and contacts. Change existing property availability through Admin → Rentals. Owners have independent IDs; several properties can reference the same owner. Each listing needs a stable unique ID and an existing owner ID. All 50 states are supported in the state filter, including states without inventory. The free-text search includes cities, ZIP codes, full state names, nearby bases, features, and owners.
 
 Run `node --conditions=react-server --import tsx scripts/verify-rental-directory.ts` for catalog checks with `NODE_PATH` pointing to `node_modules/next/dist/compiled`, where Next.js bundles its server-only marker. Verify that an anonymous visitor sees all three listings without a password, the old preview endpoint is absent, and the retired phone API returns 404 with or without authorization.
 
-Availability is explicitly owner-provided, not synchronized with Zillow or a booking system. Set `availability` to one of:
+Availability is explicitly owner-provided, not synchronized with Zillow or a booking system. New properties can use these source defaults until settings are saved through Admin:
 
 ```ts
 { status: "available-now" }
@@ -39,7 +39,7 @@ Availability is explicitly owner-provided, not synchronized with Zillow or a boo
 { status: "unavailable" }
 ```
 
-Update `availabilityUpdatedAt` when the owner supplies an update. A future availability date is displayed as supplied; change its status explicitly when the property becomes available. Zillow sale prices and mortgage estimates never determine the advertised rental price.
+The admin editor updates the availability timestamp automatically. A projected availability date is displayed only when supplied; change the status explicitly when the property becomes available. Zillow sale prices and mortgage estimates never determine the advertised rental price.
 
 ## Photos
 
@@ -68,3 +68,9 @@ Run node --import tsx scripts/verify-service-ratings.ts for mocked API authoriza
 The top summary is compact: a Community feedback label, average, bomb icons and rating count. The score distribution starts collapsed; Rating breakdown toggles it beside the first-rating link. Show all ratings opens the modal without explanatory copy below the summary.
 
 Units 139 and 158 use `contactMode: "owner-only"` and show Terry directly, without management details or an application link. The Muirfield listing retains Rob Brooks Realty. Property containers, the rating form, and the advertiser invitation sit on the page background without card borders or side padding. Mobile properties have divider lines; monthly prices sit beside addresses, with wrapping on narrower screens.
+
+## Owner-managed availability
+
+The owner account has a Rentals tab in the Admin panel, including the mobile section selector. Each property supports Available, Pending or Unavailable plus an independent optional projected availability date. Save availability applies the change immediately to subsequent public page loads; clearing the date and saving removes it. Dates do not automatically change the status.
+
+`rental_listing_status` stores these settings independently of the source catalog so deployments cannot overwrite admin edits. The dynamic rental page merges saved settings into catalog listings; catalog status is only a default for newly added properties without a settings row. Database failures do not silently restore stale catalog availability. The owner-only API authenticates the user and admin profile server-side, rejects unknown properties and invalid dates, and records the editor and update timestamp. RLS is enabled with no direct browser grants or policies; the server uses the service role.

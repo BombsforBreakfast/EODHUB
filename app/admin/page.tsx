@@ -24,6 +24,7 @@ import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { EventCalendarCard } from "../components/events/EventCalendarCard";
 import { EventDetailPanel } from "../components/events/EventDetailPanel";
+import AdminRentalsPanel from "../components/admin/AdminRentalsPanel";
 import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
 import AdminCircuitPanel from "../components/admin/AdminCircuitPanel";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
@@ -476,7 +477,8 @@ type Tab =
   | "news"
   | "waitlist"
   | "lemon_lot"
-  | "failed_auth";
+  | "failed_auth"
+  | "rentals";
 
 type NewsIntakeDebugPayload = {
   provider: string;
@@ -4075,6 +4077,7 @@ export default function AdminPage() {
                 ["news", "News", newsPendingCount], ["waitlist", "Waitlist", 0], ["lemon_lot", "Lemon Lot", 0],
                 ["failed_auth", "Failed Auth", pendingCounts.failedAuth],
               ] as const).map(([value, label, count]) => <option key={value} value={value}>{label}{count > 0 ? ` (${formatNavBadgeCount(count)})` : ""}</option>)}
+              {isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized }) ? <option value="rentals">Rentals</option> : null}
             </select>
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: t.textMuted }}>
@@ -4136,6 +4139,7 @@ export default function AdminPage() {
           <button type="button" style={tabStyle("lemon_lot")} onClick={() => setActiveTab("lemon_lot")}>
             Lemon Lot
           </button>
+          {isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized }) ? <button type="button" style={tabStyle("rentals")} onClick={() => setActiveTab("rentals")}>Rentals</button> : null}
           <button type="button" style={tabStyle("failed_auth")} onClick={() => setActiveTab("failed_auth")}>
             Failed Auth
             {tabNotifyBadge(pendingCounts.failedAuth)}
@@ -4146,6 +4150,8 @@ export default function AdminPage() {
             Pending only
           </label>
         </div>
+
+        {activeTab === "rentals" && <AdminRentalsPanel />}
 
         {/* ── BUSINESSES TAB ── */}
         {activeTab === "businesses" && (

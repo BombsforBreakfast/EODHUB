@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { rentalListings, rentalOwners } from "@/app/lib/rentals/listings.server";
+import { loadRentalListings } from "@/app/lib/rentals/availability.server";
 import RentalDirectory from "./RentalDirectory";
 import RentalsWebGate from "./RentalsWebGate";
 
@@ -18,6 +19,7 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
 };
 
-export default function RentalsPage() {
-  return <RentalsWebGate><RentalDirectory listings={rentalListings} owners={rentalOwners} /></RentalsWebGate>;
+export default async function RentalsPage() {
+  const listings = await loadRentalListings();
+  return <RentalsWebGate><RentalDirectory listings={listings} owners={rentalOwners} /></RentalsWebGate>;
 }
