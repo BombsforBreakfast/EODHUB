@@ -113,7 +113,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"), // Security Enhancement: Prevent XSS by escaping HTML tags in JSON-LD output
                 }}
               />
               {children}
