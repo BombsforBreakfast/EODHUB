@@ -1,11 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
+// Security Enhancement: Prevent predictable referral code generation by using
+// cryptographically secure RNG and avoiding modulo bias via rejection sampling.
 export function makeReferralCode(length = 8): string {
   let code = "";
-  for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+  const maxValid = 256 - (256 % CHARS.length);
+  const buffer = new Uint8Array(length);
+  while (code.length < length) {
+    crypto.getRandomValues(buffer);
+    for (let i = 0; i < buffer.length; i++) {
+      if (buffer[i] < maxValid) {
+        code += CHARS[buffer[i] % CHARS.length];
+        if (code.length === length) break;
+      }
+    }
   }
   return code;
 }
