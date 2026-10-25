@@ -133,6 +133,7 @@ export function ServiceRatingSummary() {
   const [showAll, setShowAll] = useState(false);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
+  if (!summary || summary.count === 0) return null;
   return <section className={styles.ratingSummary} aria-labelledby="rating-summary-title">
     <h2 id="rating-summary-title" className={styles.eyebrow}>COMMUNITY FEEDBACK</h2>
     <OverallRating reviewControl={<button ref={trigger} type="button" className={`${styles.secondaryRatingButton} ${styles.showAllRatings}`} onClick={() => setShowAll(true)}>Show all ratings</button>} breakdownControl={<button type="button" className={styles.breakdownToggle} aria-expanded={showBreakdown} aria-controls="rating-breakdown" onClick={() => setShowBreakdown(current => !current)}>Rating breakdown{showBreakdown ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>} />

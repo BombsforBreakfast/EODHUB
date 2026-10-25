@@ -59,7 +59,7 @@ The table has RLS enabled and no direct anon/authenticated access. The API uses 
 
 ### Featured feedback and all ratings
 
-The top summary shows 0 ratings and a first-rating link until real feedback arrives. The average and distribution include all scores, including ratings without written testimonials. Default order: pinned first, highest score, then newest creation date within each score. The Show all ratings modal supports featured, highest, newest, and lowest sorting, 20 results per page, and Load more. Alternate sorts include every rating without prioritizing pins. Public review UUIDs are separate from private visitor UUIDs.
+The top summary stays hidden until at least one rating exists. The submission form remains at the bottom, and a successful first submission reveals the top summary immediately. The average and distribution include all scores, including ratings without written testimonials. Default order: pinned first, highest score, then newest creation date within each score. The Show all ratings modal supports featured, highest, newest, and lowest sorting, 20 results per page, and Load more. Alternate sorts include every rating without prioritizing pins. Public review UUIDs are separate from private visitor UUIDs.
 
 Existing signed-in admins (profiles.is_admin) see Pin/Unpin feedback controls on featured cards and all modal cards. Open Show all ratings to find any review. PATCH validates the bearer token with getUser and reads admin status server-side. Pinning changes is_pinned only, without changing scores or dates. Public pinned labels identify featured selections. Sign in through EOD-HUB and return to the rentals page to manage feedback.
 
