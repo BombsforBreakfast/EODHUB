@@ -15,6 +15,7 @@ export type USAJobsApiItem = {
     UserArea?: {
       Details?: {
         JobSummary?: string;
+        MajorDuties?: string | string[];
       };
     };
   };
@@ -25,7 +26,8 @@ export type USAJobsSearchParams = {
   positionTitle?: string;
   jobCategoryCode?: string;
   organization?: string;
-  datePosted?: number;
+  /** null searches all currently open announcements, regardless of posting age. */
+  datePosted?: number | null;
   page: number;
   resultsPerPage?: number;
 };
@@ -48,8 +50,12 @@ export async function fetchUSAJobsSearch(
   const searchParams = new URLSearchParams({
     ResultsPerPage: String(params.resultsPerPage ?? USAJOBS_RESULTS_PER_PAGE),
     Page: String(params.page),
-    DatePosted: String(params.datePosted ?? USAJOBS_DEFAULT_DATE_POSTED),
+    Fields: "Full",
   });
+
+  if (params.datePosted !== null) {
+    searchParams.set("DatePosted", String(params.datePosted ?? USAJOBS_DEFAULT_DATE_POSTED));
+  }
 
   if (params.keyword) searchParams.set("Keyword", params.keyword);
   if (params.positionTitle) searchParams.set("PositionTitle", params.positionTitle);
@@ -78,7 +84,7 @@ export async function fetchUSAJobsSearch(
 export async function fetchUSAJobsKeywordPage(
   keyword: string,
   page: number,
-  datePosted: number
+  datePosted: number | null
 ): Promise<{ items: USAJobsApiItem[]; error?: string }> {
   return fetchUSAJobsSearch({ keyword, page, datePosted });
 }
@@ -111,5 +117,13 @@ export async function fetchUSAJobsTitlePage(
 
 export function extractUSAJobsSummary(item: USAJobsApiItem): string {
   const pos = item.MatchedObjectDescriptor;
-  return pos.UserArea?.Details?.JobSummary ?? pos.QualificationSummary ?? "";
+  const details = pos.UserArea?.Details;
+  const duties = details?.MajorDuties;
+  // A generic title or summary can hide the role's actual specialty in the
+  // qualifications/duties. Preserve both instead of picking only one field.
+  return [...new Set([
+    details?.JobSummary,
+    pos.QualificationSummary,
+    ...(Array.isArray(duties) ? duties : [duties]),
+  ].filter((text): text is string => typeof text === "string" && Boolean(text.trim())))].join("\n\n");
 }
