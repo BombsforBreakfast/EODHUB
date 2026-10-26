@@ -38,6 +38,10 @@ export const STRONG_RELEVANT_TERMS = [
   "render safe",
   "pyrotechnic",
   "blasting",
+  "explosives safety",
+  "cwmd",
+  "c-wmd",
+  "weapons of mass destruction",
 ] as const;
 
 export const MEDIUM_RELEVANT_TERMS = [
@@ -189,7 +193,7 @@ export function scoreUSAJobsJob(
   };
 }
 
-export function detectUSAJobsCategory(title: string): string {
+export function detectUSAJobsCategory(title: string, description = ""): string {
   const t = title.toLowerCase();
   if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
   if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
@@ -207,5 +211,11 @@ export function detectUSAJobsCategory(title: string): string {
   }
   if (t.includes("cbrn") || t.includes("cbrne")) return "CBRN";
   if (t.includes("nuclear materials courier")) return "NMC";
+  // Preserve explicit title classifications; use body-only CWMD signals for
+  // generic titles such as Program Analyst and Readiness & Doctrine Specialist.
+  if (!STRONG_RELEVANT_TERMS.some((term) => termMatches(title, term)) &&
+      ["cwmd", "c-wmd", "weapons of mass destruction"].some((term) => termMatches(description, term))) {
+    return "CWMD";
+  }
   return "EOD";
 }
