@@ -1,6 +1,9 @@
 /** Server-only login maintenance gate. Never import from client components. */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "node:crypto";
+
+// Security Enhancement: Use a secure random fallback to prevent hardcoded secret vulnerabilities.
+const FALLBACK_SECRET = randomBytes(32).toString("hex");
 
 export const LOGIN_MAINTENANCE_COOKIE = "eod_login_maint_bypass";
 
@@ -16,7 +19,7 @@ export function isLoginMaintenanceGateEnabled(): boolean {
 }
 
 export function getLoginMaintenancePassword(): string {
-  return (process.env.LOGIN_MAINTENANCE_PASSWORD ?? "bombsforbreakfast").trim();
+  return (process.env.LOGIN_MAINTENANCE_PASSWORD ?? FALLBACK_SECRET).trim();
 }
 
 export function isLoginMaintenancePasswordValid(password: string): boolean {
