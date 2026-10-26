@@ -10,7 +10,8 @@ export type USAJobsKeywordChannel = {
   id: string;
   keyword: string;
   maxPages: number;
-  datePosted: number;
+  /** null omits DatePosted to include older announcements that are still open. */
+  datePosted: number | null;
 };
 
 export type USAJobsSeriesChannel = {
@@ -55,6 +56,12 @@ export const USAJOBS_KEYWORD_CHANNELS: USAJobsKeywordChannel[] = [
   { id: "kw:tss-e", keyword: "Transportation Security Specialist Explosives OR TSS-E", maxPages: 2, datePosted: 60 },
   { id: "kw:em", keyword: "Emergency Management Specialist", maxPages: 3, datePosted: 60 },
   { id: "kw:nmc", keyword: "Nuclear Materials Courier", maxPages: 2, datePosted: 60 },
+  // Additive backstops: do not replace or narrow any of the channels above.
+  { id: "kw:cwmd", keyword: "CWMD", maxPages: 4, datePosted: null },
+  { id: "kw:c-wmd", keyword: "C-WMD", maxPages: 3, datePosted: null },
+  { id: "kw:wmd-full-text", keyword: "weapons of mass destruction", maxPages: 4, datePosted: null },
+  { id: "kw:munitions-disposal", keyword: "munitions disposal", maxPages: 4, datePosted: null },
+  { id: "kw:explosive-safety-open", keyword: "explosive safety", maxPages: 6, datePosted: null },
 ];
 
 /**

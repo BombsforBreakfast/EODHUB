@@ -289,7 +289,7 @@ export async function GET(req: NextRequest) {
       description: candidate.summary,
       og_description: candidate.summary,
       og_site_name: "USAJobs.gov",
-      category: detectUSAJobsCategory(candidate.title),
+      category: detectUSAJobsCategory(candidate.title, candidate.summary),
       relevance_score: candidate.relevanceScore,
       import_metadata: {
         intake_channel: candidate.intakeChannel,
