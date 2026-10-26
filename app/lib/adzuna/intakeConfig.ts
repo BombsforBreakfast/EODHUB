@@ -123,3 +123,30 @@ export function adzunaKeywordChannelsForCountry(
     ? ADZUNA_KEYWORD_CHANNELS
     : ADZUNA_INTL_KEYWORD_CHANNELS;
 }
+
+/** Exact indexed phrases catch relevant work hidden beyond the API's snippet. */
+export type AdzunaDiscoveryChannel = {
+  id: string;
+  phrase: string;
+  maxPages: number;
+  countries: readonly AdzunaCountryCode[];
+};
+export const ADZUNA_DISCOVERY_CHANNELS: AdzunaDiscoveryChannel[] = [
+  { id: "body:eod", phrase: "explosive ordnance disposal", maxPages: 10, countries: ADZUNA_COUNTRIES },
+  { id: "body:uxo", phrase: "unexploded ordnance", maxPages: 8, countries: ADZUNA_COUNTRIES },
+  { id: "body:navscoleod", phrase: "NAVSCOLEOD", maxPages: 4, countries: ["us"] },
+  { id: "body:nseod", phrase: "NSEOD", maxPages: 4, countries: ["us"] },
+  { id: "body:ordnance-safety", phrase: "ordnance safety", maxPages: 6, countries: ["us"] },
+  { id: "body:explosive-safety", phrase: "explosive safety", maxPages: 6, countries: ["us"] },
+  { id: "body:explosives-safety", phrase: "explosives safety", maxPages: 6, countries: ["us"] },
+  { id: "body:cwmd", phrase: "CWMD", maxPages: 10, countries: ["us"] },
+  { id: "body:wmd", phrase: "weapons of mass destruction", maxPages: 10, countries: ["us"] },
+  { id: "body:ctr", phrase: "cooperative threat reduction", maxPages: 6, countries: ["us"] },
+  { id: "body:soae", phrase: "strategic offensive arms elimination", maxPages: 4, countries: ["us"] },
+  { id: "body:counter-explosive", phrase: "counter explosive hazard", maxPages: 4, countries: ["us"] },
+];
+/** Only registered, executed phrase channels are evidence; broad searches are not. */
+export function adzunaIndexedPhrase(intakeChannel = ""): string | undefined {
+  return ADZUNA_DISCOVERY_CHANNELS.find(channel =>
+    channel.countries.some(country => intakeChannel === channel.id + "@" + country))?.phrase;
+}

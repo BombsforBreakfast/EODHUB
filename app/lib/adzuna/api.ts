@@ -21,6 +21,7 @@ export type AdzunaApiJob = {
 export type AdzunaSearchParams = {
   country?: AdzunaCountryCode;
   what?: string;
+  whatPhrase?: string;
   company?: string;
   category?: string;
   maxDaysOld?: number;
@@ -38,7 +39,7 @@ function getAdzunaCredentials(): { appId: string; appKey: string } | null {
 
 export async function fetchAdzunaJobs(
   params: AdzunaSearchParams
-): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
+): Promise<{ jobs: AdzunaApiJob[]; count?: number; error?: string }> {
   const creds = getAdzunaCredentials();
   if (!creds) {
     return { jobs: [], error: "ADZUNA_APP_ID and ADZUNA_APP_KEY are required" };
@@ -52,6 +53,7 @@ export async function fetchAdzunaJobs(
   });
 
   if (params.what) searchParams.set("what", params.what);
+  if (params.whatPhrase) searchParams.set("what_phrase", params.whatPhrase);
   if (params.company) searchParams.set("company", params.company);
   if (params.category) searchParams.set("category", params.category);
   if (params.maxDaysOld != null) searchParams.set("max_days_old", String(params.maxDaysOld));
@@ -67,7 +69,8 @@ export async function fetchAdzunaJobs(
   }
 
   const data = await res.json();
-  return { jobs: (data?.results as AdzunaApiJob[]) ?? [] };
+  return { jobs: (data?.results as AdzunaApiJob[]) ?? [],
+    count: typeof data?.count === "number" ? data.count : undefined };
 }
 
 export async function fetchAdzunaKeywordPage(
@@ -75,7 +78,7 @@ export async function fetchAdzunaKeywordPage(
   page: number,
   maxDaysOld: number,
   country: AdzunaCountryCode = ADZUNA_PRIMARY_COUNTRY
-): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
+): Promise<{ jobs: AdzunaApiJob[]; count?: number; error?: string }> {
   return fetchAdzunaJobs({
     country,
     what,
@@ -91,7 +94,7 @@ export async function fetchAdzunaCompanyPage(
   page: number,
   maxDaysOld: number,
   country: AdzunaCountryCode = ADZUNA_PRIMARY_COUNTRY
-): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
+): Promise<{ jobs: AdzunaApiJob[]; count?: number; error?: string }> {
   return fetchAdzunaJobs({
     country,
     company,
@@ -107,7 +110,7 @@ export async function fetchAdzunaCategoryPage(
   page: number,
   maxDaysOld: number,
   country: AdzunaCountryCode = ADZUNA_PRIMARY_COUNTRY
-): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
+): Promise<{ jobs: AdzunaApiJob[]; count?: number; error?: string }> {
   return fetchAdzunaJobs({
     country,
     category,
@@ -122,4 +125,9 @@ export async function fetchAdzunaCategoryPage(
 export function roundAdzunaSalary(value: number | undefined): number | null {
   if (value == null || !Number.isFinite(value)) return null;
   return Math.round(value);
+}
+
+/** No age cutoff: these are indexed listings, still subject to moderation/cleanup. */
+export function fetchAdzunaPhrasePage(phrase: string, page: number, country: AdzunaCountryCode) {
+  return fetchAdzunaJobs({ country, whatPhrase: phrase, page });
 }

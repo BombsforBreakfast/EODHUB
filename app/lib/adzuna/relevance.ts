@@ -1,3 +1,5 @@
+import { adzunaIndexedPhrase } from "./intakeConfig";
+
 /**
  * Adzuna relevance — title, description, and company (not title-only).
  */
@@ -49,6 +51,14 @@ export const STRONG_RELEVANT_TERMS = [
   "pyrotechnic",
   "blasting",
   "clearance",
+  "navscoleod",
+  "nseod",
+  "soae",
+  "ordnance safety",
+  "explosives safety",
+  "cooperative threat reduction",
+  "strategic offensive arms elimination",
+  "counter explosive hazard",
 ] as const;
 
 export const MEDIUM_RELEVANT_TERMS = [
@@ -162,10 +172,11 @@ export function scoreAdzunaJob(
     MEDIUM_RELEVANT_TERMS.some((t) => termMatches(description, t));
 
   const fromCompanyChannel = options?.intakeChannel?.startsWith("co:") ?? false;
+  const indexedPhrase = adzunaIndexedPhrase(options?.intakeChannel);
 
   if (titleHasStrong) {
     score = Math.max(score, 75);
-  } else if (bodyHasStrong) {
+  } else if (bodyHasStrong || indexedPhrase) {
     score = Math.max(score, 55);
   } else if (fromCompanyChannel && termMatches(combined, "ordnance")) {
     score = Math.max(score, 50);
@@ -180,6 +191,7 @@ export function scoreAdzunaJob(
     ...titleMedium.reasons.map((r) => `${r} in title`),
     ...descMedium.reasons.map((r) => `${r} in description`),
     ...companyStrong.reasons.map((r) => `${r} in company`),
+    ...(indexedPhrase ? [`Indexed announcement matches: ${indexedPhrase}`] : []),
   ].slice(0, 12);
 
   return {
@@ -190,7 +202,7 @@ export function scoreAdzunaJob(
   };
 }
 
-export function detectAdzunaCategory(title: string): string {
+export function detectAdzunaCategory(title: string, description = "", intakeChannel = ""): string {
   const t = title.toLowerCase();
   if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
   if (t.includes("c-ied") || t.includes("cied") || t.includes("counter ied") || t.includes("improvised explosive"))
@@ -200,17 +212,26 @@ export function detectAdzunaCategory(title: string): string {
     t.includes("c-wmd") ||
     t.includes("counter weapons of mass destruction") ||
     t.includes("wmd") ||
-    t.includes("weapons of mass destruction")
+    t.includes("weapons of mass destruction") ||
+    t.includes("strategic offensive arms elimination") ||
+    t.includes("cooperative threat reduction") ||
+    /\bsoae\b/.test(t)
   ) {
     return "CWMD";
   }
   if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
     return "UAS";
   if (t.includes("c-uas") || t.includes("counter uas") || t.includes("counter-uas")) return "C-UAS";
-  if (t.includes("explosive safety") || t.includes("explosives specialist")) return "Explosive Safety";
+  if (t.includes("explosive safety") || t.includes("explosives safety") || t.includes("ordnance safety") || t.includes("explosives specialist")) return "Explosive Safety";
   if (t.includes("direct action")) return "Direct Action EOD";
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
   if (t.includes("demining") || t.includes("mine action") || t.includes("hma")) return "HMA";
   if (t.includes("cbrn") || t.includes("cbrne")) return "CBRN";
+  if (!STRONG_RELEVANT_TERMS.some(term => termMatches(title, term))) {
+    const context = description + " " + (adzunaIndexedPhrase(intakeChannel) ?? "");
+    if (["cwmd", "c-wmd", "weapons of mass destruction", "cooperative threat reduction", "strategic offensive arms elimination"].some(term => termMatches(context, term))) return "CWMD";
+    if (["explosive safety", "explosives safety", "ordnance safety"].some(term => termMatches(context, term))) return "Explosive Safety";
+    if (["unexploded ordnance", "uxo"].some(term => termMatches(context, term))) return "UXO";
+  }
   return "EOD";
 }
