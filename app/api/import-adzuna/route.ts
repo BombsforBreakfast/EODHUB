@@ -4,11 +4,14 @@ import {
   fetchAdzunaCategoryPage,
   fetchAdzunaCompanyPage,
   fetchAdzunaKeywordPage,
+  fetchAdzunaPhrasePage,
   roundAdzunaSalary,
   type AdzunaApiJob,
 } from "../../lib/adzuna/api";
 import {
   ADZUNA_CATEGORY_CHANNELS,
+  ADZUNA_DISCOVERY_CHANNELS,
+  adzunaIndexedPhrase,
   ADZUNA_COMPANY_CHANNELS,
   ADZUNA_COUNTRIES,
   ADZUNA_PRIMARY_COUNTRY,
@@ -79,7 +82,6 @@ function considerJob(
   if (!/^\d+$/.test(adId)) return "skipped";
 
   if (seenAdzunaIds.has(adId)) return "duplicate";
-  seenAdzunaIds.add(adId);
 
   const relevance = scoreAdzunaJob(
     {
@@ -95,6 +97,8 @@ function considerJob(
   const candidate = toCandidate(job, intakeChannel, adzunaCountry, relevance.score);
   if (!candidate) return "skipped";
 
+  // Rejected snippets must be reconsidered if a later exact phrase query matches.
+  seenAdzunaIds.add(adId);
   candidates.push(candidate);
   return "added";
 }
@@ -224,6 +228,26 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const truncatedChannels: { channel: string; matches: number; scanned: number }[] = [];
+  for (const channel of ADZUNA_DISCOVERY_CHANNELS) {
+    for (const country of channel.countries) {
+      const channelKey = channel.id + "@" + country;
+      for (let page = 1; page <= channel.maxPages; page++) {
+        const { jobs: items, count, error } = await fetchAdzunaPhrasePage(channel.phrase, page, country);
+        apiCalls++;
+        if (error) { errors.push("[" + channelKey + " p" + page + "] " + error); break; }
+        for (const job of items) {
+          if (considerJob(job, channelKey, country, seenAdzunaIds, candidates) !== "added") skipped++;
+        }
+        const scanned = page * ADZUNA_RESULTS_PER_PAGE;
+        if (page === channel.maxPages && count !== undefined && count > scanned) {
+          truncatedChannels.push({ channel: channelKey, matches: count, scanned });
+        }
+        if (items.length < ADZUNA_RESULTS_PER_PAGE || (count !== undefined && scanned >= count)) break;
+      }
+    }
+  }
+
   const adIds = candidates.map((c) => c.adId);
   const existingByAdId = new Map<
     string,
@@ -276,11 +300,13 @@ export async function GET(req: NextRequest) {
       og_site_name: "Adzuna",
       pay_min: candidate.payMin,
       pay_max: candidate.payMax,
-      category: detectAdzunaCategory(candidate.title),
+      category: detectAdzunaCategory(candidate.title, candidate.description, candidate.intakeChannel),
       relevance_score: candidate.relevanceScore,
       import_metadata: {
         intake_channel: candidate.intakeChannel,
         adzuna_country: candidate.adzunaCountry,
+        indexed_phrase: adzunaIndexedPhrase(candidate.intakeChannel) ?? null,
+        description_is_excerpt: true,
         relevance_score: candidate.relevanceScore,
       },
       last_seen_at: now,
@@ -327,6 +353,8 @@ export async function GET(req: NextRequest) {
     candidates: candidates.length,
     apiCalls,
     countries: [...ADZUNA_COUNTRIES],
+    discoveryChannels: ADZUNA_DISCOVERY_CHANNELS.length,
+    truncatedChannels: truncatedChannels.length ? truncatedChannels : undefined,
     companyChannels: ADZUNA_COMPANY_CHANNELS.length,
     categoryChannels: ADZUNA_CATEGORY_CHANNELS.length,
     sample: importedTitles.slice(0, 10),
