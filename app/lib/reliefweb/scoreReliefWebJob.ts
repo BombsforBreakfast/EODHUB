@@ -1,3 +1,4 @@
+import { jobImportExclusionReason } from "../jobImportExclusions";
 import {
   CONFIDENCE_THRESHOLDS,
   FIELD_WEIGHT_CAPS,
@@ -99,6 +100,7 @@ function hasStrongTitleMatch(title: string): boolean {
 }
 
 export function shouldExcludeReliefWebJob(title: string, body: string, metadataText = ""): boolean {
+  if (jobImportExclusionReason(title)) return true;
   const text = `${title}\n${body}\n${metadataText}`.toLowerCase();
   return HARD_EXCLUSION_TERMS.some((term) => termMatches(text, term));
 }
@@ -185,3 +187,4 @@ export function shouldIngestReliefWebJob(
 ): boolean {
   return !shouldExcludeReliefWebJob(title, body, metadataText);
 }
+

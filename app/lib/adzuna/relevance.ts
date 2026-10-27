@@ -1,3 +1,4 @@
+import { jobImportExclusionReason } from "../jobImportExclusions";
 import { adzunaIndexedPhrase } from "./intakeConfig";
 
 /**
@@ -142,6 +143,11 @@ export function scoreAdzunaJob(
   const companyName = input.companyName.trim();
   const combined = `${title}\n${description}\n${companyName}`;
 
+  const excludedRole = jobImportExclusionReason(title);
+  if (excludedRole) {
+    return { score: 0, relevant: false, reasons: [`Excluded: ${excludedRole}`], militaryRecruitment: false };
+  }
+
   if (isMilitaryRecruitmentTitle(title)) {
     return {
       score: 0,
@@ -235,3 +241,4 @@ export function detectAdzunaCategory(title: string, description = "", intakeChan
   }
   return "EOD";
 }
+

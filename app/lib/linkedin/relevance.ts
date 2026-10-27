@@ -1,3 +1,4 @@
+import { jobImportExclusionReason } from "../jobImportExclusions";
 import {
   detectAdzunaCategory,
   scoreAdzunaJob,
@@ -168,6 +169,8 @@ export const LINKEDIN_HARD_EXCLUDE_PATTERNS: ReadonlyArray<{
 
 export function linkedInHardExcludeReason(input: LinkedInRelevanceInput): string | null {
   const title = input.title.trim();
+  const excludedRole = jobImportExclusionReason(title);
+  if (excludedRole) return excludedRole;
   const haystack = `${title}\n${input.description}\n${input.companyName}`.trim();
   for (const rule of LINKEDIN_HARD_EXCLUDE_PATTERNS) {
     if (rule.test(title, haystack)) return rule.label;
@@ -212,3 +215,4 @@ export function scoreLinkedInJob(
 }
 
 export { detectAdzunaCategory as detectLinkedInCategory };
+

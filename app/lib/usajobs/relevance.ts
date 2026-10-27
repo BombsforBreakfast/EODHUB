@@ -1,3 +1,4 @@
+import { jobImportExclusionReason } from "../jobImportExclusions";
 /**
  * USAJobs relevance — title, description, and organization (not title-only).
  */
@@ -133,6 +134,11 @@ export function scoreUSAJobsJob(
   const department = (input.departmentName ?? "").trim();
   const combined = `${title}\n${description}\n${orgName}\n${department}`;
 
+  const excludedRole = jobImportExclusionReason(title);
+  if (excludedRole) {
+    return { score: 0, relevant: false, reasons: [`Excluded: ${excludedRole}`], militaryRecruitment: false };
+  }
+
   if (isMilitaryRecruitmentTitle(title)) {
     return {
       score: 0,
@@ -219,3 +225,4 @@ export function detectUSAJobsCategory(title: string, description = ""): string {
   }
   return "EOD";
 }
+
