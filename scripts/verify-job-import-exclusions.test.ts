@@ -37,3 +37,17 @@ test("qualified EOD, UXO, C-IED, UAS and WMD roles are retained when EMT or para
   assert.equal(jobImportExclusionReason("Equipment Maintenance Technician"), null);
 });
 
+
+test("intern titles are excluded across all importers without matching international", () => {
+  for (const title of ["EOD Intern", "INTERN - UXO", "UAS Interns", "CBRN Internship", "WMD Internships"]) {
+    const input = { title, description, companyName: "EOD employer" };
+    assert.equal(jobImportExclusionReason(title), "Intern role", title);
+    assert.equal(scoreAdzunaJob(input, { intakeChannel: "body:eod@us" }).relevant, false, title);
+    assert.equal(scoreUSAJobsJob({ title, description, organizationName: "Defense EOD" }).relevant, false, title);
+    assert.equal(linkedInHardExcludeReason(input), "Intern role", title);
+    assert.equal(scoreLinkedInJob(input).relevant, false, title);
+    assert.equal(scoreReliefWebJob({ title, description, metadataText: "Mine Action", themes: ["Mine Action"] }).excluded, true, title);
+  }
+  assert.equal(jobImportExclusionReason("International EOD Advisor"), null);
+  assert.equal(jobImportExclusionReason("Internal UXO Operations Specialist"), null);
+});
