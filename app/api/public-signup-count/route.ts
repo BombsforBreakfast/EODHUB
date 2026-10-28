@@ -2,7 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 /**
- * Public total of profiles (signed-up accounts). No PII — count only.
+ * Public Hub signup total. Rental-only identities never count as Hub members.
+ * The server-only database aggregate returns no PII and preserves the existing
+ * count of all other Hub profile rows.
  * Used on the login page; keep fresh (no CDN cache).
  */
 export async function GET() {
@@ -21,9 +23,7 @@ export async function GET() {
   }
 
   const admin = createClient(url, key);
-  const { count, error } = await admin
-    .from("profiles")
-    .select("user_id", { count: "exact", head: true });
+  const { data, error } = await admin.rpc("hub_member_signup_count");
 
   if (error) {
     console.error("public-signup-count:", error.message);
@@ -39,7 +39,7 @@ export async function GET() {
   }
 
   return NextResponse.json(
-    { count: count ?? 0 },
+    { count: Number(data ?? 0) },
     {
       status: 200,
       headers: {

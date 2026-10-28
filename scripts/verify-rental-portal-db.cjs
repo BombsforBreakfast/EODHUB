@@ -31,6 +31,7 @@ const { randomUUID } = require('node:crypto');
     const sql=fs.readFileSync('supabase/migrations/20261027231738_rental_provider_portal_v1.sql','utf8');
     await db.exec(sql);
     await db.exec(fs.readFileSync('supabase/migrations/20261028002502_rental_auth_provisioning_order.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261028104642_rental_excluded_member_count.sql','utf8'));
     const after = (await db.query(`select pg_get_functiondef('public.handle_new_user()'::regprocedure) trigger_definition,(select nspacl::text from pg_namespace where nspname='public') grants`)).rows[0];
     assert.deepEqual(after,before,'Existing Auth trigger and shared schema grants are preserved');
     const scope=(await db.query(`select pg_has_role('authenticator','eod_rental','MEMBER') switchable,pg_has_role('eod_rental','authenticated','MEMBER') member`)).rows[0];
@@ -54,6 +55,26 @@ const { randomUUID } = require('node:crypto');
     assert.equal((await db.query(`select count(*)::int n from public.profiles where user_id=$1`,[owner])).rows[0].n,0,'Repair/profile inserts cannot convert a rental user into a member');
     await db.query(`update public.profiles set is_admin=true where user_id=$1`,[member]);
     assert.equal((await db.query(`select is_admin from public.profiles where user_id=$1`,[member])).rows[0].is_admin,true,'Normal member/admin operations still work');
+    const signupCount=async()=>Number((await db.query('select public.hub_member_signup_count() n')).rows[0].n);
+    assert.equal(await signupCount(),1,'Rental signup and staged provisioning never increase the Hub signup count');
+    // Simulate legacy/corrupt profile rows without weakening the real guard.
+    const orphan=randomUUID(),metadataRental=randomUUID();
+    await db.exec('alter table public.profiles disable trigger prevent_rental_hub_profile');
+    await db.query('alter table public.profiles drop constraint profiles_user_id_fkey');
+    await db.query('insert into public.profiles(user_id) values($1),($2)',[owner,orphan]);
+    await db.query(`insert into auth.users(id,role,email,raw_app_meta_data) values($1,'authenticated','metadata-rental@example.com','{"account_type":"rental_provider"}')`,[metadataRental]);
+    assert.equal(await signupCount(),2,'Even stray rental profiles are excluded; unrelated legacy Hub rows retain their previous count');
+    await db.query('delete from public.profiles where user_id=any($1::uuid[])',[[owner,orphan,metadataRental]]);
+    await db.query('delete from auth.users where id=$1',[metadataRental]);
+    await db.exec('alter table public.profiles add constraint profiles_user_id_fkey foreign key(user_id) references auth.users(id)');
+    await db.exec('alter table public.profiles enable trigger prevent_rental_hub_profile');
+    assert.equal(await signupCount(),1);
+    for(const role of ['anon','authenticated','eod_rental']){
+      await db.exec(`set role ${role}`);
+      await assert.rejects(db.query('select public.hub_member_signup_count()'),/permission denied/);
+      await db.exec('reset role');
+    }
+    console.log('PASS: Hub signup count excludes rental roles/providers/metadata and stray profiles; aggregate is server-only');
     await db.exec(`set session authorization authenticator`);
     await assert.rejects(db.exec(`set role eod_rental`),/permission denied/);
     await db.exec(`reset session authorization`);
@@ -64,6 +85,7 @@ const { randomUUID } = require('node:crypto');
     console.log('PASS: isolated role, unchanged member grants/signup trigger, no rental member profiles, private tables/storage');
 
     await db.exec(`set role service_role`);
+    assert.equal(await signupCount(),1,'Server role can read the aggregate without receiving Auth table access');
     await db.query(`update public.rental_providers set status='approved',email_verified_at=now()`);
     const property=randomUUID(),order=randomUUID(),submission=randomUUID();
     const payload={address:'1 Test Street',city:'Niceville',zip:'32578',militaryLeaseAccepted:true};

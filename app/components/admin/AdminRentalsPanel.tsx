@@ -29,12 +29,13 @@ export default function AdminRentalsPanel() {
   useEffect(() => { void load(); }, [load]);
   return <section style={{ marginTop: 24, maxWidth: 720 }} aria-labelledby="rental-admin-title">
     <h2 id="rental-admin-title" style={{ fontSize: 24, fontWeight: 800 }}>Rentals</h2>
+    <AdminRentalProvidersPanel />
+    <h3 style={{ marginTop: 36, fontSize: 20, fontWeight: 800 }}>Listing availability</h3>
     <p style={{ color: t.textMuted, margin: "8px 0 20px" }}>Update availability on the public rentals page. Projected dates appear only when provided.</p>
     <a href="/promote/rentals" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "underline" }}>View public rentals</a>
     {loading ? <p role="status">Loading rentals…</p> : null}
     {error ? <div role="alert"><p>{error}</p><button type="button" onClick={() => void load()}>Retry</button></div> : null}
     {!loading && !error ? items.map(item => <RentalEditor key={item.id} item={item} />) : null}
-    <AdminRentalProvidersPanel />
   </section>;
 }
 function RentalEditor({ item }: { item: Item }) {
