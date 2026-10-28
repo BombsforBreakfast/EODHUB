@@ -32,7 +32,7 @@ export type RentalListing = {
   monthlyRent: number;
   bedrooms: number;
   bathrooms: number;
-  propertyType: "House" | "Condo";
+  propertyType: "House" | "Condo" | "Apartment" | "Room" | "Shared home" | "Short-term rental";
   furnished: boolean;
   availability: RentalAvailability;
   availabilityUpdatedAt: string;
@@ -43,6 +43,11 @@ export type RentalListing = {
   sharedRenters?: number;
   sourceNote?: string;
   photos: string[];
+  rentPeriod?: "month" | "week" | "night";
+  priceBasis?: "property" | "room";
+  portalListing?: boolean;
+  providerContact?: {name:string;phone:string;email:string;company:string};
+  rentalTerms?: {minimumLeaseMonths:number;deposit:number;fees:string;utilities:string;petDetails:string};
 };
 
 export const rentalStates = [

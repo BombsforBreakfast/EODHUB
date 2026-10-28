@@ -327,3 +327,5 @@
   .ratingSummary .ratingBombLine .bombSlot svg { width: 28px; height: 28px; left: 1px; }
   .ratingSummary .ratingBombLine .bombFill { height: 38px; }
 }
+
+.extraFilters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin:14px 0 24px}.extraFilters label{display:grid;gap:7px;font-size:11px;color:var(--muted)}.extraFilters input,.extraFilters select{min-width:0;width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--input);color:var(--ink);font:inherit;font-size:14px;min-height:44px}.rentalTerms{font-size:12px;margin:15px 0;line-height:1.65}.rentalTerms summary{cursor:pointer;font-weight:650}.rentalTerms p{margin-top:10px}@media(max-width:700px){.extraFilters{grid-template-columns:repeat(2,minmax(0,1fr))}}

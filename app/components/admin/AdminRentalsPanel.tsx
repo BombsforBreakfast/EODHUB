@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import { useTheme } from "@/app/lib/ThemeContext";
 import type { RentalStatus } from "@/app/lib/rentals/availability";
+import AdminRentalProvidersPanel from "./AdminRentalProvidersPanel";
 
 type Item = { id: string; address: string; status: RentalStatus; projectedAvailabilityDate: string };
 async function adminFetch(init?: RequestInit) {
@@ -33,6 +34,7 @@ export default function AdminRentalsPanel() {
     {loading ? <p role="status">Loading rentals…</p> : null}
     {error ? <div role="alert"><p>{error}</p><button type="button" onClick={() => void load()}>Retry</button></div> : null}
     {!loading && !error ? items.map(item => <RentalEditor key={item.id} item={item} />) : null}
+    <AdminRentalProvidersPanel />
   </section>;
 }
 function RentalEditor({ item }: { item: Item }) {
