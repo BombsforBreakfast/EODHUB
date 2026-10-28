@@ -51,3 +51,46 @@ test("intern titles are excluded across all importers without matching internati
   assert.equal(jobImportExclusionReason("International EOD Advisor"), null);
   assert.equal(jobImportExclusionReason("Internal UXO Operations Specialist"), null);
 });
+
+test("newly excluded role titles are blocked across all importers", () => {
+  const cases: Array<[string, string[]]> = [
+    ["Decontamination specialist role", ["Decontamination Specialist", "CBRN DECONTAMINATION SPECIALISTS", "Senior Decontamination-Specialist", "Decontamination Specialist - EOD Range"]],
+    ["Human resources role", ["Human Resources Specialist - EOD", "HUMAN RESOURCE MANAGER", "Human-Resources Advisor (UAS)", "HR Business Partner", "EOD HR Assistant"]],
+    ["Budget role", ["Budget Analyst - EOD", "BUDGETS Officer", "CBRN Budgeting Specialist", "Budgetary Manager", "UAS Program Budget Coordinator"]],
+    ["Postdoctoral role", ["Postdoctoral Researcher - EOD", "POSTDOCTORAL FELLOW - UAS", "Post-doctoral CBRN Scientist", "Post Doctoral Research Associate", "Post–Doctoral WMD Analyst"]],
+    ["Student role", ["Student EOD Technician", "STUDENTS - UXO Program", "Working Student (UAS)", "EOD Studentship", "CBRN Studentships"]],
+    ["Police officer role", ["Police Officer", "POLICE OFFICERS - EOD", "Supervisory Police Officer (Bomb Squad)", "Police-Officer Trainee", "Police/Officer - Explosive Detection"]],
+    ["All-source analyst role", ["All Source Analyst", "Senior All-Source Intelligence Analyst", "All–Source Targeting Analyst", "Intelligence Analyst (All Source)", "Allsource Analyst - Counter-IED", "All-Source Analysts"]],
+    ["Firefighter role", ["Firefighter", "FIREFIGHTERS - CBRN", "Fire Fighter (HAZMAT)", "Airport Fire-Fighter", "Supervisory Firefighter - EOD Range"]],
+    ["Nurse role", ["Nurse", "Registered Nurses", "Nurse Practitioner - CBRN", "Occupational Health Nursing", "RN - EOD Range", "LPN / CBRN", "LVN - Defense Clinic", "APRN", "CRNA", "R.N. - Range Clinic"]],
+  ];
+  for (const [reason, titles] of cases) {
+    for (const title of titles) {
+      const input = { title, description, companyName: "EOD employer" };
+      assert.equal(jobImportExclusionReason(title), reason, title);
+      assert.equal(scoreAdzunaJob(input, { intakeChannel: "body:eod@us" }).relevant, false, `Adzuna: ${title}`);
+      assert.equal(scoreUSAJobsJob({ ...input, organizationName: "Defense EOD" }, { intakeChannel: "title:eod" }).relevant, false, `USAJOBS: ${title}`);
+      assert.equal(linkedInHardExcludeReason(input), reason, title);
+      assert.equal(scoreLinkedInJob(input, { searchQuery: "EOD" }).relevant, false, `LinkedIn: ${title}`);
+      assert.equal(shouldExcludeReliefWebJob(title, description, "Mine Action"), true, title);
+      const rw = scoreReliefWebJob({ title, description, metadataText: "Mine Action", themes: ["Mine Action"] });
+      assert.equal(rw.excluded, true, `ReliefWeb: ${title}`);
+      assert.equal(rw.score, 0, title);
+    }
+  }
+});
+
+test("relevant specialist roles remain eligible when excluded roles are mentioned only in the description", () => {
+  const context = `${description} Coordinate with police officers, all-source analysts, firefighters, nurses and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
+  for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Analyst"]) {
+    const input = { title, description: context, companyName: "EOD employer" };
+    assert.equal(jobImportExclusionReason(title), null, title);
+    assert.equal(scoreAdzunaJob(input).relevant, true, title);
+    assert.equal(scoreUSAJobsJob({ ...input, organizationName: "Defense" }).relevant, true, title);
+    assert.equal(scoreLinkedInJob(input).relevant, true, title);
+    assert.equal(scoreReliefWebJob({ ...input, metadataText: "Mine Action", themes: ["Mine Action"] }).excluded, false, title);
+  }
+  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Open Source Analyst", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer"]) {
+    assert.equal(jobImportExclusionReason(title), null, title);
+  }
+});
