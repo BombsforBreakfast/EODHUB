@@ -6,9 +6,14 @@ import { RENTAL_COMMITMENT_VERSION, RENTAL_PORTAL, propertySchema, planAmount, l
 import { checkDb, RentalError } from "./portal.server";
 import { rentalAdminEmail, rentalEmail } from "./notifications.server";
 
+export function rentalBillingReady(env: NodeJS.ProcessEnv = process.env) {
+  const key=env.STRIPE_RENTALS_SECRET_KEY || env.STRIPE_SECRET_KEY || "";
+  const webhook=env.STRIPE_RENTALS_SECRET_KEY ? env.STRIPE_RENTALS_WEBHOOK_SECRET : env.STRIPE_WEBHOOK_SECRET;
+  return !!key && !!webhook && (key.includes("_live_") || (key.includes("_test_") && (env.NODE_ENV!=="production" || env.VERCEL_ENV==="preview")));
+}
 export const rentalStripe = () => {
-  if (!process.env.STRIPE_SECRET_KEY) throw new RentalError("Listing checkout is temporarily unavailable.", 503);
-  return new Stripe(process.env.STRIPE_SECRET_KEY);
+  if (!rentalBillingReady()) throw new RentalError("Listing checkout is not open yet. Your drafts are saved. Contact hello@eod-hub.com for an update.", 503);
+  return new Stripe((process.env.STRIPE_RENTALS_SECRET_KEY || process.env.STRIPE_SECRET_KEY)!);
 };
 const productCache = new Map<string, string>();
 let portalConfiguration: string | undefined;

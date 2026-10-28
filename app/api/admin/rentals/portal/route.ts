@@ -1,7 +1,8 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { rentalAdministrator, rentalBody, rentalFailure, rentalJson, ensureSameOrigin, RentalError, checkDb } from "@/app/lib/rentals/portal.server";
-import { approveRentalProperty } from "@/app/lib/rentals/billing.server";
+import { approveRentalProperty, rentalBillingReady } from "@/app/lib/rentals/billing.server";
+import { listingHasPaidAccess } from "@/app/lib/rentals/provider";
 import { rentalEmail } from "@/app/lib/rentals/notifications.server";
 export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
@@ -39,6 +40,7 @@ export async function PATCH(request: NextRequest) {
       if (!provider) throw new RentalError("Provider not found.");
       if (decision === "approved") {
         if (provider.status !== "approved") throw new RentalError("Approve the provider first.");
+        if (!(property.published && listingHasPaidAccess(property)) && !rentalBillingReady()) throw new RentalError("Live listing billing must be configured before approving charges.",503);
         const claimed = await db.from("rental_properties").update({ review_status: "approved", reviewed_at: new Date().toISOString(), reviewed_by: user.id }).eq("id", id).eq("submission_id", property.submission_id).eq("review_status", property.review_status).select("id");
         checkDb(claimed.error); if (claimed.data?.length !== 1) throw new RentalError("This review changed. Refresh before approving.", 409);
         await approveRentalProperty(db, { ...property, review_status: "approved" }, provider);

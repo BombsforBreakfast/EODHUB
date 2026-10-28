@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { rentalDatabase,rentalJson,rentalFailure,checkDb } from "@/app/lib/rentals/portal.server";
 import { rentalAdminEmail } from "@/app/lib/rentals/notifications.server";
-import { rentalStripe } from "@/app/lib/rentals/billing.server";
+import { rentalStripe, rentalBillingReady } from "@/app/lib/rentals/billing.server";
 export const dynamic="force-dynamic";
 export async function GET(request:NextRequest){
   if(!process.env.CRON_SECRET||request.headers.get("authorization")!==`Bearer ${process.env.CRON_SECRET}`)return rentalJson({error:"Unauthorized"},401);
@@ -9,8 +9,8 @@ export async function GET(request:NextRequest){
     const db=rentalDatabase(),now=new Date().toISOString();
     if(request.nextUrl.searchParams.get("check")==="1"){
       const readiness=await db.from("rental_providers").select("user_id",{head:true,count:"exact"});
-      const key=process.env.STRIPE_SECRET_KEY??"";
-      return rentalJson({databaseReady:!readiness.error,billingMode:key.includes("_live_")?"live":key.includes("_test_")?"test":"unconfigured",emailConfigured:!!process.env.RESEND_API_KEY,webhookConfigured:!!process.env.STRIPE_WEBHOOK_SECRET});
+      const key=process.env.STRIPE_RENTALS_SECRET_KEY||process.env.STRIPE_SECRET_KEY||"";
+      return rentalJson({databaseReady:!readiness.error,billingReady:rentalBillingReady(),billingMode:key.includes("_live_")?"live":key.includes("_test_")?"test":"unconfigured",emailConfigured:!!process.env.RESEND_API_KEY,webhookConfigured:!!(process.env.STRIPE_RENTALS_SECRET_KEY?process.env.STRIPE_RENTALS_WEBHOOK_SECRET:process.env.STRIPE_WEBHOOK_SECRET)});
     }
     const due=await db.from("rental_campaigns").select("id").in("status",["live","report_due"]).is("report_alerted_at",null).lte("ends_at",now);checkDb(due.error);
     if(due.data?.length){

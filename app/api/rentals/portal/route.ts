@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { NextRequest } from "next/server";
 import { RENTAL_COMMITMENT_VERSION, propertySchema, listingHasPaidAccess, type PropertyRow } from "@/app/lib/rentals/provider";
 import { rentalProvider, rentalBody, rentalFailure, rentalJson, rentalLimit, RentalError, ensureSameOrigin, checkDb } from "@/app/lib/rentals/portal.server";
-import { startRentalOrder, finishRentalOrder, rentalStripe, rentalBillingPortal } from "@/app/lib/rentals/billing.server";
+import { startRentalOrder, finishRentalOrder, rentalStripe, rentalBillingPortal, rentalBillingReady } from "@/app/lib/rentals/billing.server";
 import { rentalAdminEmail } from "@/app/lib/rentals/notifications.server";
 export const dynamic = "force-dynamic";
 const uuid = z.uuid();
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const signed = paths.size ? await db.storage.from("rental-assets").createSignedUrls([...paths], 3600) : { data: [], error: null };
     checkDb(signed.error);
     const urls = Object.fromEntries((signed.data ?? []).filter(p => p.path && p.signedUrl).map(p => [p.path, p.signedUrl]));
-    return rentalJson({ provider, properties: properties.data, campaigns: campaigns.data, metrics: metrics.data, urls });
+    return rentalJson({ billingReady:rentalBillingReady(), provider, properties: properties.data, campaigns: campaigns.data, metrics: metrics.data, urls });
   } catch (error) { return rentalFailure(error); }
 }
 
