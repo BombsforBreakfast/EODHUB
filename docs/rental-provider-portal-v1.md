@@ -77,3 +77,5 @@ node --import tsx scripts/verify-service-ratings.ts
 ## Current release status
 
 PR #194 contains V1. Both schema migrations are applied. Cloud Auth/server ownership checks and real Stripe TEST API billing checks passed; all synthetic accounts, private properties, subscriptions, customers, and orphaned audit profiles were removed. Member signup function/shared privileges and the existing rental rating hash remain unchanged. The review deployment for commit 0d45eea built successfully. Live paid checkout is pending the separate live Rentals connection; signup and drafts can be released with checkout visibly unavailable. Email delivery has not been sent as a test; the existing sending credential is configured but cannot list domains.
+
+The owner chose to hold V1 in preview until live checkout is ready. Main/production application code was not changed. Preview sign-in links use the server-configured Vercel deployment URL; production sign-in links use eod-hub.com.

@@ -32,3 +32,9 @@ test("normal members, missing users, mismatched email and exhausted limits never
 test("unexpected identity returned by link generation cannot be sent to a provider",async()=>{
   const h=harness(rental,true,{...rental,id:"another-user"});assert.equal(await sendRentalSignInLink(h.db,id,email,h.send),false);assert.equal(h.result().sent,0);
 });
+
+test("preview sign-in links return to the server-configured preview portal",async()=>{
+  const previousEnv=process.env.VERCEL_ENV,previousUrl=process.env.VERCEL_URL;
+  try{process.env.VERCEL_ENV='preview';process.env.VERCEL_URL='synthetic-preview.vercel.app';const h=harness();assert.equal(await sendRentalSignInLink(h.db,id,email,h.send),true);assert.equal(new URL(h.result().href).origin,'https://synthetic-preview.vercel.app');}
+  finally{if(previousEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=previousEnv;if(previousUrl===undefined)delete process.env.VERCEL_URL;else process.env.VERCEL_URL=previousUrl;}
+});
