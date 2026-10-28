@@ -16,9 +16,8 @@ export function jobImportExclusionReason(title: string): string | null {
     /\bpara[\s-]?medic(?:s|ine)?\b/i.test(normalized)
   ) return "EMT / Paramedic role";
   if (/\bpolice[\s/-]+officers?\b/i.test(normalized)) return "Police officer role";
-  if (/\ball[\s-]*source\b/i.test(normalized) && /\banalysts?\b/i.test(normalized)) {
-    return "All-source analyst role";
-  }
+  if (/\banalysts?\b/i.test(normalized)) return "Analyst role";
+  if (/\bscientists?\b/i.test(normalized)) return "Scientist role";
   if (/\bfire[\s-]*fighters?\b/i.test(normalized)) return "Firefighter role";
   if (
     /\bnurs(?:es?|ing)\b/i.test(normalized) ||

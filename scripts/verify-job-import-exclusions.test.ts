@@ -25,7 +25,7 @@ test("EMT and Paramedic titles are hard-excluded across all importers despite st
 });
 
 test("qualified EOD, UXO, C-IED, UAS and WMD roles are retained when EMT or paramedic appears only in the description", () => {
-  for (const title of ["EMF EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Analyst"]) {
+  for (const title of ["EMF EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Specialist"]) {
     const input = { title, description: `${description} EMT certification is helpful; coordinate with paramedic teams.`, companyName: "EOD employer" };
     assert.equal(jobImportExclusionReason(title), null, title);
     assert.equal(scoreAdzunaJob(input).relevant, true, title);
@@ -60,7 +60,8 @@ test("newly excluded role titles are blocked across all importers", () => {
     ["Postdoctoral role", ["Postdoctoral Researcher - EOD", "POSTDOCTORAL FELLOW - UAS", "Post-doctoral CBRN Scientist", "Post Doctoral Research Associate", "Post–Doctoral WMD Analyst"]],
     ["Student role", ["Student EOD Technician", "STUDENTS - UXO Program", "Working Student (UAS)", "EOD Studentship", "CBRN Studentships"]],
     ["Police officer role", ["Police Officer", "POLICE OFFICERS - EOD", "Supervisory Police Officer (Bomb Squad)", "Police-Officer Trainee", "Police/Officer - Explosive Detection"]],
-    ["All-source analyst role", ["All Source Analyst", "Senior All-Source Intelligence Analyst", "All–Source Targeting Analyst", "Intelligence Analyst (All Source)", "Allsource Analyst - Counter-IED", "All-Source Analysts"]],
+    ["Analyst role", ["Analyst", "ANALYSTS", "All Source Analyst", "Senior All-Source Intelligence Analyst", "All–Source Targeting Analyst", "Intelligence Analyst (All Source)", "Allsource Analyst - Counter-IED", "All-Source Analysts", "WMD Analyst", "Open Source Analyst", "EOD Research Analyst", "CBRN Analysts", "UAS Analyst", "UXO Analyst(s)"]],
+    ["Scientist role", ["Scientist", "SCIENTISTS", "EOD Research Scientist", "Senior CBRN Scientist", "UAS Data Scientist", "WMD Scientists", "UXO Scientist(s)"]],
     ["Firefighter role", ["Firefighter", "FIREFIGHTERS - CBRN", "Fire Fighter (HAZMAT)", "Airport Fire-Fighter", "Supervisory Firefighter - EOD Range"]],
     ["Nurse role", ["Nurse", "Registered Nurses", "Nurse Practitioner - CBRN", "Occupational Health Nursing", "RN - EOD Range", "LPN / CBRN", "LVN - Defense Clinic", "APRN", "CRNA", "R.N. - Range Clinic"]],
   ];
@@ -81,8 +82,8 @@ test("newly excluded role titles are blocked across all importers", () => {
 });
 
 test("relevant specialist roles remain eligible when excluded roles are mentioned only in the description", () => {
-  const context = `${description} Coordinate with police officers, all-source analysts, firefighters, nurses and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
-  for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Analyst", "EOD Technician ($40/hr)", "UXO Technician - $40 per hr"]) {
+  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
+  for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Specialist", "EOD Technician ($40/hr)", "UXO Technician - $40 per hr"]) {
     const input = { title, description: context, companyName: "EOD employer" };
     assert.equal(jobImportExclusionReason(title), null, title);
     assert.equal(scoreAdzunaJob(input).relevant, true, title);
@@ -90,7 +91,7 @@ test("relevant specialist roles remain eligible when excluded roles are mentione
     assert.equal(scoreLinkedInJob(input).relevant, true, title);
     assert.equal(scoreReliefWebJob({ ...input, metadataText: "Mine Action", themes: ["Mine Action"] }).excluded, false, title);
   }
-  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Open Source Analyst", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer"]) {
+  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer"]) {
     assert.equal(jobImportExclusionReason(title), null, title);
   }
 });

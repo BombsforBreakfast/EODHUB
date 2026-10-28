@@ -7,10 +7,10 @@ import { detectUSAJobsCategory, scoreUSAJobsJob } from "../app/lib/usajobs/relev
 
 const fixture = (title: string, summary: string, qualifications = "", duties: string | string[] = []): USAJobsApiItem => ({ MatchedObjectId: "888531000", MatchedObjectDescriptor: { PositionID: "AGENCY-ANNOUNCEMENT", PositionTitle: title, PositionURI: "https://www.usajobs.gov/job/888531000", PositionLocationDisplay: "Arlington, VA", OrganizationName: "Department of the Air Force", QualificationSummary: qualifications, UserArea: { Details: { JobSummary: summary, MajorDuties: duties } } } });
 test("qualifications and duties remain available even when a generic summary exists", () => {
-  const text = extractUSAJobsSummary(fixture("PROGRAM ANALYST", "Support agency readiness.", "Expertise in CWMD doctrine.", ["Lead CWMD exercise planning."]));
+  const text = extractUSAJobsSummary(fixture("PROGRAM SPECIALIST", "Support agency readiness.", "Expertise in CWMD doctrine.", ["Lead CWMD exercise planning."]));
   assert.match(text,/Support agency readiness/); assert.match(text,/CWMD doctrine/); assert.match(text,/exercise planning/);
-  const relevance = scoreUSAJobsJob({ title: "PROGRAM ANALYST", description: text, organizationName: "Air Force" });
-  assert.equal(relevance.relevant,true); assert.equal(detectUSAJobsCategory("PROGRAM ANALYST",text),"CWMD");
+  const relevance = scoreUSAJobsJob({ title: "PROGRAM SPECIALIST", description: text, organizationName: "Air Force" });
+  assert.equal(relevance.relevant,true); assert.equal(detectUSAJobsCategory("PROGRAM SPECIALIST",text),"CWMD");
 });
 test("single-string duties and the old qualification-only response are retained", () => {
   assert.match(extractUSAJobsSummary(fixture("ANALYST", "", "", "CWMD operations")),/CWMD operations/);
