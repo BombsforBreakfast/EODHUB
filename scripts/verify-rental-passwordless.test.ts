@@ -3,6 +3,7 @@ import { test } from "node:test";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendRentalSignInLink } from "../app/lib/rentals/passwordless.server";
 import { rentalSignupAttributes, signupSchema } from "../app/lib/rentals/provider";
+import { rentalPortalOrigin } from "../app/lib/rentals/origin.server";
 const id="11111111-1111-4111-8111-111111111111",email="owner@example.com";
 const rental={id,email,role:"eod_rental",app_metadata:{account_type:"rental_provider"}};
 function harness(user:unknown=rental,allowed=true,generatedUser:unknown=user){
@@ -37,4 +38,13 @@ test("preview sign-in links return to the server-configured preview portal",asyn
   const previousEnv=process.env.VERCEL_ENV,previousUrl=process.env.VERCEL_URL;
   try{process.env.VERCEL_ENV='preview';process.env.VERCEL_URL='synthetic-preview.vercel.app';const h=harness();assert.equal(await sendRentalSignInLink(h.db,id,email,h.send),true);assert.equal(new URL(h.result().href).origin,'https://synthetic-preview.vercel.app');}
   finally{if(previousEnv===undefined)delete process.env.VERCEL_ENV;else process.env.VERCEL_ENV=previousEnv;if(previousUrl===undefined)delete process.env.VERCEL_URL;else process.env.VERCEL_URL=previousUrl;}
+});
+
+test("rental returns use the configured preview host and production ignores request hosts",()=>{
+  assert.equal(rentalPortalOrigin({NODE_ENV:"production",VERCEL_ENV:"preview",VERCEL_URL:"review-123.vercel.app"},"https://untrusted.example"),"https://review-123.vercel.app");
+  assert.equal(rentalPortalOrigin({NODE_ENV:"production",VERCEL_ENV:"production",VERCEL_URL:"production-build.vercel.app"},"https://untrusted.example"),"https://eod-hub.com");
+  assert.equal(rentalPortalOrigin({NODE_ENV:"development"},"http://127.0.0.1:3028"),"http://127.0.0.1:3028");
+  for (const url of [undefined,"untrusted.example","review.vercel.app/redirect","review.vercel.app@untrusted.example"]) {
+    assert.throws(()=>rentalPortalOrigin({NODE_ENV:"production",VERCEL_ENV:"preview",VERCEL_URL:url}),/preview URL/);
+  }
 });

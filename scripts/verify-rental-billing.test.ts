@@ -40,6 +40,8 @@ test("the rental billing portal cannot switch a listing to unrelated membership 
   const mock={billingPortal:{configurations:{async list(){return{data:[]};},async create(params:Stripe.BillingPortal.ConfigurationCreateParams){config=params;return{id:"bpc_rental_only"};}},sessions:{async create(params:Stripe.BillingPortal.SessionCreateParams){session=params;return{url:"https://billing.stripe.com/local-only"};}}}} as unknown as Stripe;
   await rentalBillingPortal("cus_rental_only",mock);
   assert.equal(config?.features?.subscription_update?.enabled,false);assert.equal(config?.features?.payment_method_update?.enabled,true);assert.equal(session?.configuration,"bpc_rental_only");assert.equal(session?.customer,"cus_rental_only");
+  await rentalBillingPortal("cus_rental_only",mock,"https://review-123.vercel.app");
+  assert.equal(session?.return_url,"https://review-123.vercel.app/promote/rentals/portal");
 });
 
 test("production rental checkout requires a live connection while preview supports test cards",()=>{

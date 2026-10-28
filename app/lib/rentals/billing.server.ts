@@ -17,7 +17,7 @@ export const rentalStripe = () => {
 };
 const productCache = new Map<string, string>();
 let portalConfiguration: string | undefined;
-export async function rentalBillingPortal(customer: string, stripeOverride?: Stripe) {
+export async function rentalBillingPortal(customer: string, stripeOverride?: Stripe, origin = "https://eod-hub.com") {
   const stripe = stripeOverride ?? rentalStripe();
   if (!portalConfiguration) {
     const configurations = await stripe.billingPortal.configurations.list({ active: true, limit: 100 });
@@ -30,7 +30,7 @@ export async function rentalBillingPortal(customer: string, stripeOverride?: Str
     }, { idempotencyKey: "eod-rental-billing-portal-v1" });
     portalConfiguration = configuration.id;
   }
-  return stripe.billingPortal.sessions.create({ customer, configuration: portalConfiguration, return_url: `https://eod-hub.com${RENTAL_PORTAL}` });
+  return stripe.billingPortal.sessions.create({ customer, configuration: portalConfiguration, return_url: `${origin}${RENTAL_PORTAL}` });
 }
 async function product(stripe: Stripe, kind: "listing" | "campaign") {
   if (productCache.has(kind)) return productCache.get(kind)!;

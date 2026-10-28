@@ -5,6 +5,7 @@ import { RENTAL_COMMITMENT_VERSION, propertySchema, listingHasPaidAccess, type P
 import { rentalProvider, rentalBody, rentalFailure, rentalJson, rentalLimit, RentalError, ensureSameOrigin, checkDb } from "@/app/lib/rentals/portal.server";
 import { startRentalOrder, finishRentalOrder, rentalStripe, rentalBillingPortal, rentalBillingReady } from "@/app/lib/rentals/billing.server";
 import { rentalAdminEmail } from "@/app/lib/rentals/notifications.server";
+import { rentalPortalOrigin } from "@/app/lib/rentals/origin.server";
 export const dynamic = "force-dynamic";
 const uuid = z.uuid();
 
@@ -35,7 +36,7 @@ export async function POST(request: NextRequest) {
     if (body.action === "checkout") {
       const items = z.array(z.object({ id: uuid, plan: z.enum(["monthly", "annual"]), autoRenew: z.boolean(), campaign: z.boolean() })).min(1).max(50).parse(body.items);
       if (body.consent !== true) throw new RentalError("Authorize approval-based charges and your selected renewal choices.");
-      const origin = process.env.NODE_ENV === "production" ? "https://eod-hub.com" : new URL(request.url).origin;
+      const origin = rentalPortalOrigin(process.env, new URL(request.url).origin);
       return rentalJson({ url: await startRentalOrder(db, provider, items, origin) });
     }
     if (body.action === "confirm_checkout") {
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     }
     if (body.action === "billing_portal") {
       if (!provider.stripe_customer_id) throw new RentalError("There is no billing account yet.");
-      const session = await rentalBillingPortal(provider.stripe_customer_id);
+      const session = await rentalBillingPortal(provider.stripe_customer_id, undefined, rentalPortalOrigin(process.env, new URL(request.url).origin));
       return rentalJson({ url: session.url });
     }
     if (body.action === "save" && !body.id) {

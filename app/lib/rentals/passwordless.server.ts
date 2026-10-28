@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isRentalIdentity, RENTAL_PORTAL } from "./provider";
 import { rentalEmail } from "./notifications.server";
+import { rentalPortalOrigin } from "./origin.server";
 
 /** Only pre-provisioned rental identities receive a link. Never use public auto-signup. */
 export async function sendRentalSignInLink(db: SupabaseClient, userId: string, email: string, send = rentalEmail) {
@@ -11,7 +12,7 @@ export async function sendRentalSignInLink(db: SupabaseClient, userId: string, e
   const key = createHash("sha256").update(email.toLowerCase()).digest("hex");
   const limit = await db.rpc("rental_consume_limit", { p_key: `rental-email:${key}`, p_limit: 5, p_seconds: 3600 });
   if (limit.error || !limit.data) return false;
-  const origin = process.env.VERCEL_ENV==="preview" && process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://eod-hub.com";
+  const origin = rentalPortalOrigin();
   const link = await db.auth.admin.generateLink({type:"magiclink",email,options:{redirectTo:`${origin}${RENTAL_PORTAL}`}});
   if (link.error || !link.data.properties?.hashed_token || !isRentalIdentity(link.data.user) || link.data.user.id !== userId) return false;
   // A fragment stays out of request logs and referrers. A deliberate button click

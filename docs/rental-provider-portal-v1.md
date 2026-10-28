@@ -79,3 +79,9 @@ node --import tsx scripts/verify-service-ratings.ts
 PR #194 contains V1. Both schema migrations are applied. Cloud Auth/server ownership checks and real Stripe TEST API billing checks passed; all synthetic accounts, private properties, subscriptions, customers, and orphaned audit profiles were removed. Member signup function/shared privileges and the existing rental rating hash remain unchanged. The review deployment for commit 0d45eea built successfully. Live paid checkout is pending the separate live Rentals connection; signup and drafts can be released with checkout visibly unavailable. Email delivery has not been sent as a test; the existing sending credential is configured but cannot list domains.
 
 The owner chose to hold V1 in preview until live checkout is ready. Main/production application code was not changed. Preview sign-in links use the server-configured Vercel deployment URL; production sign-in links use eod-hub.com.
+
+Email, Checkout success/cancel, and billing-portal return links share the server-configured deployment origin. Preview returns never fall through to production; production returns always use eod-hub.com regardless of the incoming request host. A missing or malformed preview URL fails closed.
+
+Rental API requests retain same-origin hosting-access cookies for protected previews. Rental authorization still requires the explicit rental bearer token and provider ownership checks; existing Hub cookies never select or authorize the provider identity.
+
+The dedicated live Rentals key and webhook secret are saved as sensitive Production-only Vercel variables. The live rental webhook remains disabled pending release. Stripe's approved Company / Single-member LLC tax update cleared the obsolete VAT request; the latest account check reports no pending or due verification fields and payments/payouts enabled. No live charge was performed.

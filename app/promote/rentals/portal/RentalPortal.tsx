@@ -21,7 +21,9 @@ const label=(v:string)=>v.replaceAll("_"," ");
 async function api(body?:unknown,upload?:FormData){
   const {data}=await rentalAuth.auth.getSession();
   if(!data.session)throw new Error("Sign in to your rental account.");
-  const response=await fetch(upload?"/api/rentals/portal/upload":"/api/rentals/portal",{method:body||upload?"POST":"GET",credentials:"omit",headers:{Authorization:`Bearer ${data.session.access_token}`,...(upload?{}:{"Content-Type":"application/json"})},body:upload??(body?JSON.stringify(body):undefined)});
+  // Keep the hosting preview-access cookie. The server authorizes only the
+  // explicit rental bearer token, independently of any existing Hub cookies.
+  const response=await fetch(upload?"/api/rentals/portal/upload":"/api/rentals/portal",{method:body||upload?"POST":"GET",credentials:"same-origin",headers:{Authorization:`Bearer ${data.session.access_token}`,...(upload?{}:{"Content-Type":"application/json"})},body:upload??(body?JSON.stringify(body):undefined)});
   const result=await response.json();if(!response.ok)throw new Error(result.error||"Could not complete this action.");return result;
 }
 async function authAction(body:unknown){const r=await fetch("/api/rentals/auth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(data.error||"Could not complete this action.");return data;}
