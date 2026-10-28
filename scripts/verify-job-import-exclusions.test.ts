@@ -55,7 +55,7 @@ test("intern titles are excluded across all importers without matching internati
 test("newly excluded role titles are blocked across all importers", () => {
   const cases: Array<[string, string[]]> = [
     ["Decontamination specialist role", ["Decontamination Specialist", "CBRN DECONTAMINATION SPECIALISTS", "Senior Decontamination-Specialist", "Decontamination Specialist - EOD Range"]],
-    ["Human resources role", ["Human Resources Specialist - EOD", "HUMAN RESOURCE MANAGER", "Human-Resources Advisor (UAS)", "HR Business Partner", "EOD HR Assistant"]],
+    ["Human resources role", ["Human Resources Specialist - EOD", "HUMAN RESOURCE MANAGER", "Human-Resources Advisor (UAS)", "HR Business Partner", "EOD HR Assistant", "HR Analyst ($40/hr)"]],
     ["Budget role", ["Budget Analyst - EOD", "BUDGETS Officer", "CBRN Budgeting Specialist", "Budgetary Manager", "UAS Program Budget Coordinator"]],
     ["Postdoctoral role", ["Postdoctoral Researcher - EOD", "POSTDOCTORAL FELLOW - UAS", "Post-doctoral CBRN Scientist", "Post Doctoral Research Associate", "Post–Doctoral WMD Analyst"]],
     ["Student role", ["Student EOD Technician", "STUDENTS - UXO Program", "Working Student (UAS)", "EOD Studentship", "CBRN Studentships"]],
@@ -82,7 +82,7 @@ test("newly excluded role titles are blocked across all importers", () => {
 
 test("relevant specialist roles remain eligible when excluded roles are mentioned only in the description", () => {
   const context = `${description} Coordinate with police officers, all-source analysts, firefighters, nurses and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
-  for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Analyst"]) {
+  for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Analyst", "EOD Technician ($40/hr)", "UXO Technician - $40 per hr"]) {
     const input = { title, description: context, companyName: "EOD employer" };
     assert.equal(jobImportExclusionReason(title), null, title);
     assert.equal(scoreAdzunaJob(input).relevant, true, title);

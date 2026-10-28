@@ -4,7 +4,9 @@ export function jobImportExclusionReason(title: string): string | null {
   if (/\bintern(?:s|ships?)?\b/i.test(normalized)) return "Intern role";
   if (/\bstudent(?:s|ships?)?\b/i.test(normalized)) return "Student role";
   if (/\bpost[\s-]*doctoral\b/i.test(normalized)) return "Postdoctoral role";
-  if (/\bhuman[\s-]+resources?\b/i.test(normalized) || /\bhr\b/i.test(normalized)) return "Human resources role";
+  // An hourly pay rate in the title is not a human resources role.
+  const withoutHourlyRates = normalized.replace(/\b\d[\d.,]*\s*(?:\/|per)\s*hrs?\b/gi, "");
+  if (/\bhuman[\s-]+resources?\b/i.test(normalized) || /\bhr\b/i.test(withoutHourlyRates)) return "Human resources role";
   if (/\bbudget(?:s|ing|ary|ed)?\b/i.test(normalized)) return "Budget role";
   if (/\bdecontamination[\s/-]+specialists?\b/i.test(normalized)) return "Decontamination specialist role";
   if (
