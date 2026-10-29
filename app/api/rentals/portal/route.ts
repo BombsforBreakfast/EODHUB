@@ -6,6 +6,8 @@ import { rentalProvider, rentalBody, rentalFailure, rentalJson, rentalLimit, Ren
 import { startRentalOrder, finishRentalOrder, rentalStripe, rentalBillingPortal, rentalBillingReady } from "@/app/lib/rentals/billing.server";
 import { rentalAdminEmail } from "@/app/lib/rentals/notifications.server";
 import { rentalPortalOrigin } from "@/app/lib/rentals/origin.server";
+import { renewalChoiceEmail, drainBillingEmails } from "@/app/lib/rentals/billing-notifications.server";
+import { rentalNeedsNewTerm } from "@/app/lib/rentals/billing-lifecycle";
 export const dynamic = "force-dynamic";
 const uuid = z.uuid();
 
@@ -77,15 +79,19 @@ export async function POST(request: NextRequest) {
       checkDb((await db.from("rental_properties").update({ status, available_date: date, updated_at: new Date().toISOString() }).eq("id", id).eq("provider_id", provider.user_id)).error);
     } else if (body.action === "hide") {
       checkDb((await db.from("rental_properties").update({ hidden: z.boolean().parse(body.hidden) }).eq("id", id).eq("provider_id", provider.user_id)).error);
-    } else if (body.action === "cancel_renewal") {
+    } else if (body.action === "cancel_renewal" || body.action === "enable_renewal") {
       if (row.stripe_subscription_id) {
         const stripe = rentalStripe(), sub = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
         if (sub.metadata.rental_provider_id !== provider.user_id) throw new RentalError("Subscription does not belong to your account.", 403);
-        if (sub.status !== "canceled") await stripe.subscriptions.update(sub.id, { cancel_at_period_end: true });
-      }
-      checkDb((await db.from("rental_properties").update({ auto_renew: false }).eq("id", id).eq("provider_id", provider.user_id)).error);
+        if (["canceled","incomplete_expired"].includes(sub.status)) throw new RentalError("This subscription has ended. Use the cart to submit a new listing term.");
+        const enable=body.action === "enable_renewal";
+        if(enable && (body.consent!==true || sub.status!=="active"))throw new RentalError("Authorize automatic renewal of an active subscription.");
+        const updated=await stripe.subscriptions.update(sub.id, { cancel_at_period_end: !enable });
+        checkDb((await db.from("rental_properties").update({ auto_renew: enable, updated_at:new Date().toISOString(), ...(enable?{renewal_consent_at:new Date().toISOString(),renewal_consent_version:RENTAL_COMMITMENT_VERSION}:{}) }).eq("id", id).eq("provider_id", provider.user_id)).error);
+        await renewalChoiceEmail(db,row,updated);await drainBillingEmails(db);
+      } else throw new RentalError("There is no subscription yet.");
     } else if (body.action === "save") {
-      if (row.review_status === "pending" || property.setup_order_id || (row.review_status === "approved" && !row.published)) throw new RentalError("This version is being reviewed or activated. Availability can still be updated.", 409);
+      if (row.review_status === "pending" || property.setup_order_id || (row.review_status === "approved" && !row.published && !rentalNeedsNewTerm(row))) throw new RentalError("This version is being reviewed or activated. Availability can still be updated.", 409);
       const revision = z.number().int().positive().parse(body.revision), draft = cleanDraft(body.draft, provider.user_id);
       const result = await db.from("rental_properties").update({ draft, revision: revision + 1, review_status: "draft", updated_at: new Date().toISOString() }).eq("id", id).eq("provider_id", provider.user_id).eq("revision", revision).is("setup_order_id", null).neq("review_status", "pending").select("id");
       checkDb(result.error); if (result.data?.length !== 1) throw new RentalError("This property changed in another window. Refresh and retry.", 409);
