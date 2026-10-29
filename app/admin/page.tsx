@@ -24,6 +24,8 @@ import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { EventCalendarCard } from "../components/events/EventCalendarCard";
 import { EventDetailPanel } from "../components/events/EventDetailPanel";
+import JobFacetEditor from "../components/jobs/JobFacetEditor";
+import { parseFacetOverrides, type JobFacetOverrides } from "../lib/jobFacets";
 import AdminRentalsPanel from "../components/admin/AdminRentalsPanel";
 import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
 import AdminCircuitPanel from "../components/admin/AdminCircuitPanel";
@@ -180,6 +182,7 @@ type JobImportMetadata = {
 };
 
 type Job = {
+  filter_overrides?: JobFacetOverrides;
   id: string;
   created_at: string | null;
   title: string | null;
@@ -200,6 +203,7 @@ type Job = {
 };
 
 type JobEdit = {
+  filter_overrides: JobFacetOverrides;
   id: string;
   title: string;
   company_name: string;
@@ -2517,6 +2521,7 @@ export default function AdminPage() {
       pay_min: job.pay_min != null ? String(job.pay_min) : "",
       pay_max: job.pay_max != null ? String(job.pay_max) : "",
       clearance: job.clearance || "",
+      filter_overrides: parseFacetOverrides(job.filter_overrides),
     });
   }
 
@@ -2541,6 +2546,7 @@ export default function AdminPage() {
         pay_min: editingJob.pay_min,
         pay_max: editingJob.pay_max,
         clearance: editingJob.clearance,
+        filter_overrides: editingJob.filter_overrides,
       }),
     });
 
@@ -5055,6 +5061,7 @@ export default function AdminPage() {
                           style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "10px 12px", background: t.input, color: t.text, resize: "vertical" }}
                         />
                       </label>
+                      <JobFacetEditor value={editingJob.filter_overrides} onChange={filter_overrides => setEditingJob({ ...editingJob, filter_overrides })} />
                       <div>
                         <button
                           style={actionBtn("#111")}

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   extractUSAJobsSummary,
+  extractUSAJobsFullDescription,
+  usajobsFilterData,
   fetchUSAJobsKeywordPage,
   fetchUSAJobsOrganizationPage,
   fetchUSAJobsSeriesPage,
@@ -31,6 +33,8 @@ export const runtime = "nodejs";
 export const maxDuration = 800;
 
 type USAJobCandidate = {
+  fullDescription: string;
+  filterData: ReturnType<typeof usajobsFilterData>;
   positionId: string;
   title: string;
   location: string;
@@ -55,6 +59,8 @@ function toCandidate(
 
   return {
     positionId,
+    fullDescription: extractUSAJobsFullDescription(item),
+    filterData: usajobsFilterData(item),
     title: pos.PositionTitle,
     location: pos.PositionLocationDisplay,
     orgName: pos.OrganizationName,
@@ -236,12 +242,12 @@ export async function GET(req: NextRequest) {
   }
 
   const lookupUrls = [...new Set(candidates.flatMap((c) => usajobsUrlVariants(c.positionId)))];
-  const existingByPositionId = new Map<string, { id: string; is_rejected: boolean }>();
+  const existingByPositionId = new Map<string, { id: string; is_rejected: boolean; description: string | null; import_metadata: Record<string, unknown> | null; pay_min: number | null; pay_max: number | null; clearance: string | null }>();
 
   for (const urlChunk of chunkArray(lookupUrls, JOB_IMPORT_LOOKUP_CHUNK)) {
     const { data, error: lookupErr } = await supabase
       .from("jobs")
-      .select("id, apply_url, is_rejected")
+      .select("id, apply_url, is_rejected, description, import_metadata, pay_min, pay_max, clearance")
       .eq("source_type", "usajobs")
       .in("apply_url", urlChunk);
     if (lookupErr) {
@@ -255,6 +261,7 @@ export async function GET(req: NextRequest) {
         row.apply_url.match(/ViewDetails\/(\d+)/i)?.[1];
       if (positionId) {
         existingByPositionId.set(positionId, {
+          ...row,
           id: row.id,
           is_rejected: row.is_rejected === true,
         });
@@ -276,6 +283,20 @@ export async function GET(req: NextRequest) {
         skipped++;
         continue;
       }
+      // Enrich unchanged imported descriptions; preserve manual edits.
+      const enrichment: Record<string, unknown> = {
+        last_seen_at: now,
+        import_metadata: { ...existing.import_metadata, filter_source: candidate.filterData.filter_source },
+      };
+      if (!existing.description || candidate.fullDescription.startsWith(existing.description)) {
+        enrichment.description = candidate.fullDescription;
+        enrichment.og_description = candidate.fullDescription.slice(0, 500);
+      }
+      if (existing.pay_min == null) enrichment.pay_min = candidate.filterData.pay_min;
+      if (existing.pay_max == null) enrichment.pay_max = candidate.filterData.pay_max;
+      if (!existing.clearance) enrichment.clearance = candidate.filterData.clearance;
+      const { error: enrichError } = await supabase.from("jobs").update(enrichment).eq("id", existing.id);
+      if (enrichError) { errors.push(`[enrich usajobs] ${enrichError.message}`); continue; }
       refreshIds.push(existing.id);
       refreshed++;
       continue;
@@ -286,8 +307,11 @@ export async function GET(req: NextRequest) {
       company_name: candidate.orgName,
       location: candidate.location,
       apply_url: candidate.applyUrl,
-      description: candidate.summary,
-      og_description: candidate.summary,
+      description: candidate.fullDescription,
+      og_description: candidate.fullDescription.slice(0, 500),
+      pay_min: candidate.filterData.pay_min,
+      pay_max: candidate.filterData.pay_max,
+      clearance: candidate.filterData.clearance,
       og_site_name: "USAJobs.gov",
       category: detectUSAJobsCategory(candidate.title, candidate.summary),
       relevance_score: candidate.relevanceScore,
@@ -295,6 +319,7 @@ export async function GET(req: NextRequest) {
         intake_channel: candidate.intakeChannel,
         relevance_score: candidate.relevanceScore,
         usajobs_position_id: candidate.positionId,
+        filter_source: candidate.filterData.filter_source,
       },
       is_approved: false,
       source_type: "usajobs",

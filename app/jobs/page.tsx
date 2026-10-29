@@ -22,8 +22,12 @@ import {
   uniqueJobRegionOptions,
   type JobFilterState,
   type JobListItem,
-  type SalaryMin,
+  DEFAULT_JOB_FILTERS,
+  restoreJobFilters,
+  jobFilterChips,
 } from "../lib/jobFilters";
+import AdvancedJobFilters from "../components/jobs/AdvancedJobFilters";
+import { deriveJobFacets } from "../lib/jobFacets";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
@@ -50,21 +54,7 @@ type ProfileRow = {
   admin_verified: boolean | null;
 };
 
-const SALARY_OPTIONS: Array<{ label: string; value: SalaryMin | "" }> = [
-  { label: "Any salary", value: "" },
-  { label: "$25k+", value: 25000 },
-  { label: "$50k+", value: 50000 },
-  { label: "$75k+", value: 75000 },
-  { label: "$100k+", value: 100000 },
-  { label: "$125k+", value: 125000 },
-  { label: "$150k+", value: 150000 },
-];
-
-const DEFAULT_FILTERS: JobFilterState = {
-  keyword: "",
-  locationRegion: "",
-  salaryMin: "",
-};
+const DEFAULT_FILTERS = DEFAULT_JOB_FILTERS;
 
 type JobSort = "recent" | "az" | "za";
 
@@ -139,6 +129,7 @@ export default function JobsPage() {
   const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<JobFilterState>(DEFAULT_FILTERS);
+  const [page, setPage] = useState(1);
   const [jobSort, setJobSort] = useState<JobSort>("recent");
   const [isMobile, setIsMobile] = useState(false);
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
@@ -164,8 +155,8 @@ export default function JobsPage() {
   const listingCutoff = useMemo(() => jobListingCutoffIso(), []);
 
   const jobsQuery = useQuery({
-    queryKey: queryKeys.jobsList(500, listingCutoff),
-    queryFn: () => fetchApprovedJobs<JobListItem>(supabase, 500, listingCutoff),
+    queryKey: queryKeys.jobsList(0, listingCutoff),
+    queryFn: () => fetchApprovedJobs<JobListItem>(supabase, 0, listingCutoff),
     enabled: !!userId,
     staleTime: JOBS_LIST_STALE_MS,
   });
@@ -178,7 +169,18 @@ export default function JobsPage() {
   });
 
   const EMPTY_JOBS = useMemo<JobListItem[]>(() => [], []);
-  const jobs = jobsQuery.data ?? EMPTY_JOBS;
+  const jobs = useMemo(() => (jobsQuery.data ?? EMPTY_JOBS).map(job => ({ ...job, facets: deriveJobFacets(job) })), [jobsQuery.data, EMPTY_JOBS]);
+
+  useEffect(() => {
+    if (!userId) return;
+    try { setFilters(restoreJobFilters(JSON.parse(localStorage.getItem(`eod-jobs-filters-v2:${userId}`) || "null"))); } catch { setFilters(DEFAULT_FILTERS); }
+  }, [userId]);
+
+  function changeFilters(next: JobFilterState) {
+    setFilters(next);
+    setPage(1);
+    try { if (userId) localStorage.setItem(`eod-jobs-filters-v2:${userId}`, JSON.stringify(next)); } catch { /* Storage may be disabled. */ }
+  }
 
   const savedJobsQuery = useQuery({
     queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
@@ -253,7 +255,7 @@ export default function JobsPage() {
   const handleJobDeleted = useCallback(
     (jobId: string) => {
       queryClient.setQueryData<JobListItem[]>(
-        queryKeys.jobsList(500, listingCutoff),
+        queryKeys.jobsList(0, listingCutoff),
         (old) => old?.filter((j) => j.id !== jobId) ?? [],
       );
       if (detailsJob?.id === jobId) setDetailsJob(null);
@@ -266,7 +268,7 @@ export default function JobsPage() {
   const handleApplicationsUnderReviewChanged = useCallback(
     (jobId: string, underReview: boolean) => {
       queryClient.setQueryData<JobListItem[]>(
-        queryKeys.jobsList(500, listingCutoff),
+        queryKeys.jobsList(0, listingCutoff),
         (old) =>
           old?.map((j) =>
             j.id === jobId ? { ...j, applications_under_review: underReview } : j,
@@ -345,21 +347,10 @@ export default function JobsPage() {
     return sortJobs(filtered, jobSort);
   }, [jobs, filters, canUseJobFilters, jobSort]);
 
-  const hasActiveFilters =
-    filters.keyword !== "" ||
-    filters.locationRegion !== "" ||
-    filters.salaryMin !== "";
-
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "8px 10px",
-    borderRadius: t.radiusSm,
-    border: `1px solid ${t.inputBorder}`,
-    background: t.input,
-    color: t.text,
-    boxSizing: "border-box",
-    fontSize: 14,
-  };
+  const hasActiveFilters = jobFilterChips(filters).length > 0;
+  const pageCount = Math.max(1, Math.ceil(visibleJobs.length / 24));
+  const currentPage = Math.min(page, pageCount);
+  const pageJobs = visibleJobs.slice((currentPage - 1) * 24, currentPage * 24);
 
   return (
     <div
@@ -427,88 +418,12 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {canUseJobFilters && (
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, background: t.surface, padding: 16, marginBottom: 14, boxShadow: t.shadow }}>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr 1fr auto",
-              gap: 10,
-              alignItems: "center",
-            }}
-          >
-            <input
-              type="text"
-              value={filters.keyword}
-              onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
-              placeholder="Keyword (e.g. UXO, TSS-E, Safety)"
-              style={inputStyle}
-            />
-
-            <select
-              value={filters.locationRegion}
-              onChange={(e) => setFilters((prev) => ({ ...prev, locationRegion: e.target.value }))}
-              style={inputStyle}
-            >
-              <option value="">All locations</option>
-              {regionOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-
-            <select
-              value={filters.salaryMin}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  salaryMin: e.target.value === "" ? "" : (Number(e.target.value) as SalaryMin),
-                }))
-              }
-              style={inputStyle}
-            >
-              {SALARY_OPTIONS.map((o) => (
-                <option key={String(o.value)} value={String(o.value)}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={jobSort}
-              onChange={(e) => setJobSort(e.target.value as JobSort)}
-              aria-label="Sort jobs"
-              style={inputStyle}
-            >
-              <option value="recent">Date posted (newest)</option>
-              <option value="az">Alphabetical A–Z</option>
-              <option value="za">Alphabetical Z–A</option>
-            </select>
-
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={() => setFilters(DEFAULT_FILTERS)}
-                style={{
-                  padding: "8px 14px",
-                  borderRadius: 8,
-                  border: `1px solid ${t.border}`,
-                  background: "transparent",
-                  color: t.textMuted,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
-          <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
-            US states are listed by full name. Jobs without a listed location appear in every state filter.
-          </div>
-        </div>
-      )}
+      {canUseJobFilters && <AdvancedJobFilters value={filters} onChange={changeFilters} regions={regionOptions} count={visibleJobs.length} total={jobs.length} loading={loading} />}
+      <label style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, fontSize: 13 }}>Sort jobs
+        <select aria-label="Sort jobs" value={jobSort} onChange={e => { setJobSort(e.target.value as JobSort); setPage(1); }} style={{ padding: 8, background: t.input, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8 }}>
+          <option value="recent">Newest added</option><option value="az">Title A–Z</option><option value="za">Title Z–A</option>
+        </select>
+      </label>
 
       {jobNotice && (
         <div style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, marginBottom: 14 }}>
@@ -556,6 +471,8 @@ export default function JobsPage() {
                 const meta = [job.company_name, job.location, job.category].filter(Boolean).join(" · ");
                 const modalJob: JobModalData = {
                   id: job.job_id,
+                  filter_overrides: job.filter_overrides,
+                  filter_source: job.filter_source,
                   title: job.title,
                   company_name: job.company_name,
                   location: job.location,
@@ -608,6 +525,8 @@ export default function JobsPage() {
 
       {loading ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>Loading jobs...</div>
+      ) : jobsQuery.isError ? (
+        <div role="alert">Jobs could not be loaded. <button type="button" onClick={() => void jobsQuery.refetch()}>Try again</button></div>
       ) : visibleJobs.length === 0 ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>No approved jobs found{hasActiveFilters ? " matching your filters" : ""}.</div>
       ) : (
@@ -624,7 +543,7 @@ export default function JobsPage() {
               gap: 12,
             }}
           >
-            {visibleJobs.map((job) => (
+            {pageJobs.map((job) => (
               <JobGridCard
                 key={job.id}
                 job={job}
@@ -644,6 +563,11 @@ export default function JobsPage() {
               />
             ))}
           </div>
+          <nav aria-label="Job results pages" style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, margin: "20px 0" }}>
+            <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+            <span>Page {currentPage} of {pageCount}</span>
+            <button type="button" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>Next</button>
+          </nav>
         </>
       )}
 

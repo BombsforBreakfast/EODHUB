@@ -12,10 +12,19 @@ export type USAJobsApiItem = {
     OrganizationName: string;
     DepartmentName?: string;
     QualificationSummary?: string;
+    PositionRemuneration?: { MinimumRange?: string; MaximumRange?: string; RateIntervalCode?: string; Description?: string }[];
+    PositionSchedule?: { Name?: string; Code?: string }[];
+    PositionLocation?: { LocationName?: string; CountryCode?: string; CountrySubDivisionCode?: string }[];
     UserArea?: {
       Details?: {
         JobSummary?: string;
         MajorDuties?: string | string[];
+        Education?: string;
+        Requirements?: string;
+        Evaluations?: string;
+        HowToApply?: string;
+        OtherInformation?: string;
+        SecurityClearance?: string;
       };
     };
   };
@@ -126,4 +135,35 @@ export function extractUSAJobsSummary(item: USAJobsApiItem): string {
     pos.QualificationSummary,
     ...(Array.isArray(duties) ? duties : [duties]),
   ].filter((text): text is string => typeof text === "string" && Boolean(text.trim())))].join("\n\n");
+}
+
+/** Keep the intake scorer's established summary stable; enrich cards separately. */
+export function extractUSAJobsFullDescription(item: USAJobsApiItem): string {
+  const details = item.MatchedObjectDescriptor.UserArea?.Details;
+  const sections = [extractUSAJobsSummary(item)];
+  for (const key of ["Education", "Requirements", "Evaluations", "HowToApply", "OtherInformation"] as const) {
+    const value = details?.[key]?.trim();
+    if (value) sections.push(`${key.replace(/([a-z])([A-Z])/g, "$1 $2")}\n${value}`);
+  }
+  return sections.join("\n\n");
+}
+
+export function usajobsFilterData(item: USAJobsApiItem) {
+  const position = item.MatchedObjectDescriptor;
+  const salary = position.PositionRemuneration?.[0];
+  const period = `${salary?.RateIntervalCode ?? ""} ${salary?.Description ?? ""}`.toLowerCase();
+  const payPeriod = /per year|annual|\bpa\b/.test(period) ? "year" : /per hour|hourly|\bph\b/.test(period) ? "hour" : "unknown";
+  const amount = (v?: string) => v && Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.round(Number(v)) : null;
+  const schedules = position.PositionSchedule?.map(s => s.Name ?? "").join(" ").toLowerCase() ?? "";
+  const locations = position.PositionLocation ?? [];
+  return {
+    pay_min: amount(salary?.MinimumRange), pay_max: amount(salary?.MaximumRange),
+    clearance: position.UserArea?.Details?.SecurityClearance ?? null,
+    filter_source: {
+      currency: "USD", payPeriod, payDisclosure: salary ? "advertised" : "unknown",
+      employment: /full[- ]time/.test(schedules) ? "full" : /part[- ]time/.test(schedules) ? "part" : "unknown",
+      locationAreas: locations.flatMap(l => [l.CountrySubDivisionCode, l.LocationName].filter((s): s is string => !!s)),
+      descriptionIsExcerpt: false,
+    },
+  };
 }

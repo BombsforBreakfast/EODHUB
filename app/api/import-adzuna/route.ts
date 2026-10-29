@@ -1,3 +1,4 @@
+import { adzunaFilterSource } from "../../lib/adzuna/api";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -34,6 +35,7 @@ export const runtime = "nodejs";
 export const maxDuration = 800;
 
 type AdzunaCandidate = {
+  filterSource: ReturnType<typeof adzunaFilterSource>;
   adId: string;
   title: string;
   companyName: string;
@@ -58,6 +60,7 @@ function toCandidate(
 
   return {
     adId,
+    filterSource: adzunaFilterSource(job, adzunaCountry),
     title: job.title,
     companyName: job.company.display_name,
     location: job.location.display_name,
@@ -305,6 +308,7 @@ export async function GET(req: NextRequest) {
       import_metadata: {
         intake_channel: candidate.intakeChannel,
         adzuna_country: candidate.adzunaCountry,
+        filter_source: candidate.filterSource,
         indexed_phrase: adzunaIndexedPhrase(candidate.intakeChannel) ?? null,
         description_is_excerpt: true,
         relevance_score: candidate.relevanceScore,
