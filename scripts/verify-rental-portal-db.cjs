@@ -32,6 +32,7 @@ const { randomUUID } = require('node:crypto');
     await db.exec(sql);
     await db.exec(fs.readFileSync('supabase/migrations/20261028002502_rental_auth_provisioning_order.sql','utf8'));
     await db.exec(fs.readFileSync('supabase/migrations/20261028104642_rental_excluded_member_count.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261029172010_rental_billing_lifecycle.sql','utf8'));
     const after = (await db.query(`select pg_get_functiondef('public.handle_new_user()'::regprocedure) trigger_definition,(select nspacl::text from pg_namespace where nspname='public') grants`)).rows[0];
     assert.deepEqual(after,before,'Existing Auth trigger and shared schema grants are preserved');
     const scope=(await db.query(`select pg_has_role('authenticator','eod_rental','MEMBER') switchable,pg_has_role('eod_rental','authenticated','MEMBER') member`)).rows[0];
@@ -107,5 +108,25 @@ const { randomUUID } = require('node:crypto');
     await db.query(`select public.rental_record_metric($1,'view')`,[property]);
     assert.equal((await db.query(`select views from public.rental_property_metrics where property_id=$1`,[property])).rows[0].views,1,'Hidden properties do not record public impressions');
     console.log('PASS: atomic checkout submission, frozen terms, no duplicate submissions, owner isolation, address uniqueness, published-only analytics');
+    await db.exec('reset role');
+    for(const role of ['anon','authenticated','eod_rental']){
+      for(const table of ['rental_billing_cases','rental_billing_emails','rental_subscription_history'])assert.equal((await db.query(`select has_table_privilege($1,$2,'SELECT') allowed`,[role,`public.${table}`])).rows[0].allowed,false);
+      for(const fn of ['public.rental_claim_billing_emails(integer)','public.rental_refresh_billing_hold(uuid)'])assert.equal((await db.query(`select has_function_privilege($1,$2,'EXECUTE') allowed`,[role,fn])).rows[0].allowed,false);
+    }
+    await db.exec('set role service_role');
+    await db.query(`insert into public.rental_billing_emails(message_key,recipient,subject,message,link) values('receipt:test','synthetic@example.com','Receipt','Paid $10','https://eod-hub.com') on conflict(message_key) do nothing`);
+    assert.equal((await db.query('select * from public.rental_claim_billing_emails(25)')).rows.length,1);
+    assert.equal((await db.query('select * from public.rental_claim_billing_emails(25)')).rows.length,0,'An active email lease prevents concurrent delivery');
+    await db.query(`update public.rental_billing_emails set next_attempt_at=now()-interval '1 minute'`);
+    assert.equal((await db.query('select attempts from public.rental_claim_billing_emails(25)')).rows[0].attempts,2,'Failed sends become retryable');
+    await db.query(`insert into public.rental_billing_cases(incident_key,property_id,provider_id,subscription_id,kind,opened_at,deadline,stripe_object_id,detail) values('refund:test',$1,$2,'sub_test','refund',now(),now()-interval '1 minute','ch_test','Synthetic review')`,[property,owner]);
+    await db.query('select public.rental_refresh_billing_hold($1)',[property]);
+    await db.query(`update public.rental_properties set hidden=false where id=$1`,[property]);
+    await db.query(`select public.rental_record_metric($1,'view')`,[property]);
+    assert.equal((await db.query(`select views from public.rental_property_metrics where property_id=$1`,[property])).rows[0].views,1,'An expired billing review cannot collect public metrics');
+    await db.query(`update public.rental_billing_cases set status='resolved' where property_id=$1`,[property]);
+    await db.query('select public.rental_refresh_billing_hold($1)',[property]);
+    assert.equal((await db.query('select billing_hold_until from public.rental_properties where id=$1',[property])).rows[0].billing_hold_until,null);
+    console.log('PASS: private billing history/cases/outbox, service-only RPCs, atomic email leases/retries, review holds and metrics');
   } finally { await db.close(); }
 })().catch(error=>{console.error(error.message);process.exitCode=1;});
