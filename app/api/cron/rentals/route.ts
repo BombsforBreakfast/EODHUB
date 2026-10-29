@@ -16,7 +16,7 @@ export async function GET(request:NextRequest){
         try{await rentalStripe().invoicePayments.list({limit:1});invoicePaymentsReadable=true;}catch{invoicePaymentsReadable=false;}
       }
       const key=process.env.STRIPE_RENTALS_SECRET_KEY||process.env.STRIPE_SECRET_KEY||"";
-      return rentalJson({databaseReady:!readiness.error,billingLifecycleReady:!cases.error&&!emails.error&&!history.error,pendingBillingEmails:emails.count,invoicePaymentsReadable,billingReady:rentalBillingReady(),billingMode:key.includes("_live_")?"live":key.includes("_test_")?"test":"unconfigured",emailConfigured:!!process.env.RESEND_API_KEY,webhookConfigured:!!(process.env.STRIPE_RENTALS_SECRET_KEY?process.env.STRIPE_RENTALS_WEBHOOK_SECRET:process.env.STRIPE_WEBHOOK_SECRET)});
+      return rentalJson({databaseReady:!readiness.error,billingLifecycleReady:!cases.error&&!emails.error&&!history.error,pendingBillingEmails:emails.count,invoicePaymentsReadable,taxCollectionEnabled:process.env.STRIPE_RENTALS_AUTOMATIC_TAX==="true",billingReady:rentalBillingReady(),billingMode:key.includes("_live_")?"live":key.includes("_test_")?"test":"unconfigured",emailConfigured:!!process.env.RESEND_API_KEY,webhookConfigured:!!(process.env.STRIPE_RENTALS_SECRET_KEY?process.env.STRIPE_RENTALS_WEBHOOK_SECRET:process.env.STRIPE_WEBHOOK_SECRET)});
     }
     const due=await db.from("rental_campaigns").select("id").in("status",["live","report_due"]).is("report_alerted_at",null).lte("ends_at",now);checkDb(due.error);
     if(due.data?.length){

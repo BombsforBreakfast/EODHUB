@@ -17,6 +17,13 @@ export const rentalStripe = () => {
   if (!rentalBillingReady()) throw new RentalError("Listing checkout is not open yet. Your drafts are saved. Contact hello@eod-hub.com for an update.", 503);
   return new Stripe((process.env.STRIPE_RENTALS_SECRET_KEY || process.env.STRIPE_SECRET_KEY)!);
 };
+/** Enable only after the owner confirms collection obligations and registrations. */
+export async function rentalAutomaticTax(stripe: Stripe, env: NodeJS.ProcessEnv = process.env): Promise<Stripe.SubscriptionCreateParams.AutomaticTax | undefined> {
+  if(env.STRIPE_RENTALS_AUTOMATIC_TAX!=="true")return undefined;
+  const [settings,registrations]=await Promise.all([stripe.tax.settings.retrieve(),stripe.tax.registrations.list({status:"active",limit:1})]);
+  if(settings.status!=="active" || !registrations.data.length)throw new RentalError("Tax collection is awaiting verified business settings and active registrations. No listing charge has been created. Contact hello@eod-hub.com.",503);
+  return {enabled:true};
+}
 const productCache = new Map<string, string>();
 let portalConfiguration: string | undefined;
 export async function rentalBillingPortal(customer: string, stripeOverride?: Stripe, origin = "https://eod-hub.com") {
@@ -137,7 +144,7 @@ export async function approveRentalProperty(db: SupabaseClient, row: PropertyRow
       const previous = await stripe.subscriptions.retrieve(row.stripe_subscription_id);
       if (!["canceled", "incomplete_expired", "unpaid"].includes(previous.status)) throw new RentalError("Resolve the existing listing subscription before starting a new term.");
     }
-    subscription = await stripe.subscriptions.create({ customer,
+    subscription = await stripe.subscriptions.create({ customer, automatic_tax:await rentalAutomaticTax(stripe),
       items: [{ price_data: { currency: "usd", product: await product(stripe, "listing"), unit_amount: planAmount(row.plan), tax_behavior:"exclusive", recurring: { interval: row.plan === "annual" ? "year" : "month" } } }],
       ...(row.campaign_requested ? { add_invoice_items: [{ price_data: { currency: "usd", product: await product(stripe, "campaign"), unit_amount: 5000, tax_behavior:"exclusive" } }] } : {}),
       default_payment_method: row.payment_method_id, collection_method: "charge_automatically", payment_behavior: "allow_incomplete", off_session: true,

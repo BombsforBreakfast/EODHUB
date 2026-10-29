@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import {test} from "node:test";
 import type Stripe from "stripe";
 import type {SupabaseClient} from "@supabase/supabase-js";
-import {approveRentalProperty,handleRentalStripeEvent,syncRentalSubscription,rentalBillingPortal,rentalBillingReady} from "../app/lib/rentals/billing.server";
+import {approveRentalProperty,handleRentalStripeEvent,syncRentalSubscription,rentalBillingPortal,rentalBillingReady,rentalAutomaticTax} from "../app/lib/rentals/billing.server";
 import type {PropertyRow,Provider} from "../app/lib/rentals/provider";
 
 // Every Stripe operation is a local stub; these tests never charge a card,
 // call a cloud database, or send an email.
 delete process.env.RESEND_API_KEY;
+delete process.env.STRIPE_RENTALS_AUTOMATIC_TAX;
 import {database} from "./rental-billing-fixture";
 const owner="11111111-1111-4111-8111-111111111111",id="22222222-2222-4222-8222-222222222222",submission="33333333-3333-4333-8333-333333333333";
 const provider={user_id:owner,status:"approved",email:"synthetic@example.com",stripe_customer_id:"cus_local_only"} as Provider;
@@ -52,4 +53,14 @@ test("production rental checkout requires a live connection while preview suppor
   assert.equal(rentalBillingReady({NODE_ENV:'production',VERCEL_ENV:'preview',STRIPE_WEBHOOK_SECRET:'whsec_synthetic',STRIPE_SECRET_KEY:'sk_test_synthetic'}),true);
   assert.equal(rentalBillingReady({NODE_ENV:'production',VERCEL_ENV:'production',STRIPE_SECRET_KEY:'sk_test_existing_member',STRIPE_RENTALS_SECRET_KEY:'sk_live_synthetic',STRIPE_RENTALS_WEBHOOK_SECRET:'whsec_synthetic'}),true);
   assert.equal(rentalBillingReady({NODE_ENV:'production',STRIPE_SECRET_KEY:''}),false);
+});
+test("automatic tax stays off until explicitly configured",async()=>{assert.equal(await rentalAutomaticTax({} as Stripe,{}),undefined);});
+test("automatic tax refuses incomplete settings or missing registrations before a charge",async()=>{
+  const client=(status:string,registrations:unknown[])=>({tax:{settings:{async retrieve(){return{status};}},registrations:{async list(){return{data:registrations};}}}} as unknown as Stripe);
+  await assert.rejects(rentalAutomaticTax(client("pending",[{id:"txr_test"}]),{STRIPE_RENTALS_AUTOMATIC_TAX:"true"}),/awaiting verified business settings/);
+  await assert.rejects(rentalAutomaticTax(client("active",[]),{STRIPE_RENTALS_AUTOMATIC_TAX:"true"}),/active registrations/);
+});
+test("automatic tax reaches the subscription only with active settings and registration",async()=>{
+  const client={tax:{settings:{async retrieve(){return{status:"active"};}},registrations:{async list(){return{data:[{id:"txr_test"}]};}}}} as unknown as Stripe;
+  assert.deepEqual(await rentalAutomaticTax(client,{STRIPE_RENTALS_AUTOMATIC_TAX:"true"}),{enabled:true});
 });
