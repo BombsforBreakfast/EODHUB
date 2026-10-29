@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestCountryCode, isDeniedGeoCountry } from "@/app/lib/geoAccess";
+import { RENTAL_ROLE, RENTAL_PORTAL, bearerClaimsRental, rentalApiAllowed } from "@/app/lib/rentals/provider";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -82,6 +83,18 @@ export async function proxy(request: NextRequest) {
 
   // API routes handle their own auth; after geo check, pass through.
   if (path.startsWith("/api/")) {
+    if (!rentalApiAllowed(path, request.method)) {
+      // Deny-only inspection. Modified/forged tokens still fail each API's
+      // real authentication; this shortcut never authorizes a request.
+      if (bearerClaimsRental(request.headers.get("authorization"))) {
+        return NextResponse.json({ error: "This account has access to the property portal only." }, { status: 403 });
+      }
+      if (supabaseUrl && supabaseKey && hasSupabaseAuthCookies(request)) {
+        const client = createServerClient(supabaseUrl, supabaseKey, { cookies: { getAll: () => request.cookies.getAll(), setAll: () => {} } });
+        const { data } = await client.auth.getSession();
+        if (data.session?.user.role === RENTAL_ROLE) return NextResponse.json({ error: "This account has access to the property portal only." }, { status: 403 });
+      }
+    }
     return NextResponse.next();
   }
 
@@ -125,11 +138,14 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  if (user.role === RENTAL_ROLE) return NextResponse.redirect(new URL(RENTAL_PORTAL, request.url));
+
   return supabaseResponse;
 }
 
 export const config = {
   matcher: [
+    "/api/:path*",
     /*
      * Run on pages and API routes — skip Next internals and static assets.
      * Geo-block applies to both; API auth remains route-owned after the geo check.

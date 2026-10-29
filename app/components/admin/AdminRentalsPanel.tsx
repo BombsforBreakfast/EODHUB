@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import { useTheme } from "@/app/lib/ThemeContext";
 import type { RentalStatus } from "@/app/lib/rentals/availability";
+import AdminRentalProvidersPanel from "./AdminRentalProvidersPanel";
 
 type Item = { id: string; address: string; status: RentalStatus; projectedAvailabilityDate: string };
 async function adminFetch(init?: RequestInit) {
@@ -28,6 +29,8 @@ export default function AdminRentalsPanel() {
   useEffect(() => { void load(); }, [load]);
   return <section style={{ marginTop: 24, maxWidth: 720 }} aria-labelledby="rental-admin-title">
     <h2 id="rental-admin-title" style={{ fontSize: 24, fontWeight: 800 }}>Rentals</h2>
+    <AdminRentalProvidersPanel />
+    <h3 style={{ marginTop: 36, fontSize: 20, fontWeight: 800 }}>Listing availability</h3>
     <p style={{ color: t.textMuted, margin: "8px 0 20px" }}>Update availability on the public rentals page. Projected dates appear only when provided.</p>
     <a href="/promote/rentals" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "underline" }}>View public rentals</a>
     {loading ? <p role="status">Loading rentals…</p> : null}

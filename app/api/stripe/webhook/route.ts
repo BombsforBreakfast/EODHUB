@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { handleRentalStripeEvent } from "@/app/lib/rentals/billing.server";
 import {
   lookupUserIdByStripeCustomer,
   syncStripeMemberSubscription,
@@ -31,6 +32,13 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
+  try {
+    if (await handleRentalStripeEvent(adminClient, event)) return NextResponse.json({ received: true });
+  } catch (error) {
+    console.error("Rental webhook processing failed", error instanceof Error ? error.message : "Unknown error");
+    return NextResponse.json({ error: "Rental event processing failed" }, { status: 500 });
+  }
 
   async function updateByCustomer(customerId: string, status: string) {
     await adminClient

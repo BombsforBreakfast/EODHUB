@@ -71,7 +71,8 @@ function RentalGallery({ listing, owner, close, ask }: { listing: RentalListing;
   </dialog>;
 }
 
-function RentalContactModal({ listing, owner, close }: { listing: RentalListing; owner: RentalOwner; close: () => void }) {
+function RentalContactModal({ listing, owner: originalOwner, close }: { listing: RentalListing; owner: RentalOwner; close: () => void }) {
+  const owner = listing.providerContact ? { ...originalOwner, name: listing.providerContact.name, email: listing.providerContact.email } : originalOwner;
   const dialog = useRef<HTMLDialogElement>(null);
   const management = getRentalManagement(listing, owner);
   useEffect(() => { dialog.current?.showModal(); }, []);
@@ -83,8 +84,9 @@ function RentalContactModal({ listing, owner, close }: { listing: RentalListing;
       </header>
       <p id="rental-contact-description" className={styles.contactDescription}>Ask about availability, move-in dates, and rental terms. Click an email address to copy it.</p>
       <div className={styles.ownerCard}>
-        <div className={styles.ownerName}><span aria-hidden="true">{owner.name.split(" ").map(part => part[0]).join("")}</span><div><h3>{owner.name}</h3><p>Rental owner · {listing.city}, {listing.state}</p></div></div>
+        <div className={styles.ownerName}><span aria-hidden="true">{owner.name.split(" ").map(part => part[0]).join("")}</span><div><h3>{owner.name}</h3><p>{listing.portalListing ? "Rental provider" : "Rental owner"} · {listing.city}, {listing.state}</p></div></div>
         <CopyRentalEmail email={owner.email} />
+        {listing.providerContact ? <><p>{listing.providerContact.company}</p><a className={styles.managerPhone} href={`tel:${listing.providerContact.phone.replace(/[^+\d]/g, "")}`}><Phone size={17} />{listing.providerContact.phone}</a></> : null}
         {management ? <div className={styles.managementContact}>
           <p className={styles.eyebrow}>PROPERTY MANAGEMENT</p>
           <h3>{management.company}</h3><p>Realtor: {management.realtor}</p>
@@ -104,12 +106,31 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
   const [state, setState] = useState("");
   const [availability, setAvailability] = useState("");
   const [ownerId, setOwnerId] = useState("");
+  const [maxRent, setMaxRent] = useState("");
+  const [rentPeriod, setRentPeriod] = useState("");
+  const [priceBasis, setPriceBasis] = useState("");
+  const [availableBy, setAvailableBy] = useState("");
   const [modal, setModal] = useState<{ kind: "gallery" | "contact"; listingId: string } | null>(null);
   const modalTrigger = useRef<HTMLButtonElement | null>(null);
-  const filtered = listings.filter(listing => rentalMatches(listing, { query, state, availability, ownerId }, owners));
+  const filtered = listings.filter(listing => rentalMatches(listing, { query, state, availability, ownerId }, owners) &&
+    (!rentPeriod || (listing.rentPeriod ?? "month") === rentPeriod) && (!priceBasis || (listing.priceBasis ?? "property") === priceBasis) &&
+    (!maxRent || listing.monthlyRent <= Number(maxRent)) && (!availableBy || listing.availability.status === "available-now" || (listing.projectedAvailabilityDate && listing.projectedAvailabilityDate <= availableBy)));
+  function track(id: string, kind: "view" | "contact") {
+    if (!listings.some(p => p.id === id && p.portalListing)) return;
+    void fetch("/api/rentals/events", { method: "POST", credentials: "omit", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id], kind }) }).catch(() => {});
+  }
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => { for (const entry of entries) if (entry.isIntersecting) { track(entry.target.id, "view"); observer.unobserve(entry.target); } }, { threshold: .35 });
+    document.querySelectorAll<HTMLElement>("[data-provider-rental]").forEach(element => observer.observe(element));
+    return () => observer.disconnect();
+  // Listing impression collection is independent of member authentication.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listings]);
   const selectedListing = listings.find(listing => listing.id === modal?.listingId);
   const selectedOwner = owners.find(owner => owner.id === selectedListing?.ownerId);
   function openModal(kind: "gallery" | "contact", listingId: string, trigger?: HTMLButtonElement) {
+    if (kind === "contact") track(listingId, "contact");
     if (trigger) modalTrigger.current = trigger;
     setModal({ kind, listingId });
   }
@@ -117,11 +138,11 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
     setModal(current => current?.kind === kind ? null : current);
     requestAnimationFrame(() => modalTrigger.current?.focus());
   }
-  function reset() { setQuery(""); setState(""); setAvailability(""); setOwnerId(""); }
+  function reset() { setQuery(""); setState(""); setAvailability(""); setOwnerId(""); setMaxRent(""); setRentPeriod(""); setPriceBasis(""); setAvailableBy(""); }
 
   return <ServiceRatingProvider><div className={styles.page} data-rental-experience="public" style={{ "--ink": t.text, "--muted": t.textMuted, "--paper": t.bg, "--line": t.border, "--surface": t.surface, "--hover": t.surfaceHover, "--input": t.input, "--input-border": t.inputBorder, "--badge-bg": t.badgeBg, "--badge-text": t.badgeText, "--radius": `${t.radius}px`, "--radius-sm": `${t.radiusSm}px`, "--electric-green": isDark ? "#33ff66" : "#087e2a", "--green-surface": isDark ? "#020802" : "#effbf2", "--green-border": isDark ? "#33ff6670" : "#087e2a70", colorScheme: isDark ? "dark" : "light" } as CSSProperties}>
     <header className={styles.header}><Link href="/promote/rentals" className={styles.brand} aria-label="EOD-HUB Rentals home"><Image src="/branding/eod-crab-logo.png" width={40} height={40} alt="" /><span>EOD-HUB<span className={styles.brandSection}>RENTALS</span></span></Link>
-      <nav aria-label="Rentals navigation"><a href="#rentals">Find a place</a><Link className={styles.hubLink} href="/login">Member sign in <ArrowRight size={15} /></Link></nav>
+      <nav aria-label="Rentals navigation"><a href="#rentals">Find a place</a><Link className={styles.hubLink} href="/promote/rentals/portal">Property portal <ArrowRight size={15} /></Link><Link className={styles.hubLink} href="/login">Member sign in <ArrowRight size={15} /></Link></nav>
     </header>
     <main>
       <ServiceRatingSummary />
@@ -140,23 +161,25 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
           <label><span>Availability</span><select value={availability} onChange={event => setAvailability(event.target.value)}><option value="">All availability</option><option value="available-now">Available now</option><option value="available-from">Upcoming availability</option><option value="pending">Pending</option><option value="unavailable">Not currently available</option></select></label>
           <label><span>Owner</span><select value={ownerId} onChange={event => setOwnerId(event.target.value)}><option value="">All owners</option>{owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label>
         </div> : null}
-        <div className={styles.resultsLine}><p role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? "rental" : "rentals"}{state ? ` in ${rentalStates.find(([code]) => code === state)?.[1]}` : " to explore"}</p>{query || state || availability || ownerId ? <button type="button" onClick={reset}>Clear filters <X size={13} /></button> : <span>Availability provided by the owner</span>}</div>
+        {showFilters ? <div className={styles.extraFilters}><label><span>Maximum rent ($)</span><input type="number" min="1" value={maxRent} onChange={e => { setMaxRent(e.target.value); if (!rentPeriod && e.target.value) setRentPeriod("month"); }} placeholder="Any price" /></label><label><span>Pricing period</span><select value={rentPeriod} onChange={e => setRentPeriod(e.target.value)}><option value="">Any period</option><option value="month">Per month</option><option value="week">Per week</option><option value="night">Per night</option></select></label><label><span>Price covers</span><select value={priceBasis} onChange={e => setPriceBasis(e.target.value)}><option value="">Room or whole property</option><option value="property">Whole property</option><option value="room">Per room</option></select></label><label><span>Available by (optional)</span><input type="date" value={availableBy} onChange={e => setAvailableBy(e.target.value)} /></label></div> : null}
+        <div className={styles.resultsLine}><p role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? "rental" : "rentals"}{state ? ` in ${rentalStates.find(([code]) => code === state)?.[1]}` : " to explore"}</p>{query || state || availability || ownerId || maxRent || rentPeriod || priceBasis || availableBy ? <button type="button" onClick={reset}>Clear filters <X size={13} /></button> : <span>Availability provided by the owner</span>}</div>
         <div className={styles.cardGrid}>{filtered.map(listing => {
           const owner = owners.find(item => item.id === listing.ownerId)!;
-          return <article className={styles.card} key={listing.id} id={listing.id}>
+          return <article className={styles.card} key={listing.id} id={listing.id} data-provider-rental={listing.portalListing || undefined}>
             <button className={styles.cardPhoto} type="button" onClick={event => openModal("gallery", listing.id, event.currentTarget)} aria-label={`View ${listing.photos.length} photos of ${listing.address}`}><RentalPhoto src={listing.photos[0]} alt={listing.address} /><span className={styles.availability}><span className={listing.availability.status === "available-now" ? styles.liveDot : styles.neutralDot} />{availabilityLabel(listing.availability)}</span>{listing.availability.status === "pending" ? <span className={styles.pendingStamp} aria-hidden="true">PENDING</span> : null}<span className={styles.galleryBadge}><Images size={14} /> {listing.photos.length} photos</span></button>
             <div className={styles.cardBody}><div className={styles.cardTopLine}><span>{listing.propertyType} · {listing.city}, {listing.state}</span>{listing.furnished ? <Sofa size={17} aria-label="Fully furnished" /> : null}</div>
-              <div className={styles.cardHeading}><h3>{listing.address}</h3><div className={styles.price}>{money(listing.monthlyRent)}<span>/ month</span></div></div>
+              <div className={styles.cardHeading}><h3>{listing.address}</h3><div className={styles.price}>{money(listing.monthlyRent)}<span>/ {listing.rentPeriod ?? "month"}{listing.priceBasis === "room" ? " per room" : ""}</span></div></div>
               {listing.projectedAvailabilityDate ? <p className={styles.updated}>Projected availability: <time dateTime={listing.projectedAvailabilityDate}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${listing.projectedAvailabilityDate}T00:00:00Z`))}</time></p> : null}
               <p className={styles.cardTitle}>{listing.title}</p>
               <div className={styles.propertyFacts}><span><BedDouble size={17} />{listing.bedrooms} {listing.bedrooms === 1 ? "bed" : "beds"}</span><span><Bath size={17} />{listing.bathrooms} {listing.bathrooms === 1 ? "bath" : "baths"}</span><span><Sofa size={16} />{listing.furnished ? "Furnished" : "Unfurnished"}</span></div>
               <div className={styles.tags}>{listing.highlights.map(highlight => <span key={highlight}>{highlight === "Pool" ? <Waves size={13} /> : null}{highlight}</span>)}</div>
               {listing.sharedRenters ? <div className={styles.roommateNote}><Users size={18} /><p><strong>Open to {listing.sharedRenters} individual renters</strong><span>About {money(listing.monthlyRent / listing.sharedRenters)} each with an equal split. Total rent is {money(listing.monthlyRent)}/month; confirm lease terms with Terry.</span></p></div> : null}
               <p className={styles.description}>{listing.description}</p>
+              {listing.rentalTerms ? <details className={styles.rentalTerms}><summary>Lease, fees &amp; military flexibility</summary><p>Nine-month lease option. Owner acknowledges early termination for military-ordered relocation, including before nine months, with applicable notice requirements.</p><p>Minimum lease: {listing.rentalTerms.minimumLeaseMonths} months · Deposit: {money(listing.rentalTerms.deposit)}</p><p>Fees: {listing.rentalTerms.fees}</p><p>Included utilities: {listing.rentalTerms.utilities}</p><p>Pets: {listing.rentalTerms.petDetails}</p></details> : null}
               {listing.sourceNote ? <p className={styles.sourceNote}>{listing.sourceNote}</p> : null}
               <div className={styles.cardActions}><button type="button" className={styles.primaryButton} onClick={event => openModal("contact", listing.id, event.currentTarget)}>Ask about this rental <ArrowRight size={17} /></button></div>
               <p className={styles.updated}>Availability updated <time dateTime={listing.availabilityUpdatedAt}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${listing.availabilityUpdatedAt}T00:00:00Z`))}</time></p>
-              <div className={styles.cardFooter}><button type="button" onClick={() => { reset(); setOwnerId(owner.id); document.getElementById("rentals")?.scrollIntoView({ behavior: "smooth" }); }}>{owner.name} · {listings.filter(item => item.ownerId === owner.id).length} rentals</button></div>
+              <div className={styles.cardFooter}><button type="button" onClick={() => { reset(); setOwnerId(owner.id); document.getElementById("rentals")?.scrollIntoView({ behavior: "smooth" }); }}>{owner.name} · {listings.filter(item => item.ownerId === owner.id).length} rentals</button><a href={`mailto:hello@eod-hub.com?subject=${encodeURIComponent("Rental listing concern")}&body=${encodeURIComponent(`Property: ${listing.address}, ${listing.city}, ${listing.state}\nListing reference: ${listing.id}\n\nConcern: `)}`}>Report listing</a></div>
             </div>
           </article>;
         })}</div>
@@ -164,7 +187,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
       </section>
       <ServiceRating />
       <section className={styles.advertise} aria-labelledby="rental-advertise-title">
-        <div><p className={styles.eyebrow}>FOR PROPERTY OWNERS &amp; MANAGERS</p><h2 id="rental-advertise-title">Have a place to rent?</h2><p>Own a rental or manage properties? Interested in reaching the EOD community? Contact us to discuss a paid rental listing on EOD-HUB.</p></div>
+        <div><p className={styles.eyebrow}>FOR PROPERTY OWNERS &amp; MANAGERS</p><h2 id="rental-advertise-title">Have a place to rent?</h2><p>Reach the EOD community for $10 monthly or $100 annually per property. Create your rental account, submit your properties, and pay only after approval.</p><Link className={styles.primaryButton} href="/promote/rentals/portal">List your property <ArrowRight size={17} /></Link></div>
         <CopyRentalEmail email="hello@eod-hub.com" />
       </section>
       <section className={styles.disclosure}><p className={styles.paidDisclosure}>These are paid listings. EOD-HUB does not sponsor, endorse, or recommend the listed properties, owners, or property managers.</p><p>Listings and rental terms are owner-provided advertising. Availability is not live booking inventory; confirm current availability and all terms with the owner. EOD-HUB introduces you to the owner and does not handle applications, deposits, or leases.</p><p>Availability information updated October 23, 2026. Contact the owner to confirm current pricing and availability.</p></section>

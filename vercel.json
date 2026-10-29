@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/rentals",
+      "schedule": "27 8 * * *"
+    },
+    {
       "path": "/api/import-usajobs",
       "schedule": "0 6 * * *"
     },
