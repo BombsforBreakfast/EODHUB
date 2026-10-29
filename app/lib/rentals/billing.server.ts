@@ -18,7 +18,7 @@ export const rentalStripe = () => {
   return new Stripe((process.env.STRIPE_RENTALS_SECRET_KEY || process.env.STRIPE_SECRET_KEY)!);
 };
 /** Enable only after the owner confirms collection obligations and registrations. */
-export async function rentalAutomaticTax(stripe: Stripe, env: NodeJS.ProcessEnv = process.env): Promise<Stripe.SubscriptionCreateParams.AutomaticTax | undefined> {
+export async function rentalAutomaticTax(stripe: Stripe, env: { STRIPE_RENTALS_AUTOMATIC_TAX?: string } = process.env): Promise<Stripe.SubscriptionCreateParams.AutomaticTax | undefined> {
   if(env.STRIPE_RENTALS_AUTOMATIC_TAX!=="true")return undefined;
   const [settings,registrations]=await Promise.all([stripe.tax.settings.retrieve(),stripe.tax.registrations.list({status:"active",limit:1})]);
   if(settings.status!=="active" || !registrations.data.length)throw new RentalError("Tax collection is awaiting verified business settings and active registrations. No listing charge has been created. Contact hello@eod-hub.com.",503);
