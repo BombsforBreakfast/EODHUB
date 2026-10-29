@@ -3,22 +3,19 @@ import { useState, type CSSProperties } from "react";
 import { useTheme } from "../../lib/ThemeContext";
 import { FACET_OPTIONS, type FacetKey } from "../../lib/jobFacets";
 import { DEFAULT_JOB_FILTERS, jobFilterChips, toggleJobRegionGroup, US_JOB_REGION_GROUPS, isUsStateAbbr, type JobFilterState, type JobRegionOption } from "../../lib/jobFilters";
-import { uniqueJobEmployerOptions, type JobEmployerOption } from "../../lib/jobEmployers";
 
-export default function AdvancedJobFilters({ value, onChange, regions, employers = uniqueJobEmployerOptions([]), count, total, loading }: {
+export default function AdvancedJobFilters({ value, onChange, regions, count, total, loading }: {
   value: JobFilterState; onChange: (next: JobFilterState) => void; regions: JobRegionOption[];
-  employers?: JobEmployerOption[];
   count: number; total: number; loading: boolean;
 }) {
   const { t } = useTheme();
   const [advanced, setAdvanced] = useState(false);
   const [locationSearch, setLocationSearch] = useState("");
-  const [employerSearch, setEmployerSearch] = useState("");
   const set = (patch: Partial<JobFilterState>) => onChange({ ...value, ...patch });
   const input: CSSProperties = { width: "100%", padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, boxSizing: "border-box" };
   const button: CSSProperties = { padding: "8px 12px", border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, cursor: "pointer" };
   const label: CSSProperties = { display: "grid", gap: 6, fontSize: 13, fontWeight: 600 };
-  const chips = jobFilterChips(value, employers);
+  const chips = jobFilterChips(value);
   const selectedGeographies = value.geographies?.length ? value.geographies : value.geography ? [value.geography] : [];
   const locationMatches = (option: JobRegionOption) => `${option.label} ${option.value}`.toLowerCase().includes(locationSearch.toLowerCase());
   const states = regions.filter(option => isUsStateAbbr(option.value) || option.value === "PR");
@@ -68,17 +65,6 @@ export default function AdvancedJobFilters({ value, onChange, regions, employers
           {international.filter(locationMatches).map(locationOption)}
         </div>
         <p style={{ color: t.textMuted, fontSize: 12, marginBottom: 0 }}>Select multiple states, or select a region and adjust its states. Every state remains selectable even with no current listings.</p>
-      </details>
-      <details style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: 10 }}>
-        <summary style={{ cursor: "pointer", fontWeight: 600, fontSize: 14 }}>Employers {(value.employers?.length ?? 0) > 0 ? `(${value.employers?.length} selected)` : "— any"}</summary>
-        <input aria-label="Find an employer" value={employerSearch} onChange={event => setEmployerSearch(event.target.value)} placeholder="CACI, SAIC, MAG…" style={{ ...input, marginTop: 10 }} />
-        <div style={{ maxHeight: 290, overflowY: "auto", marginTop: 10 }}>
-          {employers.filter(option => option.label.toLowerCase().includes(employerSearch.toLowerCase())).map(option => <label key={option.value} style={{ display: "flex", gap: 8, alignItems: "baseline", fontSize: 13, margin: "10px 0" }}>
-            <input aria-label={option.label} type="checkbox" checked={value.employers?.includes(option.value) ?? false} onChange={() => set({ employers: value.employers?.includes(option.value) ? value.employers.filter(employer => employer !== option.value) : [...(value.employers ?? []), option.value] })} />
-            <span>{option.label}</span><span aria-hidden="true" style={{ color: t.textMuted, marginLeft: "auto" }}>{option.count}</span>
-          </label>)}
-        </div>
-        <p style={{ color: t.textMuted, fontSize: 12, marginBottom: 0 }}>Select any number. Counts show all active listings; other filters can narrow them further.</p>
       </details>
     </div>
     <div style={{ marginTop: 14 }}>{facet("relevance", "Type of opportunity — select any that interest you")}</div>

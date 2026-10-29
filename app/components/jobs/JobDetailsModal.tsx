@@ -11,6 +11,7 @@ import JobAdminApplicationsUnderReviewButton from "./JobAdminApplicationsUnderRe
 import JobApplicationsUnderReviewBadge from "./JobApplicationsUnderReviewBadge";
 import JobStaleReportControl from "./JobStaleReportControl";
 import { formatJobPay, deriveJobFacets, displayJobDescription, FACET_OPTIONS, type FacetJob } from "../../lib/jobFacets";
+import { jobLocationNote } from "../../lib/jobFilters";
 
 export type JobModalData = FacetJob & {
   id: string;
@@ -102,6 +103,7 @@ export default function JobDetailsModal({
   const meta = metaParts.join(" · ");
   const payText = formatJobPay(job);
   const facets = deriveJobFacets(job);
+  const locationNote = jobLocationNote(job);
   const source = job.filter_source && typeof job.filter_source === "object" ? job.filter_source as Record<string, unknown> : {};
 
   const emptyDescriptionHint = applyUrl
@@ -230,6 +232,7 @@ export default function JobDetailsModal({
           />
 
           <div style={{ padding: "14px 20px 4px" }}>
+            {locationNote && <p style={{ margin: "0 0 12px", fontSize: 13, color: t.textMuted }}>{locationNote}</p>}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
               {(["relevance", "education", "clearance", "clearanceStatus", "workplace", "employment"] as const).map(key => <span key={key} style={{ fontSize: 12, border: `1px solid ${t.border}`, borderRadius: 12, padding: "4px 8px" }}>{(FACET_OPTIONS[key] as Record<string, string>)[facets[key]]}</span>)}
             </div>
