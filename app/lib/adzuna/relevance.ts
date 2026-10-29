@@ -143,7 +143,7 @@ export function scoreAdzunaJob(
   const companyName = input.companyName.trim();
   const combined = `${title}\n${description}\n${companyName}`;
 
-  const excludedRole = jobImportExclusionReason(title);
+  const excludedRole = jobImportExclusionReason(title, companyName);
   if (excludedRole) {
     return { score: 0, relevant: false, reasons: [`Excluded: ${excludedRole}`], militaryRecruitment: false };
   }

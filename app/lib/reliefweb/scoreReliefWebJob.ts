@@ -100,7 +100,7 @@ function hasStrongTitleMatch(title: string): boolean {
 }
 
 export function shouldExcludeReliefWebJob(title: string, body: string, metadataText = ""): boolean {
-  if (jobImportExclusionReason(title)) return true;
+  if (jobImportExclusionReason(title, metadataText)) return true;
   const text = `${title}\n${body}\n${metadataText}`.toLowerCase();
   return HARD_EXCLUSION_TERMS.some((term) => termMatches(text, term));
 }
