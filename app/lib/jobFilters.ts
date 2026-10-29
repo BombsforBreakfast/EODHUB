@@ -71,6 +71,7 @@ export function restoreJobFilters(value: unknown): JobFilterState {
   if (input.postedWithin === "7" || input.postedWithin === "14") out.postedWithin = input.postedWithin;
   if (input.selections && typeof input.selections === "object") {
     for (const [key, values] of Object.entries(input.selections)) {
+      if (key === "workplace") continue;
       if (Object.hasOwn(FACET_OPTIONS, key) && Array.isArray(values)) out.selections[key as FacetKey] = values.filter(v => typeof v === "string" && Object.hasOwn(FACET_OPTIONS[key as FacetKey], v));
     }
   }
@@ -255,6 +256,8 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState, no
     const haystack = plainJobText(filters.searchScope === "title" ? job.title || job.og_title : [job.title, job.og_title, job.description, job.og_description, job.company_name, job.category, job.clearance].filter(Boolean).join(" ")).toLowerCase();
     if (!keywords.every(word => haystack.includes(word)) || excluded.some(word => haystack.includes(word))) return false;
     for (const [key, values] of Object.entries(filters.selections ?? {})) {
+      // Ignore legacy preferences even before stored filters are restored.
+      if (key === "workplace") continue;
       if (key === "employment" && values?.length) {
         if (!jobEmploymentTypes(job).some(v => values.includes(v))) return false;
         continue;
@@ -293,8 +296,11 @@ export function jobFilterChips(filters: JobFilterState): { label: string; clear:
   if (filters.excludeKeywords?.trim()) chips.push({ label: `Exclude: ${filters.excludeKeywords}`, clear: { excludeKeywords: "" } });
   for (const region of filters.regions ?? []) chips.push({ label: regionDisplayLabel(region), clear: { regions: filters.regions?.filter(r => r !== region) } });
   if (filters.geography) chips.push({ label: filters.geography.toUpperCase(), clear: { geography: "" } });
-  for (const [key, values] of Object.entries(filters.selections ?? {})) for (const value of values ?? []) {
-    chips.push({ label: (FACET_OPTIONS[key as FacetKey] as Record<string, string>)[value] ?? value, clear: { selections: { ...filters.selections, [key]: values.filter(v => v !== value) } } });
+  for (const [key, values] of Object.entries(filters.selections ?? {})) {
+    if (key === "workplace") continue;
+    for (const value of values ?? []) {
+      chips.push({ label: (FACET_OPTIONS[key as FacetKey] as Record<string, string>)[value] ?? value, clear: { selections: { ...filters.selections, [key]: values.filter(v => v !== value) } } });
+    }
   }
   if (Number(filters.minimumPay) > 0) chips.push({ label: `${filters.payMatch === "starting" ? "Starting" : "Range reaches"} $${Number(filters.minimumPay).toLocaleString()}/${filters.payPeriod === "hour" ? "hr" : "yr"}`, clear: { minimumPay: "" } });
   if (filters.advertisedPayOnly) chips.push({ label: "Advertised pay only", clear: { advertisedPayOnly: false } });

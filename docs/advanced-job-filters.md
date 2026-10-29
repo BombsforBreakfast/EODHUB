@@ -2,10 +2,12 @@
 
 Members can combine opportunity type, multiple states/countries, keyword phrases
 and exclusions, title-only search, CONUS/OCONUS, added date, USD pay, education,
-clearance level/timing, work arrangement and employment type. Options within one
+clearance level/timing and employment type. Options within one
 group match any selected option; separate groups must all match. Search words
 use AND, quoted phrases stay together, and any excluded term removes a match.
 Preferences are stored per member in this browser. Clear all resets them.
+Work arrangement is informational only: its filter controls are removed, and
+legacy Remote/Hybrid/On-site preferences are discarded and ignored during matching.
 
 The board retrieves all approved active listings through ordered API pages;
 the displayed results use 24-card pages. The existing 30-day retention window,

@@ -67,7 +67,7 @@ export default function AdvancedJobFilters({ value, onChange, regions, count, to
         <p style={{ fontSize: 12, color: t.textMuted }}>Hourly and annual pay are kept separate. Currency and pay periods are not guessed or converted.</p>
       </fieldset>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
-        {facet("education", "Education")}{facet("clearance", "Clearance level")}{facet("clearanceStatus", "Clearance timing")}{facet("workplace", "Work arrangement")}{facet("employment", "Employment type")}
+        {facet("education", "Education")}{facet("clearance", "Clearance level")}{facet("clearanceStatus", "Clearance timing")}{facet("employment", "Employment type")}
       </div>
     </div>}
     {chips.length > 0 && <div aria-label="Active filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>{chips.map((chip, index) => <button key={`${chip.label}-${index}`} type="button" style={{ ...button, fontSize: 12, borderRadius: 20 }} aria-label={`Remove ${chip.label}`} onClick={() => set(chip.clear)}>{chip.label} ×</button>)}</div>}
