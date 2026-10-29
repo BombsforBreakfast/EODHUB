@@ -5,7 +5,7 @@
 export const FACET_OPTIONS = {
   relevance: { direct: "Direct EOD / UXO", related: "Related explosives / mine action", transferable: "Broader career opportunities", unknown: "Unclassified" },
   education: { none: "No college degree required", preferred: "Degree preferred", required: "Degree required", equivalent: "Experience accepted instead", unknown: "Education not specified" },
-  clearance: { none: "No clearance required", secret: "Secret", ts: "Top Secret", sci: "TS/SCI", other: "Other clearance / Public Trust", unknown: "Clearance not specified" },
+  clearance: { none: "No clearance required", secret: "Secret", ts: "Top Secret", sci: "SCI / TS/SCI", other: "Other clearance / Public Trust", unknown: "Clearance not specified" },
   clearanceStatus: { active: "Active clearance required", obtainable: "Ability to obtain", unknown: "Clearance timing not specified" },
   workplace: { remote: "Remote", hybrid: "Hybrid", onsite: "On-site", unknown: "Work arrangement not specified" },
   employment: { full: "Full-time", part: "Part-time", contract: "Contract", temporary: "Temporary", unknown: "Employment type not specified" },
@@ -63,17 +63,18 @@ export function deriveJobFacets(job: FacetJob): JobFacets {
   }
   const clearanceText = plainJobText(job.clearance || text).toLowerCase();
   let clearance: JobFacets["clearance"] = "unknown";
-  if (/no (?:(?:security|secret|top secret) )?clearance (?:is )?required|clearance[: ]+(?:none|not required)/.test(clearanceText)) clearance = "none";
-  else if (/ts\s*[/\-]\s*sci|top secret\s*[/\-]\s*sci/.test(clearanceText)) clearance = "sci";
+  if (/^(?:none|not required)$|no (?:(?:security|secret|top secret) )?clearance (?:is )?required|clearance[: ]+(?:none|not required)/.test(clearanceText)) clearance = "none";
+  else if (/ts\s*[/\-]\s*sci|top secret\s*[/\-]\s*sci|sensitive compartmented information/.test(clearanceText)) clearance = "sci";
   else if (/top secret|\bts clearance\b/.test(clearanceText)) clearance = "ts";
   else if (/\bsecret\b/.test(clearanceText)) clearance = "secret";
-  else if (/public trust|\bq clearance\b|\bl clearance\b/.test(clearanceText)) clearance = "other";
+  else if (/^other$|public trust|\bq (?:clearance|access authorization)\b|\bl (?:clearance|access authorization)\b|confidential clearance/.test(clearanceText)) clearance = "other";
   let clearanceStatus: JobFacets["clearanceStatus"] = "unknown";
-  if (clearance !== "none" && /(?:active|current)[^.]{0,45}(?:clearance|secret|ts\/sci)|(?:must possess|must hold)[^.]{0,45}clearance/.test(clearanceText)) clearanceStatus = "active";
-  else if (clearance !== "none" && /(?:ability|able|eligible)[^.]{0,30}(?:obtain|clearance)|obtain[^.]{0,35}clearance/.test(clearanceText)) clearanceStatus = "obtainable";
+  const timingText = `${clearanceText} ${text}`;
+  if (clearance !== "none" && /(?:active|current)[^.]{0,45}(?:clearance|secret|ts\/sci)|(?:must possess|must hold)[^.]{0,45}clearance/.test(timingText)) clearanceStatus = "active";
+  else if (clearance !== "none" && /(?:ability|able|eligible)[^.]{0,30}(?:obtain|clearance)|obtain[^.]{0,35}clearance/.test(timingText)) clearanceStatus = "obtainable";
   const arrangement = `${plainJobText(job.location)} ${title} ${text}`.toLowerCase();
   let workplace: JobFacets["workplace"] = "unknown";
-  if (/\bhybrid\b/.test(arrangement)) workplace = "hybrid";
+  if (/\bhybrid\b/i.test(`${job.location ?? ""} ${title}`) || /hybrid (?:work|position|role|schedule|arrangement|model)|work[^.]{0,15}hybrid/.test(text)) workplace = "hybrid";
   else if (/not (?:a )?remote|remote (?:work )?(?:is )?not|\bon[- ]?site\b/.test(arrangement)) workplace = "onsite";
   else if (/\bremote (?:work|position|role|job)|work (?:fully )?remotely|work from home|fully remote|100% remote/.test(arrangement) || /^remote\b/i.test(job.location ?? "") || /\bremote\b/.test(title)) workplace = "remote";
   let employment: JobFacets["employment"] = "unknown";

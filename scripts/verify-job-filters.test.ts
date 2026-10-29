@@ -24,6 +24,11 @@ test("clearance timing and negations; remote site is not remote employment", () 
   assert.equal(deriveJobFacets(job({ description: "Work at remote sites. Federal contract support." })).workplace, "unknown");
   assert.equal(deriveJobFacets(job({ description: "This is not a remote position." })).workplace, "onsite");
   assert.equal(deriveJobFacets(job({ description: "Federal contract support." })).employment, "unknown");
+  assert.equal(deriveJobFacets(job({ clearance: "Secret", description: "An active security clearance is required." })).clearanceStatus, "active");
+  assert.equal(deriveJobFacets(job({ clearance: "Q Access Authorization" })).clearance, "other");
+  assert.equal(deriveJobFacets(job({ clearance: "Sensitive Compartmented Information" })).clearance, "sci");
+  assert.equal(deriveJobFacets(job({ clearance: "Not Required" })).clearance, "none");
+  assert.equal(deriveJobFacets(job({ description: "Maintain hybrid vehicles." })).workplace, "unknown");
 });
 test("admin corrections override source; malformed values are ignored", () => {
   assert.deepEqual(parseFacetOverrides({ relevance: "direct", education: "bogus", is_admin: true }), { relevance: "direct" });
