@@ -9,7 +9,7 @@ import type { NextRequest } from "next/server";
 const generic = (title:string, description="Company introduction and general job responsibilities.")=>({title,description,companyName:"Example employer"});
 
 test("generic EOD support roles survive a truncated API snippet when exact indexed search matches",()=>{
-  for(const title of ["Configuration Management Analyst","Operational Analyst","Associate Product Manager","Systems Safety Engineer III","Senior Analyst-Force Development Branch","Combat Skills Instructor","Digital Forensics Examiner"]){
+  for(const title of ["Configuration Management Specialist","Operations Coordinator","Associate Product Manager","Systems Safety Engineer III","Force Development Specialist","Combat Skills Instructor","Digital Forensics Examiner"]){
     assert.equal(scoreAdzunaJob(generic(title)).relevant,false);
     const result=scoreAdzunaJob(generic(title),{intakeChannel:"body:eod@us"});
     assert.equal(result.relevant,true,title);assert.ok(result.reasons.some(r=>r.includes("Indexed announcement")));
@@ -46,17 +46,18 @@ test("exact phrase requests are full-index searches with no title, category, or 
   try{const result=await fetchAdzunaJobs({whatPhrase:"explosive ordnance disposal",country:"us",page:1});assert.equal(result.count,1);assert.equal(observed?.searchParams.get("what_phrase"),"explosive ordnance disposal");for(const name of ["title_only","category","max_days_old","what_exclude"])assert.equal(observed?.searchParams.has(name),false);}
   finally{globalThis.fetch=oldFetch;if(oldId===undefined)delete process.env.ADZUNA_APP_ID;else process.env.ADZUNA_APP_ID=oldId;if(oldKey===undefined)delete process.env.ADZUNA_APP_KEY;else process.env.ADZUNA_APP_KEY=oldKey;}
 });
-test("a job rejected by an early snippet is reconsidered later, imported once, and retains normal moderation",async()=>{
+test("a rejected snippet is reconsidered once with normal moderation while analysts and scientists stay excluded",async()=>{
   const names=["ADZUNA_APP_ID","ADZUNA_APP_KEY","NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY","CRON_SECRET"];
   const saved=names.map(n=>process.env[n]),oldFetch=globalThis.fetch;
   ["test","test","https://db.example","test","secret"].forEach((v,i)=>process.env[names[i]]=v);
   const writes:Record<string,unknown>[]=[];
-  const ad={id:"12345",title:"Configuration Management Analyst",description:"General company introduction without the specialty in this short snippet.",company:{display_name:"Example"},location:{display_name:"Charleston, SC"},redirect_url:"https://www.adzuna.com/details/12345",created:"2026-01-01"};
+  const ad={id:"12345",title:"Configuration Management Specialist",description:"General company introduction without the specialty in this short snippet.",company:{display_name:"Example"},location:{display_name:"Charleston, SC"},redirect_url:"https://www.adzuna.com/details/12345",created:"2026-01-01"};
+  const excludedAds=[{...ad,id:"12346",title:"EOD Analyst",redirect_url:"https://www.adzuna.com/details/12346"},{...ad,id:"12347",title:"EOD Scientist",redirect_url:"https://www.adzuna.com/details/12347"}];
   globalThis.fetch=async (input,init)=>{
     const url=new URL(String(input));
     if(url.hostname==="api.adzuna.com"){
       const match=url.pathname.includes("/us/") && (url.searchParams.get("what")==="explosive ordnance disposal"||url.searchParams.get("what_phrase")==="explosive ordnance disposal");
-      return Response.json({count:match?1:0,results:match?[ad]:[]});
+      return Response.json({count:match?3:0,results:match?[ad,...excludedAds]:[]});
     }
     if(url.hostname==="db.example"){
       if(init?.method==="POST" && init.body)writes.push(...JSON.parse(String(init.body)));
