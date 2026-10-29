@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ShareListingToFeedModal, { type ShareListingPreview } from "../components/ShareListingToFeedModal";
 import UpgradePromptModal from "../components/UpgradePromptModal";
@@ -28,7 +29,7 @@ import {
 } from "../lib/jobFilters";
 import AdvancedJobFilters from "../components/jobs/AdvancedJobFilters";
 import { deriveJobFacets } from "../lib/jobFacets";
-import { uniqueJobEmployerOptions } from "../lib/jobEmployers";
+import JobViewToggle from "../components/jobs/JobViewToggle";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
@@ -56,6 +57,7 @@ type ProfileRow = {
 };
 
 const DEFAULT_FILTERS = DEFAULT_JOB_FILTERS;
+const JobMapView = dynamic(() => import("../components/jobs/JobMapView"), { ssr: false, loading: () => <p role="status">Loading map…</p> });
 
 type JobSort = "recent" | "az" | "za";
 
@@ -132,6 +134,7 @@ export default function JobsPage() {
   const [filters, setFilters] = useState<JobFilterState>(DEFAULT_FILTERS);
   const [page, setPage] = useState(1);
   const [jobSort, setJobSort] = useState<JobSort>("recent");
+  const [jobView, setJobView] = useState<"list" | "map">("list");
   const [isMobile, setIsMobile] = useState(false);
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
@@ -342,7 +345,7 @@ export default function JobsPage() {
   }, [userId, jobsQuery.isSuccess, jobsQuery.isError]);
 
   const regionOptions = useMemo(() => uniqueJobRegionOptions(jobs), [jobs]);
-  const employerOptions = useMemo(() => uniqueJobEmployerOptions(jobs), [jobs]);
+  const mapJobs = useMemo(() => jobView === "map" ? !canUseJobFilters ? jobs : applyJobFilters(jobs, { ...filters, regions: [], locationRegion: "" }) : [], [jobs, filters, canUseJobFilters, jobView]);
 
   const visibleJobs = useMemo(() => {
     const filtered = !canUseJobFilters ? jobs : applyJobFilters(jobs, filters);
@@ -402,6 +405,7 @@ export default function JobsPage() {
           )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <JobViewToggle value={jobView} onChange={setJobView} />
           <a
             href="/post-job"
             style={{ background: "#111", color: "white", border: "1px solid rgba(255,255,255,0.65)", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }}
@@ -420,7 +424,7 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {canUseJobFilters && <AdvancedJobFilters value={filters} onChange={changeFilters} regions={regionOptions} employers={employerOptions} count={visibleJobs.length} total={jobs.length} loading={loading} />}
+      {canUseJobFilters && <AdvancedJobFilters value={filters} onChange={changeFilters} regions={regionOptions} count={visibleJobs.length} total={jobs.length} loading={loading} />}
       <label style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, fontSize: 13 }}>Sort jobs
         <select aria-label="Sort jobs" value={jobSort} onChange={e => { setJobSort(e.target.value as JobSort); setPage(1); }} style={{ padding: 8, background: t.input, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8 }}>
           <option value="recent">Newest added</option><option value="az">Title A–Z</option><option value="za">Title Z–A</option>
@@ -524,6 +528,8 @@ export default function JobsPage() {
           )}
         </div>
       )}
+
+      {jobView === "map" && !loading && !jobsQuery.isError && <JobMapView jobs={mapJobs} selectedRegions={filters.regions ?? []} onChangeRegions={regions => changeFilters({ ...filters, regions, locationRegion: "" })} matchingCount={visibleJobs.length} />}
 
       {loading ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>Loading jobs...</div>

@@ -114,18 +114,18 @@ test("region shortcuts preserve independent choices, combine and can be adjusted
   assert.deepEqual(toggleJobRegionGroup(selected, south.states), ["PR"]);
   assert.deepEqual(restoreJobFilters({ geography: "oconus" }).geographies, ["oconus"]);
 });
-test("employer aliases combine into tags and multiple employers use OR with other filters", () => {
+test("employer tags remain; retired employer selections cannot hide jobs", () => {
   const listings = [job({ company_name: "CACI International Inc." }), job({ id: "2", company_name: "CACI" }), job({ id: "3", company_name: "Science Applications International Corporation" }), job({ id: "4", company_name: "MAG Aerospace, LLC", location: "Germany" }), job({ id: "5", company_name: "Other Company", description: "Works with CACI and SAIC" })];
   const options = uniqueJobEmployerOptions(listings);
   assert.equal(options.find(option => option.value === "caci")?.count, 2);
   assert.equal(options.find(option => option.value === "saic")?.count, 1);
   assert.equal(jobEmployerIdentity({ company_name: "Magazine Group" }).common, false);
   assert.ok(uniqueJobEmployerOptions([]).some(option => option.value === "mag" && option.count === 0));
-  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, employers: ["caci", "saic"] }).length, 3);
-  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, employers: ["caci", "mag"], regions: ["FL"] }).length, 2);
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, employers: ["caci", "saic"] }).length, 5);
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, employers: ["caci", "mag"], regions: ["FL"] }).length, 4);
   const restored = restoreJobFilters({ employers: ["caci", "caci", 7, "mag"] });
-  assert.deepEqual(restored.employers, ["caci", "mag"]);
-  assert.equal(jobFilterChips(restored, options)[0].label, "Employer: CACI");
+  assert.deepEqual(restored.employers, []);
+  assert.deepEqual(jobFilterChips({ ...DEFAULT_JOB_FILTERS, employers: ["caci"] }), []);
 });
 test("source enrichment retains real fields and doesn't alter USAJOBS intake summary", () => {
   const item: USAJobsApiItem = { MatchedObjectDescriptor: { PositionID: "1", PositionTitle: "Engineer", PositionURI: "https://usajobs.gov/job/1", PositionLocationDisplay: "FL", OrganizationName: "Agency", PositionRemuneration: [{ MinimumRange: "80000", MaximumRange: "110000", RateIntervalCode: "Per Year" }], PositionSchedule: [{ Name: "Full-time" }], UserArea: { Details: { JobSummary: "Summary", Education: "Degree required", Requirements: "Active Secret clearance" } } } };

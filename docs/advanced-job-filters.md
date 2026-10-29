@@ -16,14 +16,10 @@ adjusted state by state. DC is in South; Puerto Rico is selectable separately.
 CONUS and OCONUS are also checkboxes and can be combined. Existing singular
 geography preferences are restored into the new multi-selection format.
 
-Employer checkboxes match the listing's employer field, with multiple employers
-combined using OR. They combine with location and other filter groups using AND.
-Common employer tags stay available with zero counts. Corporate suffix/spelling
-variants are grouped (for example, CACI/CACI International Inc.) without matching
-incidental mentions in descriptions or inferring corporate affiliations. Other
-employers from the active inventory are added automatically. Common tags also
-appear on listing cards. This filtering is computed from existing data; it adds
-no database columns or import restrictions.
+Employer selection is removed from both views. Legacy saved employer choices
+are discarded on restoration and ignored during matching/chip rendering, so an
+invisible filter cannot narrow results. Employer names and common company tags
+remain on cards, and keyword search can still match employer names.
 
 The board retrieves all approved active listings through ordered API pages;
 the displayed results use 24-card pages. The existing 30-day retention window,
@@ -61,13 +57,35 @@ Conflicting title and location states are flagged for review instead of silently
 selecting either. Duplicate/broad locations remain unspecified. Source location
 text stays visible; cards and details label inferred or conflicting matches.
 
-This is computed locally from existing listings and also supports the map
-prototype; it does not alter imports, job records, approval, or access. The map
-remains a review mockup. Rebuild the generated lookup with
+This is computed locally from existing listings; it does not alter imports, job
+records, approval, or access. Rebuild the generated lookup with
 `python scripts/build-job-location-index.py <archive directory>` using the
 `2025_Gaz_counties_national.zip` and `2025_Gaz_place_national.zip` files from
 https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/.
 The output records both archive SHA-256 hashes for reproducibility.
+
+## List / Map view
+
+List remains the default and retains the deployed card grid, details, saved jobs,
+sorting, 24-card pagination and moderation controls. Map adds a lazy-loaded map
+above the same cards. Both views share one filter state, and map locations also
+appear as the existing removable Geography chips. Map counts include all loaded
+approved active jobs that match the other filters, before state/country choices;
+multi-location jobs count once in each relevant bucket. Choosing states or
+countries combines them with OR, and all other filters still apply.
+
+The map covers all 50 states, DC and PR, with international country/region
+callouts from real inventory. Full source locations are available in state
+tooltips and country callouts. Broad U.S., missing and conflicting locations stay
+available in Lacks location detail. There are no fabricated exact city pins.
+Geometry is preprojected from us-atlas 3.0.1 Census-derived states with d3-geo
+Albers USA and a Mercator PR inset. No runtime geocoder, API key or external map
+request is required. The geometry chunk loads only when Map is opened.
+
+Theme colors follow the app ThemeProvider. A ResizeObserver recalculates map
+scale and readable, non-overlapping labels after container resize or rotation.
+Landscape phones use a height-aware canvas. Native state keyboard controls and
+the existing Geography checkboxes offer alternative selection methods.
 
 ## Import enrichment
 
@@ -97,7 +115,7 @@ stay outside the repository.
 
 ## Validation
 
-`node --import tsx --test scripts/verify-job-filters.test.ts scripts/verify-usajobs-intake.test.ts scripts/verify-adzuna-intake.test.ts scripts/verify-job-import-exclusions.test.ts`
+`node --import tsx --test scripts/verify-job-filters.test.ts scripts/verify-job-map.test.ts scripts/verify-usajobs-intake.test.ts scripts/verify-adzuna-intake.test.ts scripts/verify-job-import-exclusions.test.ts`
 
 Checks cover unknown information, negation, phrases/exclusions, multiple
 locations, geography, pay units/currencies, estimation, source enrichment,
