@@ -134,7 +134,7 @@ export function scoreUSAJobsJob(
   const department = (input.departmentName ?? "").trim();
   const combined = `${title}\n${description}\n${orgName}\n${department}`;
 
-  const excludedRole = jobImportExclusionReason(title);
+  const excludedRole = jobImportExclusionReason(title, `${orgName}\n${department}`);
   if (excludedRole) {
     return { score: 0, relevant: false, reasons: [`Excluded: ${excludedRole}`], militaryRecruitment: false };
   }

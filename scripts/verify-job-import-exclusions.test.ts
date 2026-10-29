@@ -54,6 +54,9 @@ test("intern titles are excluded across all importers without matching internati
 
 test("newly excluded role titles are blocked across all importers", () => {
   const cases: Array<[string, string[]]> = [
+    ["Air Force A10 listing", ["Air Force A10 - EOD Program Manager", "USAF/A10 UXO Coordinator", "Air-Force A-10 UAS Specialist"]],
+    ["IT specialist role", ["IT Specialist", "it specialists", "Supervisory IT Specialist (INFOSEC)", "I.T. Specialist - EOD", "IT Support Specialist", "IT Cybersecurity Specialist", "IT Customer Support Specialist", "Information Technology Specialist", "Information-Technology Specialist - UAS", "Information Technology (IT) Specialist", "Information Technology Specialist (SYSADMIN)"]],
+    ["J39 role", ["J39", "j39 specialist", "J-39 EOD Planner", "J 39 Advisor", "J3/9 Operations Specialist", "J-3/9 Coordinator", "CWMD J39 Support", "J39/UAS Support"]],
     ["MDDU role", ["MDDU", "mddu technician", "MDDU - EOD Operations", "CBRN MDDU Specialist", "M.D.D.U. Coordinator", "M D D U Operator", "MDDU/UAS Support", "M-D-D-U Technician"]],
     ["EMS role", ["EMS", "EMS Lieutenant - CBRN", "E.M.S. Instructor", "E M S Technician - EOD Range", "Emergency Medical Services Director", "Emergency-Medical-Service Supervisor", "Emergency Medical Svcs Coordinator", "EOD / EMS Response Specialist"]],
     ["Sheriff role", ["Sheriff", "Deputy Sheriff", "Sheriff's Deputy", "Sheriff’s Deputy - Bomb Squad", "SHERIFFS DEPUTY - EOD", "Deputy-Sheriff Trainee", "Undersheriff", "Under-Sheriff", "Sheriff - UAS Pilot"]],
@@ -85,7 +88,7 @@ test("newly excluded role titles are blocked across all importers", () => {
 });
 
 test("relevant specialist roles remain eligible when excluded roles are mentioned only in the description", () => {
-  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses, EMS, MDDU, emergency medical services, sheriff's deputies and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
+  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses, EMS, MDDU, J39, Air Force A10, IT specialists, information technology specialists, emergency medical services, sheriff's deputies and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
   for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Specialist", "EOD Technician ($40/hr)", "UXO Technician - $40 per hr"]) {
     const input = { title, description: context, companyName: "EOD employer" };
     assert.equal(jobImportExclusionReason(title), null, title);
@@ -94,7 +97,34 @@ test("relevant specialist roles remain eligible when excluded roles are mentione
     assert.equal(scoreLinkedInJob(input).relevant, true, title);
     assert.equal(scoreReliefWebJob({ ...input, metadataText: "Mine Action", themes: ["Mine Action"] }).excluded, false, title);
   }
-  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer", "Deputy EOD Program Manager", "Systems Engineer", "EM Systems Engineer"]) {
+  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer", "Deputy EOD Program Manager", "Systems Engineer", "EM Systems Engineer", "J390 Systems Engineer", "J3 Specialist", "J9 Advisor", "Satellite Specialist", "Explosive Safety Specialist", "Information Management Specialist"]) {
     assert.equal(jobImportExclusionReason(title), null, title);
+  }
+});
+
+test("Air Force A10 employers are excluded even when the job title has no A10 label", () => {
+  const title = "EOD Technician";
+  for (const employer of ["Air Force A10", "U.S. Air Force A-10", "Headquarters USAF/A10", "AIR FORCE A 10", "Air-Force A–10"]) {
+    const input = { title, description, companyName: employer };
+    assert.equal(jobImportExclusionReason(title, employer), "Air Force A10 listing", employer);
+    assert.equal(scoreAdzunaJob(input, { intakeChannel: "body:eod@us" }).relevant, false, employer);
+    assert.equal(scoreUSAJobsJob({ title, description, organizationName: employer }).relevant, false, employer);
+    assert.equal(linkedInHardExcludeReason(input), "Air Force A10 listing", employer);
+    assert.equal(scoreLinkedInJob(input).relevant, false, employer);
+    assert.equal(scoreReliefWebJob({ title, description, metadataText: `${employer} Mine Action`, themes: ["Mine Action"] }).excluded, true, employer);
+  }
+  assert.equal(scoreUSAJobsJob({ title, description, organizationName: "Air Force", departmentName: "A10" }).relevant, false);
+  assert.equal(scoreAdzunaJob({ title: "A10 EOD Program Manager", description, companyName: "Air Force" }).relevant, false);
+});
+
+test("other Air Force employers and unrelated A10 labels remain eligible", () => {
+  const title = "EOD Technician";
+  for (const employer of ["Department of the Air Force", "USAF", "A10 Networks", "Air Force A100"]) {
+    const input = { title, description, companyName: employer };
+    assert.equal(jobImportExclusionReason(title, employer), null, employer);
+    assert.equal(scoreAdzunaJob(input).relevant, true, employer);
+    assert.equal(scoreUSAJobsJob({ title, description, organizationName: employer }).relevant, true, employer);
+    assert.equal(scoreLinkedInJob(input).relevant, true, employer);
+    assert.equal(scoreReliefWebJob({ title, description, metadataText: `${employer} Mine Action`, themes: ["Mine Action"] }).excluded, false, employer);
   }
 });

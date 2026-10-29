@@ -1,6 +1,10 @@
-/** Hard role exclusions shared by every automated job intake. Match titles, not qualifications mentioned in an otherwise relevant role. */
-export function jobImportExclusionReason(title: string): string | null {
+/** Shared title exclusions, plus employer-specific exclusions using structured source context. Descriptions alone do not exclude a relevant role. */
+export function jobImportExclusionReason(title: string, employerContext = ""): string | null {
   const normalized = title.normalize("NFKC").replace(/[\u2010-\u2015]/g, "-");
+  const sourceContext = `${normalized}\n${employerContext.normalize("NFKC").replace(/[\u2010-\u2015]/g, "-")}`;
+  if (/\b(?:air[\s-]+force|usaf)\b/i.test(sourceContext) && /\ba[\s/-]*10\b/i.test(sourceContext)) {
+    return "Air Force A10 listing";
+  }
   if (/\bintern(?:s|ships?)?\b/i.test(normalized)) return "Intern role";
   if (/\bstudent(?:s|ships?)?\b/i.test(normalized)) return "Student role";
   if (/\bpost[\s-]*doctoral\b/i.test(normalized)) return "Postdoctoral role";
@@ -10,6 +14,10 @@ export function jobImportExclusionReason(title: string): string | null {
   if (/\bbudget(?:s|ing|ary|ed)?\b/i.test(normalized)) return "Budget role";
   if (/\bdecontamination[\s/-]+specialists?\b/i.test(normalized)) return "Decontamination specialist role";
   if (/\bm[.\s-]*d[.\s-]*d[.\s-]*u\b/i.test(normalized)) return "MDDU role";
+  if (/\bj[\s/-]*3[\s/-]*9\b/i.test(normalized)) return "J39 role";
+  if (
+    /\b(?:i\.?t\.?|information[\s-]+technology)(?:\s*\(\s*i\.?t\.?\s*\))?[\s/-]+(?:(?:customer|technical|support|cybersecurity|security|network|systems?|operations|services?)[\s/-]+)*specialists?\b/i.test(normalized)
+  ) return "IT specialist role";
   if (
     /\b(?:a?emt|nremt)s?\b/i.test(normalized) ||
     /\be[.\s]m[.\s]t\b/i.test(normalized) ||
