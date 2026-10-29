@@ -9,6 +9,22 @@ Preferences are stored per member in this browser. Clear all resets them.
 Work arrangement is informational only: its filter controls are removed, and
 legacy Remote/Hybrid/On-site preferences are discarded and ignored during matching.
 
+Geography always offers all 50 states, DC and Puerto Rico, including locations
+with no current listings. Four Census-region checkboxes (Northeast, Midwest,
+South, West) select their member states; selections can be combined and then
+adjusted state by state. DC is in South; Puerto Rico is selectable separately.
+CONUS and OCONUS are also checkboxes and can be combined. Existing singular
+geography preferences are restored into the new multi-selection format.
+
+Employer checkboxes match the listing's employer field, with multiple employers
+combined using OR. They combine with location and other filter groups using AND.
+Common employer tags stay available with zero counts. Corporate suffix/spelling
+variants are grouped (for example, CACI/CACI International Inc.) without matching
+incidental mentions in descriptions or inferring corporate affiliations. Other
+employers from the active inventory are added automatically. Common tags also
+appear on listing cards. This filtering is computed from existing data; it adds
+no database columns or import restrictions.
+
 The board retrieves all approved active listings through ordered API pages;
 the displayed results use 24-card pages. The existing 30-day retention window,
 member access checks, saved jobs, sharing, moderation and import exclusion rules
@@ -73,3 +89,4 @@ Primary source documentation:
 - https://developer.adzuna.com/docs/search
 - https://developer.usajobs.gov/api-reference/get-api-search
 - https://supabase.com/docs/reference/javascript/range
+- https://www.census.gov/programs-surveys/geography/about/glossary.html

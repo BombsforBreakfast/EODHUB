@@ -1,7 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deriveJobFacets, formatJobPay, parseFacetOverrides } from "../app/lib/jobFacets";
-import { applyJobFilters, DEFAULT_JOB_FILTERS, jobFilterChips, jobRegions, restoreJobFilters, type JobListItem } from "../app/lib/jobFilters";
+import { applyJobFilters, DEFAULT_JOB_FILTERS, jobFilterChips, jobRegions, restoreJobFilters, uniqueJobRegionOptions, US_JOB_REGION_GROUPS, toggleJobRegionGroup, type JobListItem } from "../app/lib/jobFilters";
+import { jobEmployerIdentity, uniqueJobEmployerOptions } from "../app/lib/jobEmployers";
 import { fetchApprovedJobs } from "../app/lib/queries/jobs";
 import { adzunaFilterSource } from "../app/lib/adzuna/api";
 import { extractUSAJobsFullDescription, extractUSAJobsSummary, usajobsFilterData, type USAJobsApiItem } from "../app/lib/usajobs/api";
@@ -87,6 +88,44 @@ test("retired work arrangement preferences cannot hide jobs or leave active chip
   const retained = restoreJobFilters({ ...DEFAULT_JOB_FILTERS, selections: { workplace: ["remote"], relevance: ["direct"] } });
   assert.deepEqual(retained.selections, { relevance: ["direct"] });
   assert.equal(applyJobFilters([...jobs, job({ id: "4", title: "Program Manager" })], retained).length, 3);
+});
+test("every state, DC and Puerto Rico stay selectable with empty inventory; PR aliases match", () => {
+  const options = uniqueJobRegionOptions([]);
+  assert.equal(options.length, 52);
+  assert.equal(new Set(options.map(option => option.value)).size, 52);
+  assert.ok(options.some(option => option.value === "DC" && option.label === "District of Columbia"));
+  assert.ok(options.some(option => option.value === "PR" && option.label === "Puerto Rico"));
+  assert.deepEqual(jobRegions(job({ location: "San Juan, Puerto Rico" })), ["PR"]);
+  assert.deepEqual(jobRegions(job({ location: "San Juan, PR" })), ["PR"]);
+  assert.deepEqual(restoreJobFilters({ regions: ["PR", "Puerto Rico", "florida"] }).regions, ["PR", "FL"]);
+  const listings = [job({ location: "San Juan, PR" }), job({ id: "2", location: "Washington, DC" })];
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, regions: ["Puerto Rico"] }).length, 1);
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, geographies: ["oconus"] })[0].id, "1");
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, geographies: ["conus", "oconus"] }).length, 2);
+});
+test("region shortcuts preserve independent choices, combine and can be adjusted", () => {
+  const groups = US_JOB_REGION_GROUPS.flatMap(group => [...group.states]);
+  assert.equal(groups.length, 51); assert.equal(new Set(groups).size, 51);
+  const south = US_JOB_REGION_GROUPS.find(group => group.label === "South")!;
+  const northeast = US_JOB_REGION_GROUPS.find(group => group.label === "Northeast")!;
+  const selected = toggleJobRegionGroup(["PR"], south.states);
+  assert.ok(selected.includes("DC") && selected.includes("PR") && selected.includes("NC"));
+  assert.ok(toggleJobRegionGroup(selected, northeast.states).includes("NY"));
+  assert.deepEqual(toggleJobRegionGroup(selected, south.states), ["PR"]);
+  assert.deepEqual(restoreJobFilters({ geography: "oconus" }).geographies, ["oconus"]);
+});
+test("employer aliases combine into tags and multiple employers use OR with other filters", () => {
+  const listings = [job({ company_name: "CACI International Inc." }), job({ id: "2", company_name: "CACI" }), job({ id: "3", company_name: "Science Applications International Corporation" }), job({ id: "4", company_name: "MAG Aerospace, LLC", location: "Germany" }), job({ id: "5", company_name: "Other Company", description: "Works with CACI and SAIC" })];
+  const options = uniqueJobEmployerOptions(listings);
+  assert.equal(options.find(option => option.value === "caci")?.count, 2);
+  assert.equal(options.find(option => option.value === "saic")?.count, 1);
+  assert.equal(jobEmployerIdentity({ company_name: "Magazine Group" }).common, false);
+  assert.ok(uniqueJobEmployerOptions([]).some(option => option.value === "mag" && option.count === 0));
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, employers: ["caci", "saic"] }).length, 3);
+  assert.equal(applyJobFilters(listings, { ...DEFAULT_JOB_FILTERS, employers: ["caci", "mag"], regions: ["FL"] }).length, 2);
+  const restored = restoreJobFilters({ employers: ["caci", "caci", 7, "mag"] });
+  assert.deepEqual(restored.employers, ["caci", "mag"]);
+  assert.equal(jobFilterChips(restored, options)[0].label, "Employer: CACI");
 });
 test("source enrichment retains real fields and doesn't alter USAJOBS intake summary", () => {
   const item: USAJobsApiItem = { MatchedObjectDescriptor: { PositionID: "1", PositionTitle: "Engineer", PositionURI: "https://usajobs.gov/job/1", PositionLocationDisplay: "FL", OrganizationName: "Agency", PositionRemuneration: [{ MinimumRange: "80000", MaximumRange: "110000", RateIntervalCode: "Per Year" }], PositionSchedule: [{ Name: "Full-time" }], UserArea: { Details: { JobSummary: "Summary", Education: "Degree required", Requirements: "Active Secret clearance" } } } };
