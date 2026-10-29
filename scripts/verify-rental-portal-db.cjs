@@ -32,7 +32,7 @@ const { randomUUID } = require('node:crypto');
     await db.exec(sql);
     await db.exec(fs.readFileSync('supabase/migrations/20261028002502_rental_auth_provisioning_order.sql','utf8'));
     await db.exec(fs.readFileSync('supabase/migrations/20261028104642_rental_excluded_member_count.sql','utf8'));
-    await db.exec(fs.readFileSync('supabase/migrations/20261029172010_rental_billing_lifecycle.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261029175043_rental_billing_lifecycle.sql','utf8'));
     const after = (await db.query(`select pg_get_functiondef('public.handle_new_user()'::regprocedure) trigger_definition,(select nspacl::text from pg_namespace where nspname='public') grants`)).rows[0];
     assert.deepEqual(after,before,'Existing Auth trigger and shared schema grants are preserved');
     const scope=(await db.query(`select pg_has_role('authenticator','eod_rental','MEMBER') switchable,pg_has_role('eod_rental','authenticated','MEMBER') member`)).rows[0];
