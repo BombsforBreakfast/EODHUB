@@ -10,8 +10,9 @@ import JobAdminDeleteButton from "./JobAdminDeleteButton";
 import JobAdminApplicationsUnderReviewButton from "./JobAdminApplicationsUnderReviewButton";
 import JobApplicationsUnderReviewBadge from "./JobApplicationsUnderReviewBadge";
 import JobStaleReportControl from "./JobStaleReportControl";
+import { formatJobPay, deriveJobFacets, displayJobDescription, FACET_OPTIONS, type FacetJob } from "../../lib/jobFacets";
 
-export type JobModalData = {
+export type JobModalData = FacetJob & {
   id: string;
   title: string | null;
   company_name: string | null;
@@ -92,21 +93,16 @@ export default function JobDetailsModal({
 
   const title = job.title || job.og_title || "Untitled Job";
   const company = job.company_name || job.og_site_name || "Unknown Company";
-  const description = job.description || job.og_description || "";
+  const description = displayJobDescription(job.description || job.og_description);
   const applyUrl = formatExternalUrl(job.apply_url);
   const hasPoc = Boolean(job.poc_name?.trim() || job.poc_email?.trim() || job.poc_phone?.trim());
   const metaParts: string[] = [];
   if (job.location) metaParts.push(job.location);
   if (job.category) metaParts.push(job.category);
   const meta = metaParts.join(" · ");
-  const payText =
-    job.pay_min != null && job.pay_max != null
-      ? `$${job.pay_min}–$${job.pay_max}`
-      : job.pay_min != null
-        ? `From $${job.pay_min}`
-        : job.pay_max != null
-          ? `Up to $${job.pay_max}`
-          : null;
+  const payText = formatJobPay(job);
+  const facets = deriveJobFacets(job);
+  const source = job.filter_source && typeof job.filter_source === "object" ? job.filter_source as Record<string, unknown> : {};
 
   const emptyDescriptionHint = applyUrl
     ? "No description available. Use “Visit site” to view the full listing at the source."
@@ -234,6 +230,10 @@ export default function JobDetailsModal({
           />
 
           <div style={{ padding: "14px 20px 4px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+              {(["relevance", "education", "clearance", "clearanceStatus", "workplace", "employment"] as const).map(key => <span key={key} style={{ fontSize: 12, border: `1px solid ${t.border}`, borderRadius: 12, padding: "4px 8px" }}>{(FACET_OPTIONS[key] as Record<string, string>)[facets[key]]}</span>)}
+            </div>
+            {(source.descriptionIsExcerpt === true || job.source_type === "adzuna") && <p style={{ fontSize: 13, color: t.textMuted }}>The source supplies a description excerpt. Some requirements may be missing here; use “Visit site” to read the full posting.</p>}
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: t.text }}>Job Description</h3>
             <div
               style={{

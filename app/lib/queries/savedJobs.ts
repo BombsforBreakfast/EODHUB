@@ -5,6 +5,8 @@ import { queryKeys } from "../queryKeys";
 export const SAVED_JOBS_STALE_MS = 5 * 60_000;
 
 export type SavedJobRow = {
+  filter_overrides?: unknown;
+  filter_source?: unknown;
   id: string;
   job_id: string;
   title: string | null;
@@ -28,6 +30,10 @@ export type SavedJobRow = {
 };
 
 type RawSavedJob = {
+  filter_overrides?: unknown;
+  filter_source?: unknown;
+  import_country?: string | null;
+  description_is_excerpt?: boolean | null;
   title: string | null;
   company_name: string | null;
   location: string | null;
@@ -59,6 +65,8 @@ export function mapSavedJobRow(row: RawSavedJobRow): SavedJobRow {
   return {
     id: row.id,
     job_id: row.job_id,
+    filter_overrides: job?.filter_overrides,
+    filter_source: { country: job?.import_country, descriptionIsExcerpt: job?.description_is_excerpt, ...(job?.filter_source && typeof job.filter_source === "object" ? job.filter_source : {}) },
     title: job?.title ?? null,
     company_name: job?.company_name ?? null,
     location: job?.location ?? null,
@@ -87,7 +95,7 @@ export async function fetchSavedJobs(
   const { data, error } = await supabase
     .from("saved_jobs")
     .select(
-      "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone)",
+      "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone, filter_overrides, filter_source:import_metadata->filter_source, import_country:import_metadata->>adzuna_country, description_is_excerpt:import_metadata->description_is_excerpt)",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -101,6 +109,8 @@ export function savedJobIdsFromRows(rows: SavedJobRow[] | undefined): Set<string
 }
 
 export function savedJobRowFromJob(job: {
+  filter_overrides?: unknown;
+  filter_source?: unknown;
   id: string;
   title: string | null;
   company_name: string | null;
@@ -123,6 +133,8 @@ export function savedJobRowFromJob(job: {
 }): SavedJobRow {
   return {
     id: `optimistic:${job.id}`,
+    filter_overrides: job.filter_overrides,
+    filter_source: job.filter_source,
     job_id: job.id,
     title: job.title,
     company_name: job.company_name,

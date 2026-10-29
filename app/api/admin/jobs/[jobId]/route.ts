@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { parseFacetOverrides } from "../../../../lib/jobFacets";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const JOB_EDIT_COLUMNS =
-  "id, title, company_name, location, category, description, og_description, apply_url, pay_min, pay_max, clearance, is_approved, source_type";
+  "id, title, company_name, location, category, description, og_description, apply_url, pay_min, pay_max, clearance, is_approved, source_type, filter_overrides";
 
 type JobEditBody = {
+  filter_overrides?: unknown;
   title?: unknown;
   company_name?: unknown;
   location?: unknown;
@@ -78,6 +80,14 @@ function parsePay(value: unknown): number | null {
 
 function normalizeEditPayload(body: JobEditBody): Record<string, unknown> | NextResponse {
   const payload: Record<string, unknown> = {};
+  if ("filter_overrides" in body) {
+    const raw = body.filter_overrides;
+    const parsed = parseFacetOverrides(raw);
+    if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length !== Object.keys(parsed).length) {
+      return NextResponse.json({ error: "Invalid search filter correction." }, { status: 400 });
+    }
+    payload.filter_overrides = parsed;
+  }
 
   if ("title" in body) {
     const title = trimOrNull(body.title);

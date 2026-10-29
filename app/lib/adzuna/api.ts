@@ -9,14 +9,28 @@ export type AdzunaApiJob = {
   id: string;
   title: string;
   company: { display_name: string };
-  location: { display_name: string };
+  location: { display_name: string; area?: string[] };
   description: string;
   redirect_url: string;
   salary_min?: number;
   salary_max?: number;
+  salary_is_predicted?: string | number;
+  contract_type?: string;
+  contract_time?: string;
   created: string;
   category?: { tag?: string; label?: string };
 };
+
+export function adzunaFilterSource(job: AdzunaApiJob, country: string) {
+  const predicted = String(job.salary_is_predicted ?? "");
+  return {
+    country, locationAreas: job.location.area ?? [], descriptionIsExcerpt: true,
+    contractType: job.contract_type ?? null,
+    currency: ({ us: "USD", gb: "GBP", au: "AUD", ca: "CAD", za: "ZAR" } as Record<string, string>)[country] ?? null,
+    payPeriod: "year", payDisclosure: predicted === "0" ? "advertised" : predicted === "1" ? "estimated" : "unknown",
+    employment: job.contract_time === "full_time" ? "full" : job.contract_time === "part_time" ? "part" : job.contract_type === "contract" ? "contract" : "unknown",
+  };
+}
 
 export type AdzunaSearchParams = {
   country?: AdzunaCountryCode;
