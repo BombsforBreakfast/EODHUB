@@ -50,6 +50,25 @@ amount must meet their threshold. Unknown/incomparable pay can be included
 explicitly. Estimated and unconfirmed pay can be excluded. Existing pay fields
 whose period is unconfirmed are labelled rather than guessed from magnitude.
 
+## Incomplete location matching
+
+`resolveJobLocation` combines explicit source hierarchy with the public Census
+2025 county/place lookup. City and county candidates are intersected; unique
+counties also resolve neighborhoods and installation names. Two verified
+city/county pairs and Fort Bragg/Cumberland County cover Gazetteer naming gaps.
+Explicit state hints in a job title can resolve an otherwise ambiguous location.
+Conflicting title and location states are flagged for review instead of silently
+selecting either. Duplicate/broad locations remain unspecified. Source location
+text stays visible; cards and details label inferred or conflicting matches.
+
+This is computed locally from existing listings and also supports the map
+prototype; it does not alter imports, job records, approval, or access. The map
+remains a review mockup. Rebuild the generated lookup with
+`python scripts/build-job-location-index.py <archive directory>` using the
+`2025_Gaz_counties_national.zip` and `2025_Gaz_place_national.zip` files from
+https://www2.census.gov/geo/docs/maps-data/data/gazetteer/2025_Gazetteer/.
+The output records both archive SHA-256 hashes for reproducibility.
+
 ## Import enrichment
 
 USAJOBS now retains Education, Requirements, Evaluations, HowToApply and

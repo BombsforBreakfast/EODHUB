@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deriveJobFacets, formatJobPay, parseFacetOverrides } from "../app/lib/jobFacets";
-import { applyJobFilters, DEFAULT_JOB_FILTERS, jobFilterChips, jobRegions, restoreJobFilters, uniqueJobRegionOptions, US_JOB_REGION_GROUPS, toggleJobRegionGroup, type JobListItem } from "../app/lib/jobFilters";
+import { applyJobFilters, DEFAULT_JOB_FILTERS, jobFilterChips, jobRegions, resolveJobLocation, restoreJobFilters, uniqueJobRegionOptions, US_JOB_REGION_GROUPS, toggleJobRegionGroup, type JobListItem } from "../app/lib/jobFilters";
 import { jobEmployerIdentity, uniqueJobEmployerOptions } from "../app/lib/jobEmployers";
 import { fetchApprovedJobs } from "../app/lib/queries/jobs";
 import { adzunaFilterSource } from "../app/lib/adzuna/api";
@@ -39,7 +39,7 @@ test("admin corrections override source; malformed values are ignored", () => {
 test("location handles states, zip codes, multiple locations, county-only unknowns and source hierarchy", () => {
   assert.deepEqual(jobRegions(job({ location: "Washington, D.C., US" })), ["DC"]);
   assert.deepEqual(jobRegions(job({ location: "Pensacola, FL 32501" })), ["FL"]);
-  assert.deepEqual(jobRegions(job({ location: "Fort Belvoir, Fairfax County" })), []);
+  assert.deepEqual(jobRegions(job({ location: "Fort Belvoir, Fairfax County" })), ["VA"]);
   assert.deepEqual(jobRegions(job({ location: "Fort Belvoir, Fairfax County", filter_source: { locationAreas: ["US", "Virginia", "Fairfax County"] } })), ["VA"]);
   assert.deepEqual(jobRegions(job({ location: "Berlin, Germany; Norfolk, VA" })), ["Germany", "VA"]);
   const jobs = [job(), job({ id: "2", location: null }), job({ id: "3", location: "Honolulu, HI" })];
@@ -134,6 +134,29 @@ test("source enrichment retains real fields and doesn't alter USAJOBS intake sum
   assert.equal(usajobsFilterData(item).filter_source.payPeriod, "year");
   const source = adzunaFilterSource({ id: "1", title: "Engineer", description: "Excerpt", redirect_url: "https://adzuna.com/details/1", created: "", company: { display_name: "Acme" }, location: { display_name: "Fairfax County", area: ["US", "Virginia"] }, salary_is_predicted: 1, contract_time: "full_time" }, "us");
   assert.equal(source.payDisclosure, "estimated"); assert.equal(source.currency, "USD"); assert.deepEqual(source.locationAreas, ["US", "Virginia"]);
+});
+test("city/county and installation evidence resolves incomplete imported locations", () => {
+  for (const [location, state] of [["Fort Belvoir, Fairfax County", "VA"], ["Fort Myer, Arlington County", "VA"], ["Crystal, Arlington County", "VA"], ["Trade, Alexandria City", "VA"], ["Tampa, Hillsborough County", "FL"], ["San Diego, San Diego County", "CA"], ["Fort Leonard Wood, Pulaski County", "MO"], ["Scott Air Force Base, Saint Clair County", "IL"], ["Wahiawa, Honolulu", "HI"], ["Fort Bragg, Cumberland County", "NC"], ["Rosemary Beach, Walton County", "FL"], ["Columbus, Franklin County", "OH"]]) {
+    assert.deepEqual(jobRegions(job({ location })), [state], location);
+  }
+  assert.deepEqual(jobRegions(job({ location: "Honolulu, HI (On-site)" })), ["HI"]);
+  assert.deepEqual(jobRegions(job({ location: "McLean, VA (On-site)" })), ["VA"]);
+  assert.deepEqual(jobRegions(job({ location: "Arlington County" })), ["VA"]);
+  assert.deepEqual(jobRegions(job({ location: "Orange County" })), []);
+});
+test("duplicate places, broad areas and foreign source markets are not guessed", () => {
+  assert.deepEqual(jobRegions(job({ location: "Huntsville, Madison County" })), []);
+  assert.deepEqual(jobRegions(job({ location: "Springfield" })), []);
+  assert.deepEqual(jobRegions(job({ location: "International" })), []);
+  assert.deepEqual(jobRegions(job({ location: "Tampa, Hillsborough County", filter_source: { country: "gb" } })), ["United Kingdom"]);
+});
+test("explicit title hints help but conflicting title and field locations stay flagged", () => {
+  assert.deepEqual(jobRegions(job({ title: "Operational Readiness Specialist - US – VA, Fort Belvoir", location: "US" })), ["VA"]);
+  assert.deepEqual(jobRegions(job({ title: "Instructor in ordnance and safety", location: null })), []);
+  const conflict = resolveJobLocation(job({ title: "UXO Technician II - Radford, VA", location: "West Chester, Chester County" }));
+  assert.equal(conflict.status, "conflict"); assert.deepEqual(conflict.regions, []);
+  assert.deepEqual([...conflict.candidates].sort(), ["PA", "VA"]);
+  assert.equal(applyJobFilters([job({ title: "Job in Aberdeen, MD", location: "Niceville, Okaloosa County" })], { ...DEFAULT_JOB_FILTERS, regions: ["FL"] }).length, 0);
 });
 test("board queries beyond 500 with stable ordering; feed remains limited; errors do not return partial board", async () => {
   const all = Array.from({ length: 630 }, (_, i) => ({ ...job(), id: String(i) }));

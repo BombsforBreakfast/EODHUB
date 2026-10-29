@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useTheme } from "../../lib/ThemeContext";
-import type { JobListItem } from "../../lib/jobFilters";
+import { jobLocationNote, type JobListItem } from "../../lib/jobFilters";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
 import JobAdminDeleteButton from "./JobAdminDeleteButton";
@@ -51,6 +51,7 @@ export default function JobGridCard({
   const hasSalary = job.pay_min !== null || job.pay_max !== null;
   const facets = job.facets ?? deriveJobFacets(job);
   const employer = jobEmployerIdentity(job);
+  const locationNote = jobLocationNote(job);
   const postedLabel = job.created_at
     ? `Posted ${new Date(job.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
     : null;
@@ -74,6 +75,7 @@ export default function JobGridCard({
           <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
             {(job.location || "Location not listed") + " · " + (job.category || "General")}
           </div>
+          {locationNote && <div style={{ marginTop: 4, color: t.textMuted, fontSize: 12 }}>{locationNote}</div>}
           {postedLabel && (
             <div style={{ marginTop: 4, color: t.textFaint, fontSize: 12, fontWeight: 600 }}>
               {postedLabel}

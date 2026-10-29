@@ -1,5 +1,6 @@
 import { FACET_OPTIONS, deriveJobFacets, jobEmploymentTypes, plainJobText, type FacetKey, type JobFacets } from "./jobFacets";
 import { employerFilterLabel, jobEmployerIdentity, type JobEmployerOption } from "./jobEmployers";
+import { cleanJobLocation, inferUsLocation, type JobLocationResolution } from "./jobLocationInference";
 
 export type JobListItem = {
   id: string;
@@ -175,7 +176,7 @@ export function resolveRegionFilter(value: string): string {
  */
 export function extractRegion(location: string | null): string | null {
   if (!location) return null;
-  const loc = location.trim();
+  const loc = cleanJobLocation(location);
   if (!loc) return null;
 
   if (/^remote$/i.test(loc)) return "Remote";
@@ -216,17 +217,51 @@ const KNOWN_COUNTRIES = new Map([
 KNOWN_COUNTRIES.set("uk", "United Kingdom");
 KNOWN_COUNTRIES.set("uae", "United Arab Emirates");
 
-export function jobRegions(job: JobListItem): string[] {
+/** Recognize explicit city/state or US-state hints in titles, not arbitrary
+ * two-letter words (e.g. IN / OR in ordinary prose). */
+function titleLocationStates(title: string | null | undefined): string[] {
+  const matches = [...(title ?? "").matchAll(/(?:,\s*|\bUS[A]?\s*[-–—]\s*)([A-Z]{2})(?=\s*(?:$|[,()\-–—]))/g)];
+  return [...new Set(matches.map(match => match[1]).filter(state => isUsStateAbbr(state) || state === "PR"))];
+}
+
+type JobLocationInput = { location?: string | null; title?: string | null; og_title?: string | null; filter_source?: unknown };
+
+export function resolveJobLocation(job: JobLocationInput): JobLocationResolution {
   const source = job.filter_source && typeof job.filter_source === "object" ? job.filter_source as Record<string, unknown> : {};
   const areas = Array.isArray(source.locationAreas) ? source.locationAreas.filter((a): a is string => typeof a === "string") : [];
   const locations = [...areas, ...(job.location ?? "").split(/;|\s+\|\s+/)];
-  const regions = [...new Set(locations.map(extractRegion).filter((v): v is string => !!v && v !== "Remote"))];
+  let regions = [...new Set(locations.map(extractRegion).filter((v): v is string => !!v && v !== "Remote"))];
+  const explicit = regions.length > 0;
+  const canInferUs = !source.country || source.country === "us";
+  const guesses = !explicit && canInferUs ? (job.location ?? "").split(/;|\s+\|\s+/).map(inferUsLocation) : [];
+  const possible = [...new Set(guesses.flatMap(guess => guess.candidates))];
+  const titleStates = canInferUs ? titleLocationStates(job.title || job.og_title) : [];
+  if (!explicit) regions = [...new Set(guesses.flatMap(guess => guess.state ? [guess.state] : []))];
+  const fieldStates = regions.filter(state => isUsStateAbbr(state) || state === "PR");
+  if (titleStates.length && fieldStates.length && !titleStates.some(state => fieldStates.includes(state))) {
+    return { regions: [], status: "conflict", candidates: [...new Set([...fieldStates, ...titleStates])] };
+  }
+  if (!regions.length && titleStates.length) {
+    if (possible.length && !titleStates.some(state => possible.includes(state))) return { regions: [], status: "conflict", candidates: [...new Set([...possible, ...titleStates])] };
+    regions = titleStates;
+  }
+  const status = regions.length ? explicit ? "explicit" : "inferred" : "unspecified";
   // Prefer state-level choices to a generic country when both are present.
-  if (regions.some(isUsStateAbbr)) return regions.filter(r => r !== "United States");
-  if (!regions.length && source.country === "us") return ["United States"];
-  if (!regions.length && typeof source.country === "string") return [({ gb: "United Kingdom", au: "Australia", ca: "Canada", za: "South Africa" } as Record<string, string>)[source.country] ?? ""].filter(Boolean);
-  if (!regions.length && /^(?:united states|usa|us)$/i.test((job.location ?? "").trim())) return ["United States"];
-  return regions;
+  if (regions.some(isUsStateAbbr)) regions = regions.filter(r => r !== "United States");
+  if (!regions.length && source.country === "us") regions = ["United States"];
+  if (!regions.length && typeof source.country === "string") regions = [({ gb: "United Kingdom", au: "Australia", ca: "Canada", za: "South Africa" } as Record<string, string>)[source.country] ?? ""].filter(Boolean);
+  if (!regions.length && /^(?:united states|usa|us)$/i.test((job.location ?? "").trim())) regions = ["United States"];
+  return { regions, status, candidates: possible };
+}
+
+export function jobRegions(job: JobListItem): string[] {
+  return resolveJobLocation(job).regions;
+}
+
+export function jobLocationNote(job: JobLocationInput): string | null {
+  const resolved = resolveJobLocation(job);
+  if (resolved.status === "conflict") return "Location details conflict — verify with the employer";
+  return resolved.status === "inferred" ? `Location matched to ${resolved.regions.map(regionDisplayLabel).join(" / ")}` : null;
 }
 
 /**
