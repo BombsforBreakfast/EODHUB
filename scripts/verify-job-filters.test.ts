@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { deriveJobFacets, formatJobPay, parseFacetOverrides } from "../app/lib/jobFacets";
-import { applyJobFilters, DEFAULT_JOB_FILTERS, jobRegions, restoreJobFilters, type JobListItem } from "../app/lib/jobFilters";
+import { applyJobFilters, DEFAULT_JOB_FILTERS, jobFilterChips, jobRegions, restoreJobFilters, type JobListItem } from "../app/lib/jobFilters";
 import { fetchApprovedJobs } from "../app/lib/queries/jobs";
 import { adzunaFilterSource } from "../app/lib/adzuna/api";
 import { extractUSAJobsFullDescription, extractUSAJobsSummary, usajobsFilterData, type USAJobsApiItem } from "../app/lib/usajobs/api";
@@ -75,6 +75,18 @@ test("posting window and corrupt stored preferences", () => {
   assert.equal(applyJobFilters([job()], { ...DEFAULT_JOB_FILTERS, postedWithin: "7" }, Date.parse("2026-11-10")).length, 0);
   assert.equal(restoreJobFilters({ minimumPay: "NaN", regions: [5, "FL"], selections: { relevance: ["direct", "evil"] } }).minimumPay, "");
   assert.deepEqual(restoreJobFilters({ regions: [5, "FL"] }).regions, ["FL"]);
+});
+test("retired work arrangement preferences cannot hide jobs or leave active chips", () => {
+  const jobs = [job({ filter_source: { workplace: "remote" } }), job({ id: "2", filter_source: { workplace: "onsite" } }), job({ id: "3" })];
+  for (const workplace of ["remote", "hybrid", "onsite", "unknown"]) {
+    const legacy = { ...DEFAULT_JOB_FILTERS, selections: { workplace: [workplace] } };
+    assert.equal(applyJobFilters(jobs, legacy).length, 3);
+    assert.deepEqual(jobFilterChips(legacy), []);
+    assert.equal(restoreJobFilters(legacy).selections?.workplace, undefined);
+  }
+  const retained = restoreJobFilters({ ...DEFAULT_JOB_FILTERS, selections: { workplace: ["remote"], relevance: ["direct"] } });
+  assert.deepEqual(retained.selections, { relevance: ["direct"] });
+  assert.equal(applyJobFilters([...jobs, job({ id: "4", title: "Program Manager" })], retained).length, 3);
 });
 test("source enrichment retains real fields and doesn't alter USAJOBS intake summary", () => {
   const item: USAJobsApiItem = { MatchedObjectDescriptor: { PositionID: "1", PositionTitle: "Engineer", PositionURI: "https://usajobs.gov/job/1", PositionLocationDisplay: "FL", OrganizationName: "Agency", PositionRemuneration: [{ MinimumRange: "80000", MaximumRange: "110000", RateIntervalCode: "Per Year" }], PositionSchedule: [{ Name: "Full-time" }], UserArea: { Details: { JobSummary: "Summary", Education: "Degree required", Requirements: "Active Secret clearance" } } } };
