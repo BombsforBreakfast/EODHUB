@@ -12,6 +12,9 @@ export function jobImportExclusionReason(title: string): string | null {
   if (/\bm[.\s-]*d[.\s-]*d[.\s-]*u\b/i.test(normalized)) return "MDDU role";
   if (/\bj[\s/-]*3[\s/-]*9\b/i.test(normalized)) return "J39 role";
   if (
+    /\b(?:i\.?t\.?|information[\s-]+technology)(?:\s*\(\s*i\.?t\.?\s*\))?[\s/-]+(?:(?:customer|technical|support|cybersecurity|security|network|systems?|operations|services?)[\s/-]+)*specialists?\b/i.test(normalized)
+  ) return "IT specialist role";
+  if (
     /\b(?:a?emt|nremt)s?\b/i.test(normalized) ||
     /\be[.\s]m[.\s]t\b/i.test(normalized) ||
     /\bemergency[\s/-]+medical[\s/-]+(?:technician|tech)s?\b/i.test(normalized) ||
