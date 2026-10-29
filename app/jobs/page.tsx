@@ -28,6 +28,7 @@ import {
 } from "../lib/jobFilters";
 import AdvancedJobFilters from "../components/jobs/AdvancedJobFilters";
 import { deriveJobFacets } from "../lib/jobFacets";
+import { uniqueJobEmployerOptions } from "../lib/jobEmployers";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
@@ -341,6 +342,7 @@ export default function JobsPage() {
   }, [userId, jobsQuery.isSuccess, jobsQuery.isError]);
 
   const regionOptions = useMemo(() => uniqueJobRegionOptions(jobs), [jobs]);
+  const employerOptions = useMemo(() => uniqueJobEmployerOptions(jobs), [jobs]);
 
   const visibleJobs = useMemo(() => {
     const filtered = !canUseJobFilters ? jobs : applyJobFilters(jobs, filters);
@@ -418,7 +420,7 @@ export default function JobsPage() {
         </div>
       </div>
 
-      {canUseJobFilters && <AdvancedJobFilters value={filters} onChange={changeFilters} regions={regionOptions} count={visibleJobs.length} total={jobs.length} loading={loading} />}
+      {canUseJobFilters && <AdvancedJobFilters value={filters} onChange={changeFilters} regions={regionOptions} employers={employerOptions} count={visibleJobs.length} total={jobs.length} loading={loading} />}
       <label style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, fontSize: 13 }}>Sort jobs
         <select aria-label="Sort jobs" value={jobSort} onChange={e => { setJobSort(e.target.value as JobSort); setPage(1); }} style={{ padding: 8, background: t.input, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8 }}>
           <option value="recent">Newest added</option><option value="az">Title A–Z</option><option value="za">Title Z–A</option>

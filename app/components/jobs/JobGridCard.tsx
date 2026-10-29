@@ -11,6 +11,7 @@ import JobStaleReportControl from "./JobStaleReportControl";
 import JobApplicationsUnderReviewBadge from "./JobApplicationsUnderReviewBadge";
 import type { JobModalData } from "./JobDetailsModal";
 import { deriveJobFacets, FACET_OPTIONS, formatJobPay, plainJobText } from "../../lib/jobFacets";
+import { jobEmployerIdentity } from "../../lib/jobEmployers";
 
 type Props = {
   job: JobListItem;
@@ -49,6 +50,7 @@ export default function JobGridCard({
   const [imageAvailable, setImageAvailable] = useState(() => Boolean(job.og_image?.trim()));
   const hasSalary = job.pay_min !== null || job.pay_max !== null;
   const facets = job.facets ?? deriveJobFacets(job);
+  const employer = jobEmployerIdentity(job);
   const postedLabel = job.created_at
     ? `Posted ${new Date(job.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
     : null;
@@ -89,7 +91,7 @@ export default function JobGridCard({
           )}
 
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-            {[FACET_OPTIONS.relevance[facets.relevance], ...(facets.education !== "unknown" ? [FACET_OPTIONS.education[facets.education]] : []), ...(facets.workplace !== "unknown" ? [FACET_OPTIONS.workplace[facets.workplace]] : [])].map(label => <span key={label} style={{ fontSize: 11, border: `1px solid ${t.border}`, borderRadius: 12, padding: "3px 7px", color: t.textMuted }}>{label}</span>)}
+            {[...(employer.common ? [employer.label] : []), FACET_OPTIONS.relevance[facets.relevance], ...(facets.education !== "unknown" ? [FACET_OPTIONS.education[facets.education]] : []), ...(facets.workplace !== "unknown" ? [FACET_OPTIONS.workplace[facets.workplace]] : [])].map(label => <span key={label} style={{ fontSize: 11, border: `1px solid ${t.border}`, borderRadius: 12, padding: "3px 7px", color: t.textMuted }}>{label}</span>)}
           </div>
           {job.description && (
             <div style={{ marginTop: 8, color: t.textMuted, fontSize: 13, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>

@@ -1,4 +1,5 @@
 import { FACET_OPTIONS, deriveJobFacets, jobEmploymentTypes, plainJobText, type FacetKey, type JobFacets } from "./jobFacets";
+import { employerFilterLabel, jobEmployerIdentity, type JobEmployerOption } from "./jobEmployers";
 
 export type JobListItem = {
   id: string;
@@ -36,6 +37,8 @@ export type JobFilterState = {
   salaryMin: SalaryMin | "";
   regions?: string[];
   geography?: "" | "conus" | "oconus";
+  geographies?: ("conus" | "oconus")[];
+  employers?: string[];
   includeUnknownLocation?: boolean;
   excludeKeywords?: string;
   searchScope?: "all" | "title";
@@ -49,7 +52,7 @@ export type JobFilterState = {
 };
 
 export const DEFAULT_JOB_FILTERS: JobFilterState = {
-  keyword: "", locationRegion: "", salaryMin: "", regions: [], geography: "",
+  keyword: "", locationRegion: "", salaryMin: "", regions: [], geography: "", geographies: [], employers: [],
   includeUnknownLocation: false, excludeKeywords: "", searchScope: "all", selections: {},
   minimumPay: "", payPeriod: "year", payMatch: "range", includeUnknownPay: false,
   advertisedPayOnly: false, postedWithin: "",
@@ -57,17 +60,19 @@ export const DEFAULT_JOB_FILTERS: JobFilterState = {
 
 /** Validate browser-saved preferences rather than trusting localStorage shape. */
 export function restoreJobFilters(value: unknown): JobFilterState {
-  const out = { ...DEFAULT_JOB_FILTERS, regions: [] as string[], selections: {} as Partial<Record<FacetKey, string[]>> };
+  const out = { ...DEFAULT_JOB_FILTERS, regions: [] as string[], geographies: [] as ("conus" | "oconus")[], employers: [] as string[], selections: {} as Partial<Record<FacetKey, string[]>> };
   if (!value || typeof value !== "object") return out;
   const input = value as Record<string, unknown>;
   for (const key of ["keyword", "excludeKeywords", "minimumPay"] as const) if (typeof input[key] === "string") out[key] = input[key].slice(0, 300);
   if (out.minimumPay && (!Number.isFinite(Number(out.minimumPay)) || Number(out.minimumPay) < 0)) out.minimumPay = "";
-  if (Array.isArray(input.regions)) out.regions = input.regions.filter((v): v is string => typeof v === "string" && v.length < 100).slice(0, 100);
+  if (Array.isArray(input.regions)) out.regions = [...new Set(input.regions.filter((v): v is string => typeof v === "string" && v.length < 100).slice(0, 100).map(resolveRegionFilter))];
+  if (Array.isArray(input.employers)) out.employers = [...new Set(input.employers.filter((v): v is string => typeof v === "string" && v.length < 200).slice(0, 100))];
   for (const key of ["includeUnknownLocation", "includeUnknownPay", "advertisedPayOnly"] as const) out[key] = input[key] === true;
   if (input.searchScope === "title") out.searchScope = "title";
   if (input.payPeriod === "hour") out.payPeriod = "hour";
   if (input.payMatch === "starting") out.payMatch = "starting";
-  if (input.geography === "conus" || input.geography === "oconus") out.geography = input.geography;
+  if (Array.isArray(input.geographies)) out.geographies = [...new Set(input.geographies.filter((v): v is "conus" | "oconus" => v === "conus" || v === "oconus"))];
+  else if (input.geography === "conus" || input.geography === "oconus") out.geographies = [input.geography];
   if (input.postedWithin === "7" || input.postedWithin === "14") out.postedWithin = input.postedWithin;
   if (input.selections && typeof input.selections === "object") {
     for (const [key, values] of Object.entries(input.selections)) {
@@ -102,6 +107,7 @@ const STATE_NAME_TO_ABBR: Record<string, string> = {
   "vermont": "VT", "virginia": "VA", "washington": "WA", "west virginia": "WV",
   "wisconsin": "WI", "wyoming": "WY",
   "district of columbia": "DC", "washington d.c.": "DC", "washington dc": "DC",
+  "puerto rico": "PR",
 };
 
 const ABBR_TO_STATE_NAME: Record<string, string> = Object.fromEntries(
@@ -114,6 +120,18 @@ export type JobRegionOption = {
   label: string;
 };
 
+/** Census region shortcuts. Puerto Rico remains individually selectable. */
+export const US_JOB_REGION_GROUPS = [
+  { label: "Northeast", states: ["CT", "ME", "MA", "NH", "RI", "VT", "NJ", "NY", "PA"] },
+  { label: "Midwest", states: ["IL", "IN", "MI", "OH", "WI", "IA", "KS", "MN", "MO", "NE", "ND", "SD"] },
+  { label: "South", states: ["DE", "DC", "FL", "GA", "MD", "NC", "SC", "VA", "WV", "AL", "KY", "MS", "TN", "AR", "LA", "OK", "TX"] },
+  { label: "West", states: ["AZ", "CO", "ID", "MT", "NV", "NM", "UT", "WY", "AK", "CA", "HI", "OR", "WA"] },
+] as const;
+
+export function toggleJobRegionGroup(selected: string[], members: readonly string[]): string[] {
+  return members.every(value => selected.includes(value)) ? selected.filter(value => !members.includes(value)) : [...new Set([...selected, ...members])];
+}
+
 // Phrases that mean "this segment is just the country suffix for a US address".
 const US_SUFFIXES = new Set(["united states", "usa", "us", "u.s.", "u.s.a."]);
 
@@ -124,6 +142,8 @@ export function isUsStateAbbr(key: string): boolean {
 /** Display label for a canonical region key (US abbr → full state name). */
 export function regionDisplayLabel(key: string): string {
   const upper = key.toUpperCase();
+  if (upper === "DC") return "District of Columbia";
+  if (upper === "PR") return "Puerto Rico";
   if (isUsStateAbbr(upper)) {
     const name = ABBR_TO_STATE_NAME[upper];
     if (name) {
@@ -139,6 +159,7 @@ export function resolveRegionFilter(value: string): string {
   if (!trimmed) return "";
 
   const upper = trimmed.replace(/\s/g, "").toUpperCase();
+  if (upper === "PR") return "PR";
   if (/^[A-Z]{2}$/.test(upper) && US_STATE_ABBRS.has(upper)) return upper;
 
   const abbr = STATE_NAME_TO_ABBR[trimmed.toLowerCase()];
@@ -172,6 +193,7 @@ export function extractRegion(location: string | null): string | null {
 
     // 2-letter US state abbreviation.
     const upper = part.replace(/\s/g, "").toUpperCase();
+    if (upper === "PR") return "PR";
     if (/^[A-Z]{2}$/.test(upper) && US_STATE_ABBRS.has(upper)) return upper;
 
     // Full US state name → abbreviation.
@@ -209,10 +231,11 @@ export function jobRegions(job: JobListItem): string[] {
 
 /**
  * Build sorted location dropdown options: US states (A–Z by full name), then international (A–Z).
- * Only regions present in the current job list are included.
+ * All 50 states, DC and Puerto Rico are always included. Other locations come
+ * from the active inventory; a zero-listing state stays selectable.
  */
 export function uniqueJobRegionOptions(jobs: JobListItem[]): JobRegionOption[] {
-  const regions = new Set<string>();
+  const regions = new Set<string>([...US_STATE_ABBRS, "PR"]);
   for (const job of jobs) {
     for (const region of jobRegions(job)) regions.add(region);
   }
@@ -222,7 +245,7 @@ export function uniqueJobRegionOptions(jobs: JobListItem[]): JobRegionOption[] {
 
   for (const value of regions) {
     const option = { value, label: regionDisplayLabel(value) };
-    if (isUsStateAbbr(value)) usStates.push(option);
+    if (isUsStateAbbr(value) || value === "PR") usStates.push(option);
     else international.push(option);
   }
 
@@ -249,12 +272,14 @@ export function searchTerms(value: string): string[] {
 export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState, now = Date.now()): JobListItem[] {
   const keywords = searchTerms(filters.keyword);
   const excluded = searchTerms(filters.excludeKeywords ?? "");
-  const selectedRegions = filters.regions?.length ? filters.regions : filters.locationRegion ? [resolveRegionFilter(filters.locationRegion)] : [];
+  const selectedRegions = filters.regions?.length ? filters.regions.map(resolveRegionFilter) : filters.locationRegion ? [resolveRegionFilter(filters.locationRegion)] : [];
+  const geographies = filters.geographies?.length ? filters.geographies : filters.geography ? [filters.geography] : [];
   const minimum = Number(filters.minimumPay || filters.salaryMin || 0);
   return jobs.filter(job => {
     const facets = job.facets ?? deriveJobFacets(job);
     const haystack = plainJobText(filters.searchScope === "title" ? job.title || job.og_title : [job.title, job.og_title, job.description, job.og_description, job.company_name, job.category, job.clearance].filter(Boolean).join(" ")).toLowerCase();
     if (!keywords.every(word => haystack.includes(word)) || excluded.some(word => haystack.includes(word))) return false;
+    if (filters.employers?.length && !filters.employers.includes(jobEmployerIdentity(job).value)) return false;
     for (const [key, values] of Object.entries(filters.selections ?? {})) {
       // Ignore legacy preferences even before stored filters are restored.
       if (key === "workplace") continue;
@@ -266,9 +291,9 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState, no
     }
     const regions = jobRegions(job);
     if (selectedRegions.length && !regions.some(r => selectedRegions.includes(r)) && !(filters.includeUnknownLocation && regions.length === 0)) return false;
-    if (filters.geography) {
+    if (geographies.length) {
       const conus = (r: string) => isUsStateAbbr(r) && r !== "AK" && r !== "HI";
-      const matches = filters.geography === "conus" ? regions.some(conus) : regions.some(r => !conus(r) && r !== "United States");
+      const matches = geographies.some(geography => geography === "conus" ? regions.some(conus) : regions.some(r => !conus(r) && r !== "United States"));
       if (!matches && !(filters.includeUnknownLocation && (regions.length === 0 || regions.every(r => r === "United States")))) return false;
     }
     if (filters.advertisedPayOnly && facets.payDisclosure !== "advertised") return false;
@@ -289,13 +314,15 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState, no
   });
 }
 
-export function jobFilterChips(filters: JobFilterState): { label: string; clear: Partial<JobFilterState> }[] {
+export function jobFilterChips(filters: JobFilterState, employers: JobEmployerOption[] = []): { label: string; clear: Partial<JobFilterState> }[] {
   const chips: { label: string; clear: Partial<JobFilterState> }[] = [];
   if (filters.keyword.trim()) chips.push({ label: `Search: ${filters.keyword}`, clear: { keyword: "" } });
   if (filters.searchScope === "title") chips.push({ label: "Search titles only", clear: { searchScope: "all" } });
   if (filters.excludeKeywords?.trim()) chips.push({ label: `Exclude: ${filters.excludeKeywords}`, clear: { excludeKeywords: "" } });
   for (const region of filters.regions ?? []) chips.push({ label: regionDisplayLabel(region), clear: { regions: filters.regions?.filter(r => r !== region) } });
-  if (filters.geography) chips.push({ label: filters.geography.toUpperCase(), clear: { geography: "" } });
+  const geographies = filters.geographies?.length ? filters.geographies : filters.geography ? [filters.geography] : [];
+  for (const geography of geographies) chips.push({ label: geography.toUpperCase(), clear: { geography: "", geographies: geographies.filter(value => value !== geography) } });
+  for (const employer of filters.employers ?? []) chips.push({ label: `Employer: ${employerFilterLabel(employer, employers)}`, clear: { employers: filters.employers?.filter(value => value !== employer) } });
   for (const [key, values] of Object.entries(filters.selections ?? {})) {
     if (key === "workplace") continue;
     for (const value of values ?? []) {
