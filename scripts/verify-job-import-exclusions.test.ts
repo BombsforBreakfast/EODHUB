@@ -54,6 +54,7 @@ test("intern titles are excluded across all importers without matching internati
 
 test("newly excluded role titles are blocked across all importers", () => {
   const cases: Array<[string, string[]]> = [
+    ["MDDU role", ["MDDU", "mddu technician", "MDDU - EOD Operations", "CBRN MDDU Specialist", "M.D.D.U. Coordinator", "M D D U Operator", "MDDU/UAS Support", "M-D-D-U Technician"]],
     ["EMS role", ["EMS", "EMS Lieutenant - CBRN", "E.M.S. Instructor", "E M S Technician - EOD Range", "Emergency Medical Services Director", "Emergency-Medical-Service Supervisor", "Emergency Medical Svcs Coordinator", "EOD / EMS Response Specialist"]],
     ["Sheriff role", ["Sheriff", "Deputy Sheriff", "Sheriff's Deputy", "Sheriff’s Deputy - Bomb Squad", "SHERIFFS DEPUTY - EOD", "Deputy-Sheriff Trainee", "Undersheriff", "Under-Sheriff", "Sheriff - UAS Pilot"]],
     ["Decontamination specialist role", ["Decontamination Specialist", "CBRN DECONTAMINATION SPECIALISTS", "Senior Decontamination-Specialist", "Decontamination Specialist - EOD Range"]],
@@ -84,7 +85,7 @@ test("newly excluded role titles are blocked across all importers", () => {
 });
 
 test("relevant specialist roles remain eligible when excluded roles are mentioned only in the description", () => {
-  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses, EMS, emergency medical services, sheriff's deputies and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
+  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses, EMS, MDDU, emergency medical services, sheriff's deputies and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
   for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Specialist", "EOD Technician ($40/hr)", "UXO Technician - $40 per hr"]) {
     const input = { title, description: context, companyName: "EOD employer" };
     assert.equal(jobImportExclusionReason(title), null, title);

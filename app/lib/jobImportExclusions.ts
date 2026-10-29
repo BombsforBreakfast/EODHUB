@@ -9,6 +9,7 @@ export function jobImportExclusionReason(title: string): string | null {
   if (/\bhuman[\s-]+resources?\b/i.test(normalized) || /\bhr\b/i.test(withoutHourlyRates)) return "Human resources role";
   if (/\bbudget(?:s|ing|ary|ed)?\b/i.test(normalized)) return "Budget role";
   if (/\bdecontamination[\s/-]+specialists?\b/i.test(normalized)) return "Decontamination specialist role";
+  if (/\bm[.\s-]*d[.\s-]*d[.\s-]*u\b/i.test(normalized)) return "MDDU role";
   if (
     /\b(?:a?emt|nremt)s?\b/i.test(normalized) ||
     /\be[.\s]m[.\s]t\b/i.test(normalized) ||
