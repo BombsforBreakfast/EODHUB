@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { filterRememberedJobs } from "../../lib/server/jobImportMemory";
 import { createClient } from "@supabase/supabase-js";
 import { detectLinkedInCategory, scoreLinkedInJob } from "../../lib/linkedin/relevance";
 import {
@@ -150,6 +151,14 @@ export async function POST(req: NextRequest) {
     candidates.push(candidate);
   }
 
+  let remembered;
+  try {
+    remembered = await filterRememberedJobs(supabase, candidates, candidate => candidate);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Job memory unavailable" }, { status: 503 });
+  }
+  candidates.splice(0, candidates.length, ...remembered.candidates);
+  skipped += remembered.skipped;
   const linkedinIds = candidates.map((c) => c.linkedinJobId);
   const existingByLinkedInId = new Map<
     string,
@@ -177,7 +186,7 @@ export async function POST(req: NextRequest) {
 
   const errors: string[] = [];
   let imported = 0;
-  let refreshed = 0;
+  let refreshed = remembered.refreshed;
   const importedTitles: string[] = [];
   const inserts: Record<string, unknown>[] = [];
   const updates: Record<string, unknown>[] = [];

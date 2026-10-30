@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { deleteJobPermanently } from "@/app/lib/server/deleteJobPermanently";
+import { removeJobWithImportMemory } from "@/app/lib/server/removeJobWithImportMemory";
 
 export async function DELETE(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -39,7 +39,7 @@ export async function DELETE(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await deleteJobPermanently(adminClient, jobId);
+  const result = await removeJobWithImportMemory(adminClient, jobId);
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }

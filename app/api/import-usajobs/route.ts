@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { filterRememberedJobs } from "../../lib/server/jobImportMemory";
 import { createClient } from "@supabase/supabase-js";
 import {
   extractUSAJobsSummary,
@@ -241,6 +242,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  let remembered;
+  try {
+    remembered = await filterRememberedJobs(supabase, candidates, candidate => ({ ...candidate, companyName: candidate.orgName }));
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Job memory unavailable" }, { status: 503 });
+  }
+  candidates.splice(0, candidates.length, ...remembered.candidates);
+  skipped += remembered.skipped;
   const lookupUrls = [...new Set(candidates.flatMap((c) => usajobsUrlVariants(c.positionId)))];
   const existingByPositionId = new Map<string, { id: string; is_rejected: boolean; description: string | null; import_metadata: Record<string, unknown> | null; pay_min: number | null; pay_max: number | null; clearance: string | null }>();
 
@@ -270,7 +279,7 @@ export async function GET(req: NextRequest) {
   }
 
   let imported = 0;
-  let refreshed = 0;
+  let refreshed = remembered.refreshed;
   const importedTitles: string[] = [];
   const refreshIds: string[] = [];
   const inserts: Record<string, unknown>[] = [];

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { filterRememberedJobs, loadJobImportMemory, type JobImportMemory } from "../../lib/server/jobImportMemory";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   buildImportMetadata,
@@ -66,6 +67,12 @@ export async function GET(req: NextRequest) {
     .neq("is_rejected", true)
     .lt("created_at", cutoff);
 
+  let importMemory: JobImportMemory;
+  try {
+    importMemory = await loadJobImportMemory(supabase);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Job memory unavailable" }, { status: 503 });
+  }
   const createdAfter = formatReliefWebFilterDate(
     new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
   );
@@ -104,7 +111,8 @@ export async function GET(req: NextRequest) {
             queryBatch,
             seenReliefWebIds,
             importedTitles,
-            errors
+            errors,
+            importMemory
           );
           if (result === "imported") imported++;
           else if (result === "refreshed") refreshed++;
@@ -148,7 +156,8 @@ export async function GET(req: NextRequest) {
             channel.id,
             seenReliefWebIds,
             importedTitles,
-            errors
+            errors,
+            importMemory
           );
           if (result === "imported") imported++;
           else if (result === "refreshed") refreshed++;
@@ -192,7 +201,8 @@ export async function GET(req: NextRequest) {
             channel.id,
             seenReliefWebIds,
             importedTitles,
-            errors
+            errors,
+            importMemory
           );
           if (result === "imported") imported++;
           else if (result === "refreshed") refreshed++;
@@ -225,7 +235,8 @@ export async function GET(req: NextRequest) {
           "targeted:eod-hma-cied-uas",
           seenReliefWebIds,
           importedTitles,
-          errors
+          errors,
+          importMemory
         );
         if (result === "imported") imported++;
         else if (result === "refreshed") refreshed++;
@@ -258,7 +269,8 @@ async function ingestReliefWebRawJob(
   matchedQuery: string,
   seenReliefWebIds: Set<string>,
   importedTitles: string[],
-  errors: string[]
+  errors: string[],
+  memory: JobImportMemory,
 ): Promise<IngestResult> {
   const normalized = normalizeReliefWebJob(raw);
   if (!normalized) return "skipped";
@@ -285,6 +297,9 @@ async function ingestReliefWebRawJob(
   ) {
     return "skipped";
   }
+
+  const remembered = await filterRememberedJobs(supabase, [normalized], candidate => candidate, memory);
+  if (!remembered.candidates.length) return remembered.refreshed ? "refreshed" : "skipped";
 
   const { data: existing, error: selectErr } = await supabase
     .from("jobs")

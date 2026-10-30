@@ -13,13 +13,13 @@ const ALLOWED_ACTIONS: ResolveAction[] = ["delete_job", "dismiss", "mark_under_r
  *
  * Body: { jobId: string; action: 'delete_job' | 'dismiss' | 'mark_under_review'; notes?: string }
  *
- *  - delete_job: permanently deletes the job row (and cascaded stale flags).
+ *  - delete_job: removes the listing and stale flags, remembering imported source IDs.
  *  - dismiss: closes all open flags for that job as 'dismissed' but leaves
  *    the listing live (e.g. admin clicked the link and it works).
  *  - mark_under_review: keeps the job live, sets applications_under_review,
  *    and closes open stale flags as dismissed.
  */
-import { deleteJobPermanently } from "@/app/lib/server/deleteJobPermanently";
+import { removeJobWithImportMemory } from "@/app/lib/server/removeJobWithImportMemory";
 export async function POST(req: NextRequest) {
   const authHeader =
     req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -110,7 +110,7 @@ export async function POST(req: NextRequest) {
       .eq("job_id", jobId)
       .eq("status", "open");
 
-    const result = await deleteJobPermanently(adminClient, jobId);
+    const result = await removeJobWithImportMemory(adminClient, jobId);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }

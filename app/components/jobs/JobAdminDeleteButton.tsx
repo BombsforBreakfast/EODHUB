@@ -17,7 +17,7 @@ export default function JobAdminDeleteButton({ jobId, onDeleted, size = "default
 
   async function handleDelete() {
     if (deleting) return;
-    if (!window.confirm("Permanently delete this job posting? This cannot be undone.")) return;
+    if (!window.confirm("Remove this job posting? Imported listings will be remembered so the same listing does not return.")) return;
 
     setDeleting(true);
     try {
@@ -49,7 +49,7 @@ export default function JobAdminDeleteButton({ jobId, onDeleted, size = "default
       type="button"
       onClick={() => void handleDelete()}
       disabled={deleting}
-      title="Admin: permanently delete this job"
+      title="Admin: remove this job and block the same imported listing from returning"
       style={{
         background: "transparent",
         color: "#dc2626",

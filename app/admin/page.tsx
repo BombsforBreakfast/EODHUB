@@ -2439,7 +2439,7 @@ export default function AdminPage() {
   }
 
   async function rejectJob(id: string) {
-    askConfirm("Delete this job posting?", async () => {
+    askConfirm("Remove this job posting? Imported listings will be remembered so they do not return.", async () => {
       setActionLoading(id);
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch(`/api/admin/delete-job?id=${id}`, {
@@ -2483,19 +2483,26 @@ export default function AdminPage() {
 
   async function batchRejectJobs() {
     if (selectedJobs.size === 0) return;
-    askConfirm(`Delete ${selectedJobs.size} selected job${selectedJobs.size > 1 ? "s" : ""}?`, async () => {
+    askConfirm(`Remove ${selectedJobs.size} selected job${selectedJobs.size > 1 ? "s" : ""}? Imported listings will be remembered so they do not return.`, async () => {
       setBatchActing(true);
       const { data: { session } } = await supabase.auth.getSession();
       const ids = [...selectedJobs];
-      await Promise.all(ids.map((id) =>
-        fetch(`/api/admin/delete-job?id=${id}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-        })
-      ));
-      setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
-      showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} deleted.`);
-      setSelectedJobs(new Set());
+      const results = await Promise.all(ids.map(async (id) => {
+        try {
+          const response = await fetch(`/api/admin/delete-job?id=${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+          });
+          return { id, ok: response.ok };
+        } catch {
+          return { id, ok: false };
+        }
+      }));
+      const removed = new Set(results.filter(result => result.ok).map(result => result.id));
+      const failed = new Set(results.filter(result => !result.ok).map(result => result.id));
+      setJobs((prev) => prev.filter((job) => !removed.has(job.id)));
+      showToast(`${removed.size} job${removed.size === 1 ? "" : "s"} removed.${failed.size ? ` ${failed.size} failed; please retry the selected jobs.` : ""}`);
+      setSelectedJobs(failed);
       setBatchActing(false);
       await loadPendingCounts();
     });

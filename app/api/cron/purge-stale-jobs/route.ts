@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const { count, error } = await supabase
     .from("jobs")
     .delete({ count: "exact" })
+    .neq("is_rejected", true)
     .lt("created_at", cutoff);
 
   if (error) {

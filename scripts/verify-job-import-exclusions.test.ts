@@ -54,6 +54,20 @@ test("intern titles are excluded across all importers without matching internati
 
 test("newly excluded role titles are blocked across all importers", () => {
   const cases: Array<[string, string[]]> = [
+    ["Language-enabled OSINT collector role", ["Language-Enabled OSINT Collector", "LANGUAGE ENABLED OSINT COLLECTORS", "Language–Enabled OSINT Collector\u00a0"]],
+    ["Position Navigation and Timing role", ["Position Navigation and Timing Specialist", "Positioning, Navigation, and Timing Engineer", "Position Navigation & Timing Coordinator", "PNT Engineer", "P.N.T. Specialist"]],
+    ["Acquisition role", ["Acquisition Specialist", "ACQUISITIONS Manager", "EOD Acquisition Coordinator"]],
+    ["Multi-discipline security specialist role", ["MULTI-DISCIPLINE SECURITY SPECIALIST", "Multi Discipline Security Specialists", "Multidisciplinary Security Specialist"]],
+    ["Chemical technician role", ["Chemical Technicians", "CHEMICAL TECHNICIAN", "Chemical-Tech", "EOD Chemical Technician II"]],
+    ["Legal role", ["Legal Specialist", "LEGAL ASSISTANT - EOD", "Attorney Advisor", "Lawyer", "Paralegals", "General Counsel", "Law-Clerk"]],
+    ["Telephony role", ["Telephony Engineer", "IP TELEPHONY SPECIALIST", "EOD Telephony Support"]],
+    ["Medic role", ["Medic", "Flight Medics", "EOD Medic", "Combat Medic - CBRN"]],
+    ["Epidemiology role", ["Epidemiology Specialist", "Epidemiologist", "Epidemiologists", "Epidemiological Officer"]],
+    ["Postdoctoral role", ["Postdoc", "POSTDOCS - UAS", "Post-doc Fellow", "EOD Post Doc Researcher"]],
+    ["Machinist role", ["Machinist", "MACHINISTS", "EOD Machinist"]],
+    ["Dispatcher role", ["Dispatcher", "DISPATCHERS", "Emergency Dispatcher", "UAS Flight Dispatcher"]],
+    ["Public utility role", ["Public Utility Specialist", "Public Utilities Coordinator", "PUBLIC-UTILITIES Supervisor"]],
+    ["J4 role", ["J4", "j4 specialist", "J-4 Logistics", "J 4 EOD Coordinator"]],
     ["Air Force A10 listing", ["Air Force A10 - EOD Program Manager", "USAF/A10 UXO Coordinator", "Air-Force A-10 UAS Specialist"]],
     ["IT specialist role", ["IT Specialist", "it specialists", "Supervisory IT Specialist (INFOSEC)", "I.T. Specialist - EOD", "IT Support Specialist", "IT Cybersecurity Specialist", "IT Customer Support Specialist", "Information Technology Specialist", "Information-Technology Specialist - UAS", "Information Technology (IT) Specialist", "Information Technology Specialist (SYSADMIN)"]],
     ["J39 role", ["J39", "j39 specialist", "J-39 EOD Planner", "J 39 Advisor", "J3/9 Operations Specialist", "J-3/9 Coordinator", "CWMD J39 Support", "J39/UAS Support"]],
@@ -88,7 +102,7 @@ test("newly excluded role titles are blocked across all importers", () => {
 });
 
 test("relevant specialist roles remain eligible when excluded roles are mentioned only in the description", () => {
-  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses, EMS, MDDU, J39, Air Force A10, IT specialists, information technology specialists, emergency medical services, sheriff's deputies and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget.`;
+  const context = `${description} Coordinate with police officers, analysts, scientists, firefighters, nurses, EMS, MDDU, J39, J4, Air Force A10, IT specialists, information technology specialists, emergency medical services, sheriff's deputies and decontamination specialists; RN support is available. Train students and postdoctoral researchers. Coordinate with human resources and HR on the program budget. Coordinate with legal, telephony, medic, epidemiology, postdoc, machinist, dispatcher and public utility teams.`;
   for (const title of ["EOD Technician", "UXO Technician III", "C-IED Specialist", "UAS Operator", "WMD Specialist", "EOD Technician ($40/hr)", "UXO Technician - $40 per hr"]) {
     const input = { title, description: context, companyName: "EOD employer" };
     assert.equal(jobImportExclusionReason(title), null, title);
@@ -97,7 +111,7 @@ test("relevant specialist roles remain eligible when excluded roles are mentione
     assert.equal(scoreLinkedInJob(input).relevant, true, title);
     assert.equal(scoreReliefWebJob({ ...input, metadataText: "Mine Action", themes: ["Mine Action"] }).excluded, false, title);
   }
-  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer", "Deputy EOD Program Manager", "Systems Engineer", "EM Systems Engineer", "J390 Systems Engineer", "J3 Specialist", "J9 Advisor", "Satellite Specialist", "Explosive Safety Specialist", "Information Management Specialist"]) {
+  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer", "Deputy EOD Program Manager", "Systems Engineer", "EM Systems Engineer", "J390 Systems Engineer", "J3 Specialist", "J9 Advisor", "Satellite Specialist", "Explosive Safety Specialist", "Information Management Specialist", "Chemical Safety Specialist", "Counseling Coordinator", "J40 Specialist"]) {
     assert.equal(jobImportExclusionReason(title), null, title);
   }
 });
