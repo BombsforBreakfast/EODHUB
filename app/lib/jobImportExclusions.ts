@@ -42,11 +42,12 @@ export function jobImportExclusionReason(title: string, employerContext = ""): s
     /\be[.\s]*m[.\s]*s\b/i.test(normalized) ||
     /\bemergency[\s/-]+medical[\s/-]+(?:services?|svcs)\b/i.test(normalized)
   ) return "EMS role";
-  if (/\bpolice[\s/-]+officers?\b/i.test(normalized)) return "Police officer role";
+  if (/\bpolice\b|\blaw[\s-]+enforcement[\s-]+officers?\b/i.test(normalized)) return "Police officer role";
+  if (/\b(?:heli|helo)copters?\b.*\b(?:pilots?|aviators?)\b|\b(?:pilots?|aviators?)\b.*\b(?:heli|helo)copters?\b|\b(?:rotary|rotor)[\s-]+wing[\s-]+pilots?\b/i.test(normalized)) return "Helicopter pilot role";
   if (/\b(?:under[\s-]*)?sheriffs?\b/i.test(normalized)) return "Sheriff role";
   if (/\banalysts?\b/i.test(normalized)) return "Analyst role";
   if (/\bscientists?\b/i.test(normalized)) return "Scientist role";
-  if (/\bfire[\s-]*fighters?\b/i.test(normalized)) return "Firefighter role";
+  if (/\bfire[\s-]*(?:fighters?|fighting)\b|\bfire[\s-]+(?:chiefs?|captains?|lieutenants?|marshals?|officers?)\b/i.test(normalized)) return "Firefighter role";
   if (
     /\bnurs(?:es?|ing)\b/i.test(normalized) ||
     /\b(?:rn|lpn|lvn|aprn|crna)s?\b/i.test(normalized) ||

@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jobListingCutoffIso } from "../jobRetention";
 import { chunkArray, JOB_IMPORT_WRITE_CHUNK } from "../jobImportBatch";
+import { excludedJobType, type JobTypeExclusion } from "../jobReviewPreferences";
+import { loadJobTypeExclusions } from "./jobReviewPreferences";
 
 export type JobMemoryIdentity = {
   title: string;
@@ -56,7 +58,7 @@ export class JobImportMemory {
   readonly refreshedIds = new Set<string>();
   readonly retiredIds = new Set<string>();
 
-  constructor(rows: JobMemoryRow[], nowMs = Date.now()) {
+  constructor(rows: JobMemoryRow[], nowMs = Date.now(), readonly exclusions: JobTypeExclusion[] = []) {
     const cutoff = jobListingCutoffIso(nowMs);
     for (const row of rows) {
       const keys = jobMemoryKeys({ title: row.title ?? "", companyName: row.company_name ?? "", location: row.location, applyUrl: row.apply_url });
@@ -97,7 +99,7 @@ export async function loadJobImportMemory(client: SupabaseClient): Promise<JobIm
     rows.push(...(data ?? []));
     if ((data ?? []).length < 500) break;
   }
-  return new JobImportMemory(rows);
+  return new JobImportMemory(rows, Date.now(), await loadJobTypeExclusions(client));
 }
 
 /** Keep approved listings published and deleted listings hidden, even across changed source IDs. */
@@ -115,6 +117,7 @@ export async function filterRememberedJobs<T>(
   let skipped = 0;
   for (const candidate of candidates) {
     const candidateIdentity = identity(candidate);
+    if (excludedJobType(candidateIdentity.title, state.exclusions)) { skipped++; continue; }
     const match = state.match(candidateIdentity);
     if (!match) retained.push(candidate);
     else {

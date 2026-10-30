@@ -20,6 +20,7 @@ test("priority API ranks across sources before paging and retains access to lowe
     assert.equal(url.hostname, "db.example");
     if (url.pathname.includes("/auth/")) return Response.json({ id: "admin", aud: "authenticated", role: "authenticated" });
     if (url.pathname.endsWith("/profiles")) return Response.json([{ is_admin: true }]);
+    if (url.pathname.endsWith("/job_type_exclusions") || url.pathname.endsWith("/job_review_feedback")) return Response.json([]);
     assert.equal(url.searchParams.get("is_rejected"), "neq.true");
     assert.equal(url.searchParams.get("is_approved"), "neq.true");
     assert.equal(url.searchParams.has("source_type"), false);

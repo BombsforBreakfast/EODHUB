@@ -25,6 +25,7 @@ import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { EventCalendarCard } from "../components/events/EventCalendarCard";
 import { EventDetailPanel } from "../components/events/EventDetailPanel";
 import JobFacetEditor from "../components/jobs/JobFacetEditor";
+import JobReviewPreferencesPanel from "../components/admin/JobReviewPreferencesPanel";
 import { parseFacetOverrides, type JobFacetOverrides } from "../lib/jobFacets";
 import AdminRentalsPanel from "../components/admin/AdminRentalsPanel";
 import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
@@ -874,6 +875,7 @@ export default function AdminPage() {
   const [businessOrgPausedPages, setBusinessOrgPausedPages] = useState<BusinessOrgListedPage[]>([]);
   const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [excludeJobType, setExcludeJobType] = useState<Job | null>(null);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all">("high");
@@ -2466,11 +2468,11 @@ export default function AdminPage() {
     } finally { setActionLoading(null); }
   }
 
-  async function rejectJob(id: string) {
-    askConfirm("Remove this job posting? Imported listings will be remembered so they do not return.", async () => {
+  async function rejectJob(id: string, notRelevant = false) {
+    askConfirm(notRelevant ? "Remove as not relevant? This will gradually lower the rank of similar titles." : "Remove this job posting? Imported listings will be remembered so they do not return. This does not change ranking preferences.", async () => {
       setActionLoading(id);
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/admin/delete-job?id=${id}`, {
+      const res = await fetch(`/api/admin/delete-job?id=${id}${notRelevant ? "&reason=not_relevant" : ""}`, {
         method: "DELETE",
         headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
       });
@@ -4880,12 +4882,13 @@ export default function AdminPage() {
 
             {jobsSubTab === "submissions" && (
               <>
+            <JobReviewPreferencesPanel target={excludeJobType} queueSize={jobsPriorityCounts.all} onClose={() => setExcludeJobType(null)} onChanged={async () => { await Promise.all([loadJobs(), loadPendingCounts()]); }} />
             <div aria-label="Job priority filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
               {([['high', 'Strong matches'], ['possible', 'Possible matches'], ['low', 'Low confidence'], ['all', 'All jobs']] as const).map(([value, label]) => (
                 <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => setJobsPriority(value)}>{label} ({jobsPriorityCounts[value]})</button>
               ))}
             </div>
-            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Title matches carry more weight; description-only matches stay in Possible matches. Lower-confidence jobs remain available for review.</p>
+            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Title matches carry more weight. Engineering degree requirements lower the score; repeated review decisions refine it. Lower-confidence jobs remain available for review.</p>
             <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
                 {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} matching ${pendingOnly ? "pending " : ""}jobs of ${jobsPriorityCounts.all.toLocaleString()} total · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}
@@ -5034,6 +5037,8 @@ export default function AdminPage() {
                         {actionLoading === job.id && <span className="btn-spinner" />}
                         Delete
                       </button>
+                      {!job.is_approved && <button style={actionBtn("#b45309")} disabled={!!actionLoading || batchActing} onClick={() => rejectJob(job.id, true)}>Not relevant</button>}
+                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobType(job)}>Exclude this type</button>
                     </div>
                   </div>
                   {editingJob?.id === job.id && (

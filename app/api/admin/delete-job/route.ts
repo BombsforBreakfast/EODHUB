@@ -39,7 +39,9 @@ export async function DELETE(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const result = await removeJobWithImportMemory(adminClient, jobId);
+  const reason = req.nextUrl.searchParams.get("reason");
+  if (reason !== null && reason !== "not_relevant") return NextResponse.json({ error: "Invalid deletion reason" }, { status: 400 });
+  const result = await removeJobWithImportMemory(adminClient, jobId, { notRelevant: reason === "not_relevant" });
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: 500 });
   }

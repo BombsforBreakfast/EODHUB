@@ -33,6 +33,7 @@ async function withDatabase(
     assert.equal(url.hostname, "db.example", "Tests never call a real database");
     const table = url.pathname.split("/").pop()!;
     const method = init?.method ?? "GET";
+    if (table === "job_type_exclusions") return Response.json([]);
     if (failRead && method === "GET") return Response.json({ message: "Memory unavailable", code: "42501" }, { status: 403 });
     const matches = (item: Row) => {
       for (const [key, expression] of url.searchParams) {

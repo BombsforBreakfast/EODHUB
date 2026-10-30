@@ -76,12 +76,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { error } = await adminClient
-    .from("jobs")
-    .update({ is_approved: true })
-    .eq("id", id);
+  const { data: approvedId, error } = await adminClient.rpc("record_job_review_decision", { target_job_id: id, review_decision: "approved" });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (!approvedId) return NextResponse.json({ error: "Job was removed. Refresh the queue." }, { status: 409 });
 
   return NextResponse.json({ ok: true });
 }

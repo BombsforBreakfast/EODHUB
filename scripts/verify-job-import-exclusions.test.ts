@@ -80,10 +80,11 @@ test("newly excluded role titles are blocked across all importers", () => {
     ["Budget role", ["Budget Analyst - EOD", "BUDGETS Officer", "CBRN Budgeting Specialist", "Budgetary Manager", "UAS Program Budget Coordinator"]],
     ["Postdoctoral role", ["Postdoctoral Researcher - EOD", "POSTDOCTORAL FELLOW - UAS", "Post-doctoral CBRN Scientist", "Post Doctoral Research Associate", "Post–Doctoral WMD Analyst"]],
     ["Student role", ["Student EOD Technician", "STUDENTS - UXO Program", "Working Student (UAS)", "EOD Studentship", "CBRN Studentships"]],
-    ["Police officer role", ["Police Officer", "POLICE OFFICERS - EOD", "Supervisory Police Officer (Bomb Squad)", "Police-Officer Trainee", "Police/Officer - Explosive Detection"]],
+    ["Police officer role", ["Police EOD Technician", "Police Captain", "Law Enforcement Officer", "Police Officer", "POLICE OFFICERS - EOD", "Supervisory Police Officer (Bomb Squad)", "Police-Officer Trainee", "Police/Officer - Explosive Detection"]],
     ["Analyst role", ["Analyst", "ANALYSTS", "All Source Analyst", "Senior All-Source Intelligence Analyst", "All–Source Targeting Analyst", "Intelligence Analyst (All Source)", "Allsource Analyst - Counter-IED", "All-Source Analysts", "WMD Analyst", "Open Source Analyst", "EOD Research Analyst", "CBRN Analysts", "UAS Analyst", "UXO Analyst(s)"]],
     ["Scientist role", ["Scientist", "SCIENTISTS", "EOD Research Scientist", "Senior CBRN Scientist", "UAS Data Scientist", "WMD Scientists", "UXO Scientist(s)"]],
-    ["Firefighter role", ["Firefighter", "FIREFIGHTERS - CBRN", "Fire Fighter (HAZMAT)", "Airport Fire-Fighter", "Supervisory Firefighter - EOD Range"]],
+    ["Firefighter role", ["Fire Chief", "Fire Captain", "Fire Marshal", "Fire Fighting Supervisor", "Firefighter", "FIREFIGHTERS - CBRN", "Fire Fighter (HAZMAT)", "Airport Fire-Fighter", "Supervisory Firefighter - EOD Range"]],
+    ["Helicopter pilot role", ["Helicopter Pilot", "Helocopter Pilot", "Pilot - Helicopter", "Rotary-Wing Pilot", "Rotor Wing Pilot"]],
     ["Nurse role", ["Nurse", "Registered Nurses", "Nurse Practitioner - CBRN", "Occupational Health Nursing", "RN - EOD Range", "LPN / CBRN", "LVN - Defense Clinic", "APRN", "CRNA", "R.N. - Range Clinic"]],
   ];
   for (const [reason, titles] of cases) {
@@ -112,7 +113,7 @@ test("relevant specialist roles remain eligible when excluded roles are mentione
     assert.equal(scoreLinkedInJob(input).relevant, true, title);
     assert.equal(scoreReliefWebJob({ ...input, metadataText: "Mine Action", themes: ["Mine Action"] }).excluded, false, title);
   }
-  for (const title of ["Police EOD Technician", "All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer", "Deputy EOD Program Manager", "Systems Engineer", "EM Systems Engineer", "J390 Systems Engineer", "J3 Specialist", "J9 Advisor", "Satellite Specialist", "Explosive Safety Specialist", "Information Management Specialist", "Chemical Safety Specialist", "Counseling Coordinator", "J40 Specialist"]) {
+  for (const title of ["All-Source EOD Instructor", "Scientific Equipment Technician", "Fire Protection Engineer", "Nursery Equipment Technician", "URN Systems Engineer", "Deputy EOD Program Manager", "Systems Engineer", "EM Systems Engineer", "J390 Systems Engineer", "J3 Specialist", "J9 Advisor", "Satellite Specialist", "Explosive Safety Specialist", "Information Management Specialist", "Chemical Safety Specialist", "Counseling Coordinator", "J40 Specialist"]) {
     assert.equal(jobImportExclusionReason(title), null, title);
   }
 });
