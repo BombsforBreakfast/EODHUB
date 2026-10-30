@@ -82,10 +82,23 @@ Geometry is preprojected from us-atlas 3.0.1 Census-derived states with d3-geo
 Albers USA and a Mercator PR inset. No runtime geocoder, API key or external map
 request is required. The geometry chunk loads only when Map is opened.
 
+Every populated state with an on-screen anchor gets a readable count badge,
+including small East Coast states. Crowded badges move with leader lines rather
+than being hidden. Clicking a state or its badge again removes that selection;
+selected fill and count badges are visibly distinct from hover. The status below
+the map reports the selected locations and matching jobs.
+
+The bottom-right +/− controls zoom from 100% to 800%. East Coast fits the
+northeastern states; Reset view restores the full map without clearing filters.
+Users can drag a zoomed map, pinch with two pointers, or use Ctrl/Command-wheel.
+Dragging suppresses the resulting click so it does not accidentally select a
+state. Ordinary wheel scrolling remains page scrolling.
+
 Theme colors follow the app ThemeProvider. A ResizeObserver recalculates map
-scale and readable, non-overlapping labels after container resize or rotation.
-Landscape phones use a height-aware canvas. Native state keyboard controls and
-the existing Geography checkboxes offer alternative selection methods.
+scale and readable labels after container resize or rotation while retaining
+the zoom and geographic center within pan bounds. Landscape phones use a
+height-aware canvas. Native count buttons, state keyboard controls and the
+existing Geography checkboxes offer alternative selection methods.
 
 ## Import enrichment
 
