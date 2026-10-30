@@ -10,6 +10,7 @@ export function jobImportExclusionReason(title: string, employerContext = ""): s
   if (/\bpost[\s-]*(?:doctoral|docs?)\b/i.test(normalized)) return "Postdoctoral role";
   if (/\b(?:legal|paralegals?|attorneys?|lawyers?|counsel)\b/i.test(normalized) || /\blaw[\s-]+clerks?\b/i.test(normalized)) return "Legal role";
   if (/\btelephony\b/i.test(normalized)) return "Telephony role";
+  if (/\boccupational[\s-]+health[\s-]+specialists?\b/i.test(normalized)) return "Occupational health specialist role";
   if (/\bepidemiolog(?:y|ists?|ical)\b/i.test(normalized)) return "Epidemiology role";
   if (/\bmachinists?\b/i.test(normalized)) return "Machinist role";
   if (/\bdispatchers?\b/i.test(normalized)) return "Dispatcher role";

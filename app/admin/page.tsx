@@ -873,6 +873,12 @@ export default function AdminPage() {
   const [businessOrgPausedPages, setBusinessOrgPausedPages] = useState<BusinessOrgListedPage[]>([]);
   const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobsPage, setJobsPage] = useState(1);
+  const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [jobsError, setJobsError] = useState("");
+  const jobsRequest = useRef(0);
+  const jobsPageSize = 25;
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [groupSearch, setGroupSearch] = useState("");
@@ -1835,14 +1841,30 @@ export default function AdminPage() {
     setBusinessOrgClaims(json.claims ?? []);
   }
 
-  async function loadJobs() {
+  async function loadJobs(page = jobsPage) {
+    const request = ++jobsRequest.current;
+    setJobsLoading(true);
+    setJobsError("");
+    try {
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}`, {
+    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}&offset=${(page - 1) * jobsPageSize}&limit=${jobsPageSize}`, {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    if (!res.ok) { console.error("loadJobs API error", res.status); return; }
+    if (!res.ok) throw new Error("Could not load jobs. Please retry.");
     const json = await res.json();
+    if (request !== jobsRequest.current) return;
+    const total = Number(json.totalCount ?? 0);
+    const lastPage = Math.max(1, Math.ceil(total / jobsPageSize));
+    if (page > lastPage) { void loadJobs(lastPage); return; }
+    setJobsPage(page);
+    setJobsTotal(total);
     setJobs((json.jobs ?? []) as Job[]);
+    setSelectedJobs(new Set());
+    } catch (error) {
+      if (request === jobsRequest.current) setJobsError(error instanceof Error ? error.message : "Could not load jobs.");
+    } finally {
+      if (request === jobsRequest.current) setJobsLoading(false);
+    }
   }
 
   async function loadStaleFlags() {
@@ -2213,7 +2235,7 @@ export default function AdminPage() {
     }
     if (activeTab === "business_org_pages") void loadBusinessOrgAdminQueues();
     if (activeTab === "jobs") {
-      loadJobs();
+      loadJobs(1);
       loadStaleFlags();
     }
     if (activeTab === "groups") loadGroups();
@@ -2425,17 +2447,19 @@ export default function AdminPage() {
   }
 
   async function approveJob(id: string) {
-    // Optimistically remove from pending list immediately
-    if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
-    setPendingCounts((prev) => ({ ...prev, jobs: Math.max(0, prev.jobs - 1) }));
-    showToast("Job approved!");
-
+    setActionLoading(id);
+    try {
     const { data: { session } } = await supabase.auth.getSession();
-    await fetch(`/api/admin/approve-job?id=${id}`, {
+    const response = await fetch(`/api/admin/approve-job?id=${id}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    await loadPendingCounts();
+    if (!response.ok) throw new Error("Approval failed. Please retry.");
+    showToast("Job approved!");
+    await Promise.all([loadJobs(), loadPendingCounts()]);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Approval failed.");
+    } finally { setActionLoading(null); }
   }
 
   async function rejectJob(id: string) {
@@ -2453,7 +2477,7 @@ export default function AdminPage() {
       } else {
         showToast("Job removed.");
         setJobs((prev) => prev.filter((j) => j.id !== id));
-        await loadPendingCounts();
+        await Promise.all([loadJobs(), loadPendingCounts()]);
       }
       setActionLoading(null);
     });
@@ -2464,21 +2488,20 @@ export default function AdminPage() {
     setBatchActing(true);
     const { data: { session } } = await supabase.auth.getSession();
     const ids = [...selectedJobs];
-    await Promise.all(ids.map((id) =>
-      fetch(`/api/admin/approve-job?id=${id}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-      })
-    ));
-    if (pendingOnly) {
-      setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
-    } else {
-      setJobs((prev) => prev.map((j) => selectedJobs.has(j.id) ? { ...j, is_approved: true } : j));
-    }
-    showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} approved!`);
+    const results = await Promise.all(ids.map(async (id) => {
+      try {
+        const response = await fetch(`/api/admin/approve-job?id=${id}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        });
+        return { id, ok: response.ok };
+      } catch { return { id, ok: false }; }
+    }));
+    const approved = results.filter(result => result.ok).length;
+    showToast(`${approved} job${approved === 1 ? "" : "s"} approved.${approved < ids.length ? " Some failed; please retry." : ""}`);
     setSelectedJobs(new Set());
     setBatchActing(false);
-    await loadPendingCounts();
+    await Promise.all([loadJobs(), loadPendingCounts()]);
   }
 
   async function batchRejectJobs() {
@@ -2504,7 +2527,8 @@ export default function AdminPage() {
       showToast(`${removed.size} job${removed.size === 1 ? "" : "s"} removed.${failed.size ? ` ${failed.size} failed; please retry the selected jobs.` : ""}`);
       setSelectedJobs(failed);
       setBatchActing(false);
-      await loadPendingCounts();
+      await Promise.all([loadJobs(), loadPendingCounts()]);
+      setSelectedJobs(failed);
     });
   }
 
@@ -4852,6 +4876,21 @@ export default function AdminPage() {
 
             {jobsSubTab === "submissions" && (
               <>
+            <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+              <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
+                {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} ${pendingOnly ? "pending jobs remaining" : "jobs total"} · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}
+              </span>
+              <button style={actionBtn("#475569")} disabled={jobsLoading || batchActing || !!actionLoading || jobsPage === 1} onClick={() => void loadJobs(jobsPage - 1)}>Previous</button>
+              <label style={{ color: t.textMuted, fontSize: 13 }}>Page {" "}
+                <select aria-label="Choose job review page" value={jobsPage} disabled={jobsLoading || batchActing || !!actionLoading} onChange={event => void loadJobs(Number(event.target.value))} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: 6 }}>
+                  {Array.from({ length: Math.max(1, Math.ceil(jobsTotal / jobsPageSize)) }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}
+                </select>
+              </label>
+              <button style={actionBtn("#475569")} disabled={jobsLoading || batchActing || !!actionLoading || jobsPage * jobsPageSize >= jobsTotal} onClick={() => void loadJobs(jobsPage + 1)}>Next</button>
+              <button style={actionBtn("#475569")} disabled={jobsLoading || batchActing || !!actionLoading} onClick={() => void loadJobs()}>Refresh page</button>
+            </nav>
+            {jobsError && <p role="alert" style={{ color: "#dc2626" }}>{jobsError}</p>}
+            <div style={{ pointerEvents: jobsLoading ? "none" : undefined, opacity: jobsLoading ? 0.5 : 1 }} aria-busy={jobsLoading}>
             {/* Batch toolbar */}
             {jobs.length > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
@@ -4862,7 +4901,7 @@ export default function AdminPage() {
                     checked={selectedJobs.size === jobs.length && jobs.length > 0}
                     onChange={(e) => setSelectedJobs(e.target.checked ? new Set(jobs.map((j) => j.id)) : new Set())}
                   />
-                  Select all
+                  Select this page
                 </label>
                 {selectedJobs.size > 0 && (
                   <>
@@ -5083,6 +5122,12 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+            </div>
+            <nav aria-label="Job review pages at bottom" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginTop: 16 }}>
+              <button style={actionBtn("#475569")} disabled={jobsLoading || batchActing || !!actionLoading || jobsPage === 1} onClick={() => void loadJobs(jobsPage - 1)}>Previous</button>
+              <span style={{ color: t.textMuted }}>Page {jobsPage} of {Math.max(1, Math.ceil(jobsTotal / jobsPageSize))}</span>
+              <button style={actionBtn("#475569")} disabled={jobsLoading || batchActing || !!actionLoading || jobsPage * jobsPageSize >= jobsTotal} onClick={() => void loadJobs(jobsPage + 1)}>Next</button>
+            </nav>
               </>
             )}
           </div>

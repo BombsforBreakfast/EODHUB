@@ -91,6 +91,7 @@ export async function GET(req: NextRequest) {
       .eq("source_type", "reliefweb")
       .order("relevance_score", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
       .range(reliefFrom, reliefTo);
     if (pendingOnly) {
       reliefWebQuery = reliefWebQuery.neq("is_approved", true);
@@ -109,6 +110,7 @@ export async function GET(req: NextRequest) {
       .neq("is_rejected", true)
       .or("source_type.is.null,source_type.neq.reliefweb")
       .order("created_at", { ascending: false })
+      .order("id", { ascending: true })
       .range(nonReliefOffset, nonReliefOffset + nonReliefLimit - 1);
     if (pendingOnly) {
       nonReliefQuery = nonReliefQuery.neq("is_approved", true);

@@ -54,6 +54,7 @@ test("intern titles are excluded across all importers without matching internati
 
 test("newly excluded role titles are blocked across all importers", () => {
   const cases: Array<[string, string[]]> = [
+    ["Occupational health specialist role", ["OCCUPATIONAL HEALTH SPECIALIST", "Occupational Health Specialists", "Occupational-Health Specialist - EOD Range"]],
     ["Language-enabled OSINT collector role", ["Language-Enabled OSINT Collector", "LANGUAGE ENABLED OSINT COLLECTORS", "Language–Enabled OSINT Collector\u00a0"]],
     ["Position Navigation and Timing role", ["Position Navigation and Timing Specialist", "Positioning, Navigation, and Timing Engineer", "Position Navigation & Timing Coordinator", "PNT Engineer", "P.N.T. Specialist"]],
     ["Acquisition role", ["Acquisition Specialist", "ACQUISITIONS Manager", "EOD Acquisition Coordinator"]],
