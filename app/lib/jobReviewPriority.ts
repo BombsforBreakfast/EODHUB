@@ -1,5 +1,5 @@
 import { jobImportExclusionReason } from "./jobImportExclusions";
-import { engineeringDegreePenalty } from "./jobEngineeringDegree";
+import { jobDegreePenalty } from "./jobDegreeRequirements";
 import { excludedJobType, learnedJobAdjustment, type JobReviewPreferences } from "./jobReviewPreferences";
 
 export type JobReviewBand = "high" | "possible" | "low";
@@ -33,7 +33,7 @@ export function scoreJobReview(job: ReviewableJob, preferences?: JobReviewPrefer
   const body = hits(clean(job.description || job.og_description || ""));
   const baseScore = title.length ? Math.min(100, 70 + Math.min(10, (title.length - 1) * 5) + (body.length ? 15 : 0))
     : body.length ? Math.min(60, 40 + (body.length - 1) * 5) : 0;
-  const degree = engineeringDegreePenalty([job.description, job.og_description].filter(Boolean).join("\n"));
+  const degree = jobDegreePenalty([job.description, job.og_description].filter(Boolean).join("\n"));
   const learning = learnedJobAdjustment(job.title ?? "", preferences?.signals ?? []);
   const score = Math.max(0, Math.min(title.length ? 100 : 69, baseScore - degree.points + learning.points));
   return {

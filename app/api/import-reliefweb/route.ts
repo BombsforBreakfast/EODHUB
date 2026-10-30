@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { autoApproveAfterImport } from "../../lib/server/autoApproveExplicitJobs";
 import { filterRememberedJobs, loadJobImportMemory, type JobImportMemory } from "../../lib/server/jobImportMemory";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -246,8 +247,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const autoApproved = await autoApproveAfterImport(supabase, "reliefweb", errors);
   return NextResponse.json({
     imported,
+    autoApproved,
     refreshed,
     purged: purged ?? 0,
     skipped,

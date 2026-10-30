@@ -2,9 +2,15 @@
 
 The job queue combines the specialty keyword score with education requirements and bounded feedback adjustments. Review score is a triage aid, not a probability or an automatic approval.
 
-## Engineering education
+## Specialist degrees
 
-An explicit engineering degree in the returned description subtracts 25 points; an advanced engineering degree subtracts 30. Preferred degrees or equivalent-experience alternatives subtract 10. Explicitly optional degrees and engineering experience alone do not trigger the penalty. The reason appears on the card. Missing/truncated source descriptions cannot reveal a requirement they do not contain.
+An explicit engineering, chemistry or biology degree in the returned description subtracts 10 points; preferred degrees or equivalent-experience alternatives subtract 5. Multiple degree fields and advanced degrees do not compound the penalty. General degrees, other subjects, explicitly optional degrees and experience alone do not trigger it. Degrees never exclude a job or prevent an otherwise qualifying automatic approval. The reason appears on the card. Missing/truncated descriptions cannot reveal a requirement they do not contain.
+
+## Explicit-title automatic approval
+
+At the end of each of the four imports, current pending imported jobs with “Explosive Ordnance Disposal”, “UXO” or “Unexploded Ordnance” in the title are automatically approved. The full three-word phrase must be contiguous, ignoring case and repeated whitespace. The EOD acronym, isolated words, company names and description-only mentions do not qualify. Titles describing a portfolio or including multiple roles remain in manual review.
+
+All built-in/custom exclusions, ReliefWeb suppression, rejected-listing memory, current approved duplicates and 30-day retention remain authoritative. A service-only RPC locks and checks the unchanged listing snapshot, exclusions snapshot, flags and duplicate decisions immediately before updating. Changed listings stay pending. Failures leave eligible jobs available for manual review and appear in the import result. Metadata records the policy, reason and approval time. Automatic approvals never write human feedback. Manual submissions are not automatically approved.
 
 ## Exclude this type
 

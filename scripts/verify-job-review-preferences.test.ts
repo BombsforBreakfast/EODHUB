@@ -1,23 +1,26 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { scoreJobReview, jobReviewPage } from "../app/lib/jobReviewPriority";
-import { engineeringDegreePenalty } from "../app/lib/jobEngineeringDegree";
+import { jobDegreePenalty } from "../app/lib/jobDegreeRequirements";
 import { learnedJobSignals, learnedJobAdjustment, matchesJobPhrase, type JobReviewFeedback } from "../app/lib/jobReviewPreferences";
 import { JobImportMemory, filterRememberedJobs } from "../app/lib/server/jobImportMemory";
 import { createClient } from "@supabase/supabase-js";
 
-test("explicit engineering degrees lower rank, with smaller preferred/experience penalties and visible reasons", () => {
-  for (const text of ["Bachelor's degree in electrical engineering required.", "Bachelors in engineering required.", "Must hold an engineering degree.", "B.S. in Mechanical Engineering required.", "Degree in engineering is essential."]) assert.equal(engineeringDegreePenalty(text).points, 25, text);
-  for (const text of ["Master’s degree in engineering required.", "Ph.D. in electrical engineering required."]) assert.equal(engineeringDegreePenalty(text).points, 30, text);
-  for (const text of ["Engineering degree preferred.", "Bachelor's degree in engineering or equivalent experience.", "Bachelor’s degree in engineering desirable."]) assert.equal(engineeringDegreePenalty(text).points, 10, text);
-  for (const text of ["Engineering experience required.", "Engineering degree not required.", "No engineering degree required.", "Degree in engineering is not mandatory.", "Bachelor's degree in any field. Engineering experience preferred.", "Bachelor's degree in any field and engineering experience required.", "Engineering department requires a degree in history.", "Degree in history required."]) assert.equal(engineeringDegreePenalty(text).points, 0, text);
+test("only engineering, chemistry and biology degrees have a small non-stacking score penalty", () => {
+  for (const subject of ["engineering", "chemistry", "biology"]) {
+    for (const text of [`Bachelor's degree in ${subject} required.`, `Master’s degree in ${subject} required.`, `Ph.D. in ${subject} required.`, `B.S. in ${subject} required.`, `Must hold a ${subject} degree.`]) assert.equal(jobDegreePenalty(text).points, 10, text);
+    for (const text of [`${subject} degree preferred.`, `Bachelor's degree in ${subject} or equivalent experience.`]) assert.equal(jobDegreePenalty(text).points, 5, text);
+    for (const text of [`${subject} experience required.`, `${subject} degree not required.`, `No ${subject} degree required.`, `Degree in ${subject} is not mandatory.`]) assert.equal(jobDegreePenalty(text).points, 0, text);
+  }
+  for (const text of ["Bachelor's degree required.", "Degree in history required.", "Bachelor's degree in any field. Engineering experience preferred.", "Bachelor's degree in any field and engineering experience required.", "Engineering department requires a degree in history."]) assert.equal(jobDegreePenalty(text).points, 0, text);
+  assert.equal(jobDegreePenalty("Degree in engineering, chemistry or biology required.").points, 10);
   const technical = { id: "engineering", title: "EOD Engineer", description: "EOD work. Bachelor's degree in engineering required." };
   const handsOn = { id: "technician", title: "EOD Technician", description: "EOD work." };
-  assert.equal(scoreJobReview(technical).score, 60);
-  assert.equal(scoreJobReview(technical).band, "possible");
+  assert.equal(scoreJobReview(technical).score, 75);
+  assert.equal(scoreJobReview(technical).band, "high");
   assert.match(scoreJobReview(technical).reasons[0], /engineering degree/);
   assert.equal(jobReviewPage([technical, handsOn], "all", 0, 25).jobs[0].id, "technician");
-  assert.equal(scoreJobReview({ ...technical, description: null, og_description: technical.description }).score, 60);
+  assert.equal(scoreJobReview({ ...technical, description: null, og_description: technical.description }).score, 75);
 });
 const feedback = (count: number, decision: JobReviewFeedback["decision"], title = "EOD Technician"): JobReviewFeedback[] => Array.from({ length: count }, (_, i) => ({ job_id: `${decision}-${i}`, title, company_name: `Employer ${i}`, location: "Tampa", decision }));
 test("learning requires three distinct consistent examples, deduplicates reposts and caps overlapping signals", () => {

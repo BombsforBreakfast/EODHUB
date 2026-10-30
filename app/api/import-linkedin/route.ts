@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { autoApproveAfterImport } from "../../lib/server/autoApproveExplicitJobs";
 import { filterRememberedJobs } from "../../lib/server/jobImportMemory";
 import { createClient } from "@supabase/supabase-js";
 import { detectLinkedInCategory, scoreLinkedInJob } from "../../lib/linkedin/relevance";
@@ -262,8 +263,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const autoApproved = await autoApproveAfterImport(supabase, "linkedin", errors);
   return NextResponse.json({
     imported,
+    autoApproved,
     refreshed,
     purged: purged ?? 0,
     skipped,

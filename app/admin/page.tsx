@@ -4888,7 +4888,7 @@ export default function AdminPage() {
                 <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => setJobsPriority(value)}>{label} ({jobsPriorityCounts[value]})</button>
               ))}
             </div>
-            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Title matches carry more weight. Engineering degree requirements lower the score; repeated review decisions refine it. Lower-confidence jobs remain available for review.</p>
+            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Engineering, chemistry and biology degrees carry a small score penalty. Explicit Explosive Ordnance Disposal and UXO titles pass straight to approval unless excluded. Other jobs remain available for review.</p>
             <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
                 {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} matching ${pendingOnly ? "pending " : ""}jobs of ${jobsPriorityCounts.all.toLocaleString()} total · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}

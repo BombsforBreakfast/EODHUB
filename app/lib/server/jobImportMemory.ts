@@ -82,6 +82,12 @@ export class JobImportMemory {
     return matches.find(match => match.rejected) ?? matches[0];
   }
 
+  rememberApproval(identity: JobMemoryIdentity, id: string): void {
+    for (const key of jobMemoryKeys(identity)) {
+      if (!this.decisions.get(key)?.rejected) this.decisions.set(key, { id, rejected: false });
+    }
+  }
+
   pendingDuplicateIds(identity: JobMemoryIdentity): string[] {
     return [...new Set(jobMemoryKeys(identity).flatMap(key => [...(this.pending.get(key) ?? [])]))]
       .filter(id => !this.retiredIds.has(id));
