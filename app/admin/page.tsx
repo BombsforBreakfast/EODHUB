@@ -182,6 +182,7 @@ type JobImportMetadata = {
 };
 
 type Job = {
+  review_priority?: { score: number; band: "high" | "possible" | "low"; reasons: string[]; matchedKeywords: string[] };
   filter_overrides?: JobFacetOverrides;
   id: string;
   created_at: string | null;
@@ -875,6 +876,8 @@ export default function AdminPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsTotal, setJobsTotal] = useState(0);
+  const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all">("high");
+  const [jobsPriorityCounts, setJobsPriorityCounts] = useState({ high: 0, possible: 0, low: 0, all: 0 });
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
   const jobsRequest = useRef(0);
@@ -1847,7 +1850,7 @@ export default function AdminPage() {
     setJobsError("");
     try {
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}&offset=${(page - 1) * jobsPageSize}&limit=${jobsPageSize}`, {
+    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}&priority=${jobsPriority}&offset=${(page - 1) * jobsPageSize}&limit=${jobsPageSize}`, {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
     if (!res.ok) throw new Error("Could not load jobs. Please retry.");
@@ -1858,6 +1861,7 @@ export default function AdminPage() {
     if (page > lastPage) { void loadJobs(lastPage); return; }
     setJobsPage(page);
     setJobsTotal(total);
+    setJobsPriorityCounts(json.priorityCounts ?? { high: 0, possible: 0, low: 0, all: total });
     setJobs((json.jobs ?? []) as Job[]);
     setSelectedJobs(new Set());
     } catch (error) {
@@ -2255,7 +2259,7 @@ export default function AdminPage() {
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
-  }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
+  }, [pendingOnly, jobsPriority, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setUserSearchDebounced(userSearch), 350);
@@ -4876,9 +4880,15 @@ export default function AdminPage() {
 
             {jobsSubTab === "submissions" && (
               <>
+            <div aria-label="Job priority filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+              {([['high', 'Strong matches'], ['possible', 'Possible matches'], ['low', 'Low confidence'], ['all', 'All jobs']] as const).map(([value, label]) => (
+                <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => setJobsPriority(value)}>{label} ({jobsPriorityCounts[value]})</button>
+              ))}
+            </div>
+            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Title matches carry more weight; description-only matches stay in Possible matches. Lower-confidence jobs remain available for review.</p>
             <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
-                {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} ${pendingOnly ? "pending jobs remaining" : "jobs total"} · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}
+                {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} matching ${pendingOnly ? "pending " : ""}jobs of ${jobsPriorityCounts.all.toLocaleString()} total · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}
               </span>
               <button style={actionBtn("#475569")} disabled={jobsLoading || batchActing || !!actionLoading || jobsPage === 1} onClick={() => void loadJobs(jobsPage - 1)}>Previous</button>
               <label style={{ color: t.textMuted, fontSize: 13 }}>Page {" "}
@@ -4926,7 +4936,7 @@ export default function AdminPage() {
             )}
             {jobs.length === 0 && (
               <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
-                {pendingOnly ? "No pending job submissions." : "No jobs found."}
+                {jobsPriority !== "all" ? "No jobs in this priority tier. Choose another tier or All jobs." : pendingOnly ? "No pending job submissions." : "No jobs found."}
               </div>
             )}
             <div style={{ display: "grid", gap: 14 }}>
@@ -4945,6 +4955,10 @@ export default function AdminPage() {
                       />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
+                        {job.review_priority && <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
+                          <strong style={{ color: job.review_priority.band === "high" ? "#16a34a" : job.review_priority.band === "possible" ? "#d97706" : t.textMuted }}>{job.review_priority.score}/100 · {job.review_priority.band === "high" ? "Strong match" : job.review_priority.band === "possible" ? "Possible match" : "Low confidence"}</strong>
+                          <div>{job.review_priority.reasons.slice(0, 4).join(" · ")}</div>
+                        </div>}
                         <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown company"}</div>
                         <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
                         {job.description && (

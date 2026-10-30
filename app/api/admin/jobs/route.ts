@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { jobReviewPage, type JobReviewFilter } from "../../../lib/jobReviewPriority";
 
 const JOB_ADMIN_COLUMNS =
   "id, created_at, title, company_name, location, category, description, og_description, apply_url, pay_min, pay_max, clearance, is_approved, applications_under_review, source_type, reliefweb_job_id, relevance_score, import_metadata, filter_overrides";
@@ -46,6 +47,21 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
+  const priority = req.nextUrl.searchParams.get("priority");
+  if (priority !== null) {
+    if (!["high", "possible", "low", "all"].includes(priority)) return NextResponse.json({ error: "Invalid priority filter" }, { status: 400 });
+    const rows = [];
+    for (let start = 0; ; start += 500) {
+      let query = adminClient.from("jobs").select(JOB_ADMIN_COLUMNS).neq("is_rejected", true).order("id").range(start, start + 499);
+      if (pendingOnly) query = query.neq("is_approved", true);
+      const { data, error } = await query;
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      rows.push(...(data ?? []));
+      if ((data ?? []).length < 500) break;
+    }
+    return NextResponse.json(jobReviewPage(rows, priority as JobReviewFilter, offset, limit));
+  }
 
   let reliefWebCountQuery = adminClient
     .from("jobs")
