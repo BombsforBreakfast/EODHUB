@@ -2,10 +2,24 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+// Security Enhancement: Use crypto.getRandomValues and rejection sampling for secure referral code generation
 export function makeReferralCode(length = 8): string {
   let code = "";
+  const maxValid = 256 - (256 % CHARS.length);
+  const randomBuffer = new Uint8Array(length);
+  let bufferIndex = length;
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    let randomValue;
+    do {
+      if (bufferIndex >= length) {
+        crypto.getRandomValues(randomBuffer);
+        bufferIndex = 0;
+      }
+      randomValue = randomBuffer[bufferIndex++];
+    } while (randomValue >= maxValid);
+
+    code += CHARS[randomValue % CHARS.length];
   }
   return code;
 }
