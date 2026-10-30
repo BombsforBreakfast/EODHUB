@@ -42,7 +42,8 @@ export const rentalListings: RentalListing[] = [
   {
     id: "4726-calinda-139", ownerId: "terry-grawey", contactMode: "owner-only",
     title: "Move in furnished. Make Niceville home.",
-    address: "4726 Calinda Lane · Unit 139", city: "Niceville", state: "FL", zip: "32578",
+    // Keep the existing listing ID for saved availability records; corrected by owner.
+    address: "4276 Calinda Lane · Unit 139", city: "Niceville", state: "FL", zip: "32578",
     monthlyRent: 1650, bedrooms: 1, bathrooms: 1, propertyType: "Condo", furnished: true,
     availability: { status: "available-now" }, availabilityUpdatedAt: "2026-10-24",
     description: "A fully furnished one-bedroom condo for your next stay in Niceville. Contact Terry directly to discuss the rental, move-in timing, and lease terms.",

@@ -4,6 +4,7 @@ import { loadRentalListings } from "@/app/lib/rentals/availability.server";
 import RentalDirectory from "./RentalDirectory";
 import RentalsWebGate from "./RentalsWebGate";
 import { publishedRentalInventory } from "@/app/lib/rentals/published.server";
+import { locateRentalListings } from "@/app/lib/rentals/locations.server";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -22,5 +23,6 @@ export const metadata: Metadata = {
 
 export default async function RentalsPage() {
   const [listings, inventory] = await Promise.all([loadRentalListings(),publishedRentalInventory()]);
-  return <RentalsWebGate>{inventory.unavailable?<p role="status" style={{textAlign:"center",padding:"12px 20px",fontSize:13}}>Additional rental inventory is temporarily unavailable. Please try again shortly.</p>:null}<RentalDirectory listings={[...listings,...inventory.listings]} owners={[...rentalOwners,...inventory.owners]} showFilters showStateFilter /></RentalsWebGate>;
+  const mappedListings = await locateRentalListings([...listings, ...inventory.listings]);
+  return <RentalsWebGate>{inventory.unavailable?<p role="status" style={{textAlign:"center",padding:"12px 20px",fontSize:13}}>Additional rental inventory is temporarily unavailable. Please try again shortly.</p>:null}<RentalDirectory listings={mappedListings} owners={[...rentalOwners,...inventory.owners]} showFilters showStateFilter /></RentalsWebGate>;
 }

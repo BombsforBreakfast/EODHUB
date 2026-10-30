@@ -1,3 +1,5 @@
+import { isEglinRental, NAVSCOLEOD } from "./locations";
+
 export type RentalManagementContact = {
   company: string;
   realtor: string;
@@ -46,6 +48,7 @@ export type RentalListing = {
   rentPeriod?: "month" | "week" | "night";
   priceBasis?: "property" | "room";
   portalListing?: boolean;
+  mapLocation?: { latitude: number; longitude: number; source: "census"; matchedAddress: string };
   providerContact?: {name:string;phone:string;email:string;company:string};
   rentalTerms?: {minimumLeaseMonths:number;deposit:number;fees:string;utilities:string;petDetails:string};
 };
@@ -78,7 +81,8 @@ export function rentalMatches(listing: RentalListing, filters: { query: string; 
   const query = filters.query.trim().toLowerCase();
   const owner = owners.find(item => item.id === listing.ownerId);
   const stateName = rentalStates.find(([code]) => code === listing.state)?.[1] ?? listing.state;
-  const search = [listing.title, listing.address, listing.city, listing.state, stateName, listing.zip, ...listing.nearby, ...listing.highlights, owner?.name].join(" ").toLowerCase();
+  const school = isEglinRental(listing) ? `${NAVSCOLEOD.name} ${NAVSCOLEOD.fullName} ${NAVSCOLEOD.address}` : "";
+  const search = [listing.title, listing.address, listing.city, listing.state, stateName, listing.zip, ...listing.nearby, ...listing.highlights, owner?.name, school].join(" ").toLowerCase();
   return (!query || search.includes(query)) && (!filters.state || listing.state === filters.state) &&
     (!filters.availability || listing.availability.status === filters.availability) &&
     (!filters.ownerId || listing.ownerId === filters.ownerId);

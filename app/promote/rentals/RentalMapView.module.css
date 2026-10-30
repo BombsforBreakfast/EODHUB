@@ -1,0 +1,26 @@
+.panel { min-width: 0; margin: 0 0 28px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.heading { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.heading h2 { margin: 0; font-size: 17px; font-weight: 750; }
+.heading p, .note { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 6px 0 0; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.tools button, .selection button { padding: 9px 12px; min-height: 44px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-sm); font-size: 12px; }
+.mapFrame { position: relative; isolation: isolate; }
+.canvas { width: 100%; height: clamp(360px, 55vw, 540px); background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius-sm); font: inherit; z-index: 0; }
+.panel[data-dark="true"] .tiles { filter: grayscale(1) invert(1) contrast(.9); }
+.markerShell { border: 0; background: transparent; }
+.canvas .pin { display: block; position: absolute; translate: -50% -50%; min-height: 34px; padding: 7px 11px; white-space: nowrap; font-size: 12px; font-weight: 750; background: var(--surface); color: var(--ink); border: 2px solid var(--ink); border-radius: 999px; box-shadow: 0 2px 8px #0004; }
+.canvas .pin[aria-pressed="true"] { background: var(--electric-green); color: var(--paper); border-color: var(--electric-green); }
+.canvas .pin[data-availability="pending"] { border-style: dashed; }
+.canvas .pin[data-availability="unavailable"] { opacity: .75; }
+.canvas .schoolPin { background: #25386b; color: #fff; border-color: #fff; }
+.canvas :global(.leaflet-control-attribution), .canvas :global(.leaflet-popup-content-wrapper), .canvas :global(.leaflet-popup-tip) { background: var(--surface); color: var(--ink); }
+.canvas :global(.leaflet-control-attribution) { font-size: 10px; }
+.canvas :global(.leaflet-control-attribution) a, .canvas :global(.leaflet-popup-content) a, .note a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.canvas :global(.leaflet-popup-content) { overflow-wrap: anywhere; max-width: min(260px, calc(100vw - 128px)); }
+.zoom { position: absolute; right: 10px; bottom: 34px; display: grid; gap: 3px; padding: 3px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); z-index: 1; }
+.zoom button { min-width: 44px; min-height: 44px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; font-size: 22px; }
+.selection { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.selection p { margin: 0; font-size: 12px; }
+.schoolAddress { font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; margin: 12px 0 0; }
+@media (max-width: 600px) { .panel { padding: 10px; } .canvas { height: 420px; } }
+@media (orientation: landscape) and (max-width: 1000px) and (max-height: 600px) { .canvas { height: 65svh; min-height: 220px; } }

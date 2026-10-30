@@ -2,13 +2,17 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowDown, ArrowRight, ArrowUpRight, Bath, BedDouble, Check, ChevronLeft, ChevronRight, Copy, House, Images, Mail, MapPin, Phone, Search, Sofa, Users, Waves, X } from "lucide-react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ArrowDown, ArrowRight, ArrowUpRight, Bath, BedDouble, Check, ChevronLeft, ChevronRight, Copy, House, Images, List, Mail, Map as MapIcon, MapPin, Phone, Search, Sofa, Users, Waves, X } from "lucide-react";
 import { availabilityLabel, getRentalManagement, rentalMatches, rentalStates, type RentalListing, type RentalManagementContact, type RentalOwner } from "@/app/lib/rentals/catalog";
 import { writeClipboardText } from "@/app/lib/native/nativeClipboard";
 import styles from "./rentals.module.css";
 import ServiceRating, { ServiceRatingProvider, ServiceRatingSummary } from "./ServiceRating";
 import { useTheme } from "@/app/lib/ThemeContext";
+import RentalSchoolProximity from "./RentalSchoolProximity";
+
+const RentalMapView = dynamic(() => import("./RentalMapView"), { ssr: false, loading: () => <p role="status">Loading rental map…</p> });
 
 const money = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
 
@@ -66,6 +70,7 @@ function RentalGallery({ listing, owner, close, ask }: { listing: RentalListing;
         <span className={styles.photoCounter} aria-live="polite">{photoIndex + 1} / {listing.photos.length}</span>
       </div>
       <div className={styles.thumbnails} aria-label="Choose a property photo">{listing.photos.map((photo, index) => <button type="button" key={photo} aria-label={`View photo ${index + 1}`} aria-pressed={index === photoIndex} className={index === photoIndex ? styles.selectedThumbnail : ""} onClick={() => setPhotoIndex(index)}><Image src={photo} alt="" fill unoptimized draggable={false} sizes="88px" loading="lazy" /></button>)}</div>
+      <RentalSchoolProximity listing={listing} />
       <div className={styles.galleryFooter}><p>Contact the owner for current property details.</p><button type="button" className={styles.primaryButton} onClick={ask}>Ask {owner.name.split(" ")[0]} about this home <ArrowRight size={17} /></button></div>
     </div>
   </dialog>;
@@ -110,11 +115,17 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
   const [rentPeriod, setRentPeriod] = useState("");
   const [priceBasis, setPriceBasis] = useState("");
   const [availableBy, setAvailableBy] = useState("");
+  const [view, setView] = useState<"list" | "map">("list");
+  const [mapSelection, setMapSelection] = useState<string[]>([]);
   const [modal, setModal] = useState<{ kind: "gallery" | "contact"; listingId: string } | null>(null);
   const modalTrigger = useRef<HTMLButtonElement | null>(null);
-  const filtered = listings.filter(listing => rentalMatches(listing, { query, state, availability, ownerId }, owners) &&
+  const filtered = useMemo(() => listings.filter(listing => rentalMatches(listing, { query, state, availability, ownerId }, owners) &&
     (!rentPeriod || (listing.rentPeriod ?? "month") === rentPeriod) && (!priceBasis || (listing.priceBasis ?? "property") === priceBasis) &&
-    (!maxRent || listing.monthlyRent <= Number(maxRent)) && (!availableBy || listing.availability.status === "available-now" || (listing.projectedAvailabilityDate && listing.projectedAvailabilityDate <= availableBy)));
+    (!maxRent || listing.monthlyRent <= Number(maxRent)) && (!availableBy || listing.availability.status === "available-now" || (listing.projectedAvailabilityDate && listing.projectedAvailabilityDate <= availableBy))), [listings, owners, query, state, availability, ownerId, rentPeriod, priceBasis, maxRent, availableBy]);
+  const selectedMapIds = useMemo(() => mapSelection.filter(id => filtered.some(listing => listing.id === id)), [mapSelection, filtered]);
+  const displayed = selectedMapIds.length ? filtered.filter(listing => selectedMapIds.includes(listing.id)) : filtered;
+  const selectMapLocation = useCallback((ids: string[]) => setMapSelection(current => ids.every(id => current.includes(id)) ? [] : ids), []);
+  const clearMapSelection = useCallback(() => setMapSelection([]), []);
   function track(id: string, kind: "view" | "contact") {
     if (!listings.some(p => p.id === id && p.portalListing)) return;
     void fetch("/api/rentals/events", { method: "POST", credentials: "omit", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id], kind }) }).catch(() => {});
@@ -138,7 +149,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
     setModal(current => current?.kind === kind ? null : current);
     requestAnimationFrame(() => modalTrigger.current?.focus());
   }
-  function reset() { setQuery(""); setState(""); setAvailability(""); setOwnerId(""); setMaxRent(""); setRentPeriod(""); setPriceBasis(""); setAvailableBy(""); }
+  function reset() { setQuery(""); setState(""); setAvailability(""); setOwnerId(""); setMaxRent(""); setRentPeriod(""); setPriceBasis(""); setAvailableBy(""); setMapSelection([]); }
 
   return <ServiceRatingProvider><div className={styles.page} data-rental-experience="public" style={{ "--ink": t.text, "--muted": t.textMuted, "--paper": t.bg, "--line": t.border, "--surface": t.surface, "--hover": t.surfaceHover, "--input": t.input, "--input-border": t.inputBorder, "--badge-bg": t.badgeBg, "--badge-text": t.badgeText, "--radius": `${t.radius}px`, "--radius-sm": `${t.radiusSm}px`, "--electric-green": isDark ? "#33ff66" : "#087e2a", "--green-surface": isDark ? "#020802" : "#effbf2", "--green-border": isDark ? "#33ff6670" : "#087e2a70", colorScheme: isDark ? "dark" : "light" } as CSSProperties}>
     <header className={styles.header}><Link href="/promote/rentals" className={styles.brand} aria-label="EOD-HUB Rentals home"><Image src="/branding/eod-crab-logo.png" width={40} height={40} alt="" /><span>EOD-HUB<span className={styles.brandSection}>RENTALS</span></span></Link>
@@ -155,6 +166,10 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
       </section>
       <div className={styles.locationStrip}><span>FIRST STOP</span><p>Niceville, Florida <span>—</span> Eglin AFB &amp; EOD school area</p><span>{listings.length} PLACES TO CALL HOME</span></div>
       <section id="rentals" className={styles.directory} aria-label="Rental listings">
+        <div className={styles.viewToolbar}><div role="group" aria-label="Rental view" className={styles.viewToggle}>{(["list", "map"] as const).map(option => {
+          const Icon = option === "list" ? List : MapIcon;
+          return <button key={option} type="button" aria-pressed={view === option} onClick={() => setView(option)}><Icon size={16} aria-hidden="true" />{option === "list" ? "List" : "Map"}</button>;
+        })}</div></div>
         {showFilters ? <div className={showStateFilter ? styles.filters : `${styles.filters} ${styles.filtersWithoutState}`}>
           <label className={styles.searchField}><span>Search rentals</span><div><Search size={18} /><input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="City, ZIP, base, or feature" /></div></label>
           {showStateFilter ? <label><span>State</span><select value={state} onChange={event => setState(event.target.value)}><option value="">All 50 states</option>{rentalStates.map(([code, name]) => <option value={code} key={code}>{name}</option>)}</select></label> : null}
@@ -162,8 +177,10 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
           <label><span>Owner</span><select value={ownerId} onChange={event => setOwnerId(event.target.value)}><option value="">All owners</option>{owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label>
         </div> : null}
         {showFilters ? <div className={styles.extraFilters}><label><span>Maximum rent ($)</span><input type="number" min="1" value={maxRent} onChange={e => { setMaxRent(e.target.value); if (!rentPeriod && e.target.value) setRentPeriod("month"); }} placeholder="Any price" /></label><label><span>Pricing period</span><select value={rentPeriod} onChange={e => setRentPeriod(e.target.value)}><option value="">Any period</option><option value="month">Per month</option><option value="week">Per week</option><option value="night">Per night</option></select></label><label><span>Price covers</span><select value={priceBasis} onChange={e => setPriceBasis(e.target.value)}><option value="">Room or whole property</option><option value="property">Whole property</option><option value="room">Per room</option></select></label><label><span>Available by (optional)</span><input type="date" value={availableBy} onChange={e => setAvailableBy(e.target.value)} /></label></div> : null}
-        <div className={styles.resultsLine}><p role="status" aria-live="polite">{filtered.length} {filtered.length === 1 ? "rental" : "rentals"}{state ? ` in ${rentalStates.find(([code]) => code === state)?.[1]}` : " to explore"}</p>{query || state || availability || ownerId || maxRent || rentPeriod || priceBasis || availableBy ? <button type="button" onClick={reset}>Clear filters <X size={13} /></button> : <span>Availability provided by the owner</span>}</div>
-        <div className={styles.cardGrid}>{filtered.map(listing => {
+        <div className={styles.resultsLine}><p role="status" aria-live="polite">{displayed.length} {displayed.length === 1 ? "rental" : "rentals"}{selectedMapIds.length ? " at the selected map location" : state ? ` in ${rentalStates.find(([code]) => code === state)?.[1]}` : " to explore"}</p>{query || state || availability || ownerId || maxRent || rentPeriod || priceBasis || availableBy || selectedMapIds.length ? <button type="button" onClick={reset}>Clear filters <X size={13} /></button> : <span>Availability provided by the owner</span>}</div>
+        {view === "list" && selectedMapIds.length ? <div className={styles.mapSelection}><span>A map location is selected.</span><button type="button" onClick={clearMapSelection}>Show all matching rentals</button></div> : null}
+        {view === "map" ? <RentalMapView listings={filtered} selectedIds={selectedMapIds} onSelect={selectMapLocation} onClear={clearMapSelection} /> : null}
+        <div className={styles.cardGrid}>{displayed.map(listing => {
           const owner = owners.find(item => item.id === listing.ownerId)!;
           return <article className={styles.card} key={listing.id} id={listing.id} data-provider-rental={listing.portalListing || undefined}>
             <button className={styles.cardPhoto} type="button" onClick={event => openModal("gallery", listing.id, event.currentTarget)} aria-label={`View ${listing.photos.length} photos of ${listing.address}`}><RentalPhoto src={listing.photos[0]} alt={listing.address} /><span className={styles.availability}><span className={listing.availability.status === "available-now" ? styles.liveDot : styles.neutralDot} />{availabilityLabel(listing.availability)}</span>{listing.availability.status === "pending" ? <span className={styles.pendingStamp} aria-hidden="true">PENDING</span> : null}<span className={styles.galleryBadge}><Images size={14} /> {listing.photos.length} photos</span></button>
@@ -172,6 +189,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
               {listing.projectedAvailabilityDate ? <p className={styles.updated}>Projected availability: <time dateTime={listing.projectedAvailabilityDate}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${listing.projectedAvailabilityDate}T00:00:00Z`))}</time></p> : null}
               <p className={styles.cardTitle}>{listing.title}</p>
               <div className={styles.propertyFacts}><span><BedDouble size={17} />{listing.bedrooms} {listing.bedrooms === 1 ? "bed" : "beds"}</span><span><Bath size={17} />{listing.bathrooms} {listing.bathrooms === 1 ? "bath" : "baths"}</span><span><Sofa size={16} />{listing.furnished ? "Furnished" : "Unfurnished"}</span></div>
+              <RentalSchoolProximity listing={listing} />
               <div className={styles.tags}>{listing.highlights.map(highlight => <span key={highlight}>{highlight === "Pool" ? <Waves size={13} /> : null}{highlight}</span>)}</div>
               {listing.sharedRenters ? <div className={styles.roommateNote}><Users size={18} /><p><strong>Open to {listing.sharedRenters} individual renters</strong><span>About {money(listing.monthlyRent / listing.sharedRenters)} each with an equal split. Total rent is {money(listing.monthlyRent)}/month; confirm lease terms with Terry.</span></p></div> : null}
               <p className={styles.description}>{listing.description}</p>
