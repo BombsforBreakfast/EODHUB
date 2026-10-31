@@ -11,12 +11,15 @@ import styles from "./rentals.module.css";
 import ServiceRating, { ServiceRatingProvider, ServiceRatingSummary } from "./ServiceRating";
 import { useTheme } from "@/app/lib/ThemeContext";
 import RentalSchoolProximity from "./RentalSchoolProximity";
+import RentalHomeBuyingAd from "./RentalHomeBuyingAd";
+import RentalFlagDialog from "./RentalFlagDialog";
+import { recordRentalEngagement } from "@/app/lib/rentals/analytics.client";
 
 const RentalMapView = dynamic(() => import("./RentalMapView"), { ssr: false, loading: () => <p role="status">Loading rental map…</p> });
 
 const money = (amount: number) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(amount);
 
-function CopyRentalEmail({ email, label, className = styles.copyEmail }: { email: string; label?: string; className?: string }) {
+function CopyRentalEmail({ email, label, className = styles.copyEmail, propertyId }: { email: string; label?: string; className?: string; propertyId?: string }) {
   const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
   const timeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (timeout.current) clearTimeout(timeout.current); }, []);
@@ -24,6 +27,7 @@ function CopyRentalEmail({ email, label, className = styles.copyEmail }: { email
     if (timeout.current) clearTimeout(timeout.current);
     try {
       await writeClipboardText(email, "Rental contact email");
+      if (propertyId) recordRentalEngagement("property", propertyId, "email_copy");
       setStatus("copied");
       timeout.current = setTimeout(() => setStatus("idle"), 3000);
     } catch {
@@ -40,8 +44,9 @@ function CopyRentalEmail({ email, label, className = styles.copyEmail }: { email
   </div>;
 }
 
-function RentalApplicationLink({ management }: { management: RentalManagementContact }) {
-  return <a className={styles.applicationLink} href={management.applicationUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${management.company} rental application in a new tab`}>Rental application <ArrowUpRight size={16} /></a>;
+function RentalApplicationLink({ management, propertyId }: { management: RentalManagementContact; propertyId: string }) {
+  const record = () => recordRentalEngagement("property", propertyId, "application_click");
+  return <a className={styles.applicationLink} href={management.applicationUrl} target="_blank" rel="noopener noreferrer" onClick={record} onAuxClick={e => { if (e.button === 1) record(); }} aria-label={`Open ${management.company} rental application in a new tab`}>Rental application <ArrowUpRight size={16} /></a>;
 }
 
 function RentalPhoto({ src, alt, priority = false }: { src: string; alt: string; priority?: boolean }) {
@@ -90,14 +95,14 @@ function RentalContactModal({ listing, owner: originalOwner, close }: { listing:
       <p id="rental-contact-description" className={styles.contactDescription}>Ask about availability, move-in dates, and rental terms. Click an email address to copy it.</p>
       <div className={styles.ownerCard}>
         <div className={styles.ownerName}><span aria-hidden="true">{owner.name.split(" ").map(part => part[0]).join("")}</span><div><h3>{owner.name}</h3><p>{listing.portalListing ? "Rental provider" : "Rental owner"} · {listing.city}, {listing.state}</p></div></div>
-        <CopyRentalEmail email={owner.email} />
-        {listing.providerContact ? <><p>{listing.providerContact.company}</p><a className={styles.managerPhone} href={`tel:${listing.providerContact.phone.replace(/[^+\d]/g, "")}`}><Phone size={17} />{listing.providerContact.phone}</a></> : null}
+        <CopyRentalEmail email={owner.email} propertyId={listing.id} />
+        {listing.providerContact ? <><p>{listing.providerContact.company}</p><a className={styles.managerPhone} onClick={() => recordRentalEngagement("property", listing.id, "phone_click")} href={`tel:${listing.providerContact.phone.replace(/[^+\d]/g, "")}`}><Phone size={17} />{listing.providerContact.phone}</a></> : null}
         {management ? <div className={styles.managementContact}>
           <p className={styles.eyebrow}>PROPERTY MANAGEMENT</p>
           <h3>{management.company}</h3><p>Realtor: {management.realtor}</p>
-          <a className={styles.managerPhone} href={`tel:${management.phoneHref}`}><Phone size={17} />{management.phone}</a>
-          <CopyRentalEmail email={management.email} />
-          <RentalApplicationLink management={management} />
+          <a className={styles.managerPhone} onClick={() => recordRentalEngagement("property", listing.id, "phone_click")} href={`tel:${management.phoneHref}`}><Phone size={17} />{management.phone}</a>
+          <CopyRentalEmail email={management.email} propertyId={listing.id} />
+          <RentalApplicationLink management={management} propertyId={listing.id} />
           <small>For calls, contact {management.company}. Applications open on their website.</small>
         </div> : null}
       </div>
@@ -117,7 +122,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
   const [availableBy, setAvailableBy] = useState("");
   const [view, setView] = useState<"list" | "map">("list");
   const [mapSelection, setMapSelection] = useState<string[]>([]);
-  const [modal, setModal] = useState<{ kind: "gallery" | "contact"; listingId: string } | null>(null);
+  const [modal, setModal] = useState<{ kind: "gallery" | "contact" | "flag"; listingId: string } | null>(null);
   const modalTrigger = useRef<HTMLButtonElement | null>(null);
   const filtered = useMemo(() => listings.filter(listing => rentalMatches(listing, { query, state, availability, ownerId }, owners) &&
     (!rentPeriod || (listing.rentPeriod ?? "month") === rentPeriod) && (!priceBasis || (listing.priceBasis ?? "property") === priceBasis) &&
@@ -126,26 +131,21 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
   const displayed = selectedMapIds.length ? filtered.filter(listing => selectedMapIds.includes(listing.id)) : filtered;
   const selectMapLocation = useCallback((ids: string[]) => setMapSelection(current => ids.every(id => current.includes(id)) ? [] : ids), []);
   const clearMapSelection = useCallback(() => setMapSelection([]), []);
-  function track(id: string, kind: "view" | "contact") {
-    if (!listings.some(p => p.id === id && p.portalListing)) return;
-    void fetch("/api/rentals/events", { method: "POST", credentials: "omit", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [id], kind }) }).catch(() => {});
-  }
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(entries => { for (const entry of entries) if (entry.isIntersecting) { track(entry.target.id, "view"); observer.unobserve(entry.target); } }, { threshold: .35 });
-    document.querySelectorAll<HTMLElement>("[data-provider-rental]").forEach(element => observer.observe(element));
+    const observer = new IntersectionObserver(entries => { for (const entry of entries) if (entry.isIntersecting && entry.intersectionRatio >= .5) { const id = (entry.target as HTMLElement).dataset.rentalPropertyId; if (id) recordRentalEngagement("property", id, "impression"); observer.unobserve(entry.target); } }, { threshold: .5 });
+    document.querySelectorAll<HTMLElement>("[data-rental-property-id]").forEach(element => observer.observe(element));
     return () => observer.disconnect();
   // Listing impression collection is independent of member authentication.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listings]);
+  }, [displayed]);
   const selectedListing = listings.find(listing => listing.id === modal?.listingId);
   const selectedOwner = owners.find(owner => owner.id === selectedListing?.ownerId);
-  function openModal(kind: "gallery" | "contact", listingId: string, trigger?: HTMLButtonElement) {
-    if (kind === "contact") track(listingId, "contact");
+  function openModal(kind: "gallery" | "contact" | "flag", listingId: string, trigger?: HTMLButtonElement) {
+    if (kind !== "flag") recordRentalEngagement("property", listingId, kind === "contact" ? "contact_open" : "property_open");
     if (trigger) modalTrigger.current = trigger;
     setModal({ kind, listingId });
   }
-  function closeModal(kind: "gallery" | "contact") {
+  function closeModal(kind: "gallery" | "contact" | "flag") {
     setModal(current => current?.kind === kind ? null : current);
     requestAnimationFrame(() => modalTrigger.current?.focus());
   }
@@ -183,7 +183,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
         <div className={styles.cardGrid}>{displayed.map(listing => {
           const owner = owners.find(item => item.id === listing.ownerId)!;
           return <article className={styles.card} key={listing.id} id={listing.id} data-provider-rental={listing.portalListing || undefined}>
-            <button className={styles.cardPhoto} type="button" onClick={event => openModal("gallery", listing.id, event.currentTarget)} aria-label={`View ${listing.photos.length} photos of ${listing.address}`}><RentalPhoto src={listing.photos[0]} alt={listing.address} /><span className={styles.availability}><span className={listing.availability.status === "available-now" ? styles.liveDot : styles.neutralDot} />{availabilityLabel(listing.availability)}</span>{listing.availability.status === "pending" ? <span className={styles.pendingStamp} aria-hidden="true">PENDING</span> : null}<span className={styles.galleryBadge}><Images size={14} /> {listing.photos.length} photos</span></button>
+            <button className={styles.cardPhoto} data-rental-property-id={listing.id} type="button" onClick={event => openModal("gallery", listing.id, event.currentTarget)} aria-label={`View ${listing.photos.length} photos of ${listing.address}`}><RentalPhoto src={listing.photos[0]} alt={listing.address} /><span className={styles.availability}><span className={listing.availability.status === "available-now" ? styles.liveDot : styles.neutralDot} />{availabilityLabel(listing.availability)}</span>{listing.availability.status === "pending" ? <span className={styles.pendingStamp} aria-hidden="true">PENDING</span> : null}<span className={styles.galleryBadge}><Images size={14} /> {listing.photos.length} photos</span></button>
             <div className={styles.cardBody}><div className={styles.cardTopLine}><span>{listing.propertyType} · {listing.city}, {listing.state}</span>{listing.furnished ? <Sofa size={17} aria-label="Fully furnished" /> : null}</div>
               <div className={styles.cardHeading}><h3>{listing.address}</h3><div className={styles.price}>{money(listing.monthlyRent)}<span>/ {listing.rentPeriod ?? "month"}{listing.priceBasis === "room" ? " per room" : ""}</span></div></div>
               {listing.projectedAvailabilityDate ? <p className={styles.updated}>Projected availability: <time dateTime={listing.projectedAvailabilityDate}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${listing.projectedAvailabilityDate}T00:00:00Z`))}</time></p> : null}
@@ -197,12 +197,13 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
               {listing.sourceNote ? <p className={styles.sourceNote}>{listing.sourceNote}</p> : null}
               <div className={styles.cardActions}><button type="button" className={styles.primaryButton} onClick={event => openModal("contact", listing.id, event.currentTarget)}>Ask about this rental <ArrowRight size={17} /></button></div>
               <p className={styles.updated}>Availability updated <time dateTime={listing.availabilityUpdatedAt}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${listing.availabilityUpdatedAt}T00:00:00Z`))}</time></p>
-              <div className={styles.cardFooter}><button type="button" onClick={() => { reset(); setOwnerId(owner.id); document.getElementById("rentals")?.scrollIntoView({ behavior: "smooth" }); }}>{owner.name} · {listings.filter(item => item.ownerId === owner.id).length} rentals</button><a href={`mailto:hello@eod-hub.com?subject=${encodeURIComponent("Rental listing concern")}&body=${encodeURIComponent(`Property: ${listing.address}, ${listing.city}, ${listing.state}\nListing reference: ${listing.id}\n\nConcern: `)}`}>Report listing</a></div>
+              <div className={styles.cardFooter}><button type="button" onClick={() => { reset(); setOwnerId(owner.id); document.getElementById("rentals")?.scrollIntoView({ behavior: "smooth" }); }}>{owner.name} · {listings.filter(item => item.ownerId === owner.id).length} rentals</button><button type="button" onClick={event => openModal("flag", listing.id, event.currentTarget)}>Flag listing</button></div>
             </div>
           </article>;
         })}</div>
         {!filtered.length ? <div className={styles.empty}><MapPin size={30} /><h3>No rentals here just yet.</h3><p>Our first three listings are in Niceville, Florida. Try another location or clear your filters to see them.</p><button type="button" className={styles.primaryButton} onClick={reset}>See all rentals <ArrowRight size={16} /></button></div> : null}
       </section>
+      <RentalHomeBuyingAd />
       <ServiceRating />
       <section className={styles.advertise} aria-labelledby="rental-advertise-title">
         <div><p className={styles.eyebrow}>FOR PROPERTY OWNERS &amp; MANAGERS</p><h2 id="rental-advertise-title">Have a place to rent?</h2><p>Reach the EOD community for $10 monthly or $100 annually per property. Create your rental account, submit your properties, and pay only after approval.</p><Link className={styles.primaryButton} href="/promote/rentals/portal">List your property <ArrowRight size={17} /></Link></div>
@@ -211,7 +212,8 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
       <section className={styles.disclosure}><p className={styles.paidDisclosure}>These are paid listings. EOD-HUB does not sponsor, endorse, or recommend the listed properties, owners, or property managers.</p><p>Listings and rental terms are owner-provided advertising. Availability is not live booking inventory; confirm current availability and all terms with the owner. EOD-HUB introduces you to the owner and does not handle applications, deposits, or leases.</p><p>Availability information updated October 23, 2026. Contact the owner to confirm current pricing and availability.</p></section>
     </main>
     <div className={styles.footer}><Link href="/promote/rentals">EOD-HUB RENTALS</Link><p>Find your place. Stay connected.</p><Link href="/login">EOD-HUB member sign in <ArrowRight size={15} /></Link></div>
-    {selectedListing && selectedOwner && modal ? modal.kind === "contact"
+    {selectedListing && selectedOwner && modal ? modal.kind === "flag"
+      ? <RentalFlagDialog key={`flag-${selectedListing.id}`} listing={selectedListing} close={() => closeModal("flag")} /> : modal.kind === "contact"
       ? <RentalContactModal key={`contact-${selectedListing.id}`} listing={selectedListing} owner={selectedOwner} close={() => closeModal("contact")} />
       : <RentalGallery key={`gallery-${selectedListing.id}`} listing={selectedListing} owner={selectedOwner} close={() => closeModal("gallery")} ask={() => openModal("contact", selectedListing.id)} /> : null}
   </div></ServiceRatingProvider>;

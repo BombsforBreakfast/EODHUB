@@ -5,6 +5,17 @@ import { supabase } from "@/app/lib/lib/supabaseClient";
 import { useTheme } from "@/app/lib/ThemeContext";
 import type { RentalStatus } from "@/app/lib/rentals/availability";
 import AdminRentalProvidersPanel from "./AdminRentalProvidersPanel";
+import AdminRentalDelistingsPanel from "./AdminRentalDelistingsPanel";
+import RentalAnalytics from "@/app/components/rentals/RentalAnalytics";
+import AdminRentalFlagsPanel, { rentalFlagsRequest } from "./AdminRentalFlagsPanel";
+import type { AnalyticsReport } from "@/app/lib/rentals/analytics";
+
+async function loadAnalytics(query: string, signal?: AbortSignal): Promise<AnalyticsReport> {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session) throw new Error("Sign in with your owner admin account.");
+  const response = await fetch(`/api/admin/rentals/analytics?${query}`, { signal, headers: { Authorization: `Bearer ${data.session.access_token}` }, cache: "no-store" });
+  const result = await response.json(); if (!response.ok) throw new Error(result.error || "Could not load analytics."); return result;
+}
 
 type Item = { id: string; address: string; status: RentalStatus; projectedAvailabilityDate: string };
 async function adminFetch(init?: RequestInit) {
@@ -20,6 +31,9 @@ export default function AdminRentalsPanel() {
   const [items, setItems] = useState<Item[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<"manage" | "analytics" | "flags" | "delistings">("manage");
+  const [flagCount, setFlagCount] = useState<number | null>(null);
+  useEffect(() => { void rentalFlagsRequest("?count=1").then(data => setFlagCount(data.active)).catch(() => {}); }, []);
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try { setItems((await adminFetch()).items); }
@@ -29,6 +43,8 @@ export default function AdminRentalsPanel() {
   useEffect(() => { void load(); }, [load]);
   return <section style={{ marginTop: 24, maxWidth: 720 }} aria-labelledby="rental-admin-title">
     <h2 id="rental-admin-title" style={{ fontSize: 24, fontWeight: 800 }}>Rentals</h2>
+    <nav aria-label="Rentals sections" style={{ display: "flex", flexWrap: "wrap", gap: 12, margin: "20px 0", borderBottom: `1px solid ${t.border}` }}>{([['manage', 'Manage rentals'], ['analytics', 'Analytics'], ['delistings', 'Delisting & refunds'], ['flags', `Flagged listings${flagCount === null ? '' : ` (${flagCount})`}`]] as const).map(([id, title]) => <button key={id} type="button" aria-current={tab === id ? "page" : undefined} onClick={() => setTab(id)} style={{ padding: "12px 4px", background: "transparent", border: 0, borderBottom: `2px solid ${tab === id ? t.text : 'transparent'}`, color: tab === id ? t.text : t.textMuted, fontWeight: 700 }}>{title}</button>)}</nav>
+    {tab === "delistings" ? <AdminRentalDelistingsPanel/> : tab === "analytics" ? <RentalAnalytics scope="admin" loadReport={loadAnalytics}/> : tab === "flags" ? <AdminRentalFlagsPanel onCount={setFlagCount}/> : <>
     <AdminRentalProvidersPanel />
     <h3 style={{ marginTop: 36, fontSize: 20, fontWeight: 800 }}>Listing availability</h3>
     <p style={{ color: t.textMuted, margin: "8px 0 20px" }}>Update availability on the public rentals page. Projected dates appear only when provided.</p>
@@ -36,6 +52,7 @@ export default function AdminRentalsPanel() {
     {loading ? <p role="status">Loading rentals…</p> : null}
     {error ? <div role="alert"><p>{error}</p><button type="button" onClick={() => void load()}>Retry</button></div> : null}
     {!loading && !error ? items.map(item => <RentalEditor key={item.id} item={item} />) : null}
+    </>}
   </section>;
 }
 function RentalEditor({ item }: { item: Item }) {

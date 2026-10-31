@@ -22,7 +22,7 @@ export async function rentalProvider(request: NextRequest, approved = true): Pro
   const { data, error } = await db.auth.getUser(token);
   if (error || !isRentalIdentity(data.user)) throw new RentalError("A separate EOD-HUB Rentals account is required.", 403);
   const user = data.user!;
-  const { data: provider, error: lookupError } = await db.from("rental_providers").select("user_id,full_name,phone,email,company,status,review_note,email_verified_at,created_at,stripe_customer_id").eq("user_id", user.id).maybeSingle();
+  const { data: provider, error: lookupError } = await db.from("rental_providers").select("user_id,full_name,phone,email,company,status,review_note,email_verified_at,created_at,stripe_customer_id,delisted_at").eq("user_id", user.id).maybeSingle();
   if (lookupError) throw new RentalError("Could not load your provider account.", 503);
   if (!provider || !user.email_confirmed_at) throw new RentalError("Confirm your rental account email first.", 403);
   if (!provider.email_verified_at) {

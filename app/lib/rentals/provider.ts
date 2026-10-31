@@ -25,10 +25,11 @@ export const propertySchema = z.object({
 });
 export type PropertyInput = z.infer<typeof propertySchema>;
 export type PropertyDraft = Partial<Omit<PropertyInput,"militaryLeaseAccepted"|"photoRightsAccepted">> & {militaryLeaseAccepted?:boolean;photoRightsAccepted?:boolean};
-export type Provider = { user_id: string; full_name: string; phone: string; email: string; company: string; status: "pending" | "approved" | "rejected" | "suspended"; review_note: string | null; email_verified_at: string | null; created_at: string; stripe_customer_id?: string | null };
-export type PropertyRow = { id: string; provider_id: string; draft: PropertyDraft; submitted: PropertyInput | null; published: PropertyInput | null; revision: number; submission_id: string | null; review_status: string; review_note: string | null; status: "available-now" | "pending" | "unavailable"; available_date: string | null; plan: "monthly" | "annual"; auto_renew: boolean; campaign_requested: boolean; stripe_subscription_id: string | null; payment_method_id: string | null; setup_order_id:string|null; payment_status: string; payment_url: string | null; paid_until: string | null; grace_until: string | null; billing_hold_until?: string | null; hidden: boolean; created_at: string; updated_at: string };
+export type Provider = { user_id: string; full_name: string; phone: string; email: string; company: string; status: "pending" | "approved" | "rejected" | "suspended"; review_note: string | null; email_verified_at: string | null; created_at: string; stripe_customer_id?: string | null; delisted_at?: string | null };
+export type PropertyRow = { delisted_at?: string | null; id: string; provider_id: string; draft: PropertyDraft; submitted: PropertyInput | null; published: PropertyInput | null; revision: number; submission_id: string | null; review_status: string; review_note: string | null; status: "available-now" | "pending" | "unavailable"; available_date: string | null; plan: "monthly" | "annual"; auto_renew: boolean; campaign_requested: boolean; stripe_subscription_id: string | null; payment_method_id: string | null; setup_order_id:string|null; payment_status: string; payment_url: string | null; paid_until: string | null; grace_until: string | null; billing_hold_until?: string | null; hidden: boolean; created_at: string; updated_at: string };
 export type CampaignRow = { id: string; property_id: string; provider_id: string; status: string; paid: boolean; flyer_path: string | null; facebook_url: string; instagram_url: string; story_notes: string; starts_at: string | null; ends_at: string | null; report: string; report_path: string | null; metrics: Record<string, number>; created_at: string };
-export function listingHasPaidAccess(row: Pick<PropertyRow, "payment_status" | "paid_until" | "grace_until"> & { billing_hold_until?: string | null }, now = Date.now()) {
+export function listingHasPaidAccess(row: Pick<PropertyRow, "payment_status" | "paid_until" | "grace_until"> & { billing_hold_until?: string | null; delisted_at?: string | null }, now = Date.now()) {
+  if (row.delisted_at) return false;
   if (row.billing_hold_until && Date.parse(row.billing_hold_until) <= now) return false;
   return !!row.paid_until && (Date.parse(row.paid_until) > now || (!!row.grace_until && Date.parse(row.grace_until) > now));
 }
@@ -37,7 +38,7 @@ export function isRentalIdentity(user: { role?: string; app_metadata?: Record<st
 }
 export function rentalApiAllowed(path: string, method: string) {
   return path === "/api/rentals/auth" || path === "/api/rentals/portal" || path.startsWith("/api/rentals/portal/") ||
-    (path === "/api/rentals/service-rating" && method === "GET") || path === "/api/rentals/events" || (path === "/api/rentals/photo" && method === "GET");
+    (path === "/api/rentals/service-rating" && method === "GET") || path === "/api/rentals/events" || (path === "/api/rentals/flags" && method === "POST") || (path === "/api/rentals/photo" && method === "GET");
 }
 /** Deny-only hint; it never authenticates a request or grants access. */
 export function bearerClaimsRental(header: string | null) {
