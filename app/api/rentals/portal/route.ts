@@ -20,13 +20,15 @@ export async function GET(request: NextRequest) {
       db.from("rental_properties").select("id,rental_property_metrics(day,views,contacts)").eq("provider_id", provider.user_id).limit(1000),
     ]);
     checkDb(properties.error); checkDb(campaigns.error); checkDb(metrics.error);
+    const holds:{listing_id:string;hidden:boolean}[]=[];
+    for(let offset=0;offset<(properties.data?.length??0);offset+=100){const result=await db.from("rental_listing_moderation").select("listing_id,hidden").in("listing_id",properties.data!.slice(offset,offset+100).map(p=>p.id));checkDb(result.error);holds.push(...(result.data??[]));}
     const paths = new Set<string>();
     for (const p of properties.data ?? []) for (const version of [p.draft, p.submitted, p.published]) for (const path of version?.photos ?? []) if (typeof path === "string" && path.startsWith(`${provider.user_id}/photos/`)) paths.add(path);
     for (const c of campaigns.data ?? []) for (const path of [c.flyer_path, c.report_path]) if (path?.startsWith(`${provider.user_id}/`)) paths.add(path);
     const signed = paths.size ? await db.storage.from("rental-assets").createSignedUrls([...paths], 3600) : { data: [], error: null };
     checkDb(signed.error);
     const urls = Object.fromEntries((signed.data ?? []).filter(p => p.path && p.signedUrl).map(p => [p.path, p.signedUrl]));
-    return rentalJson({ billingReady:rentalBillingReady(), provider, properties: properties.data, campaigns: campaigns.data, metrics: metrics.data, urls });
+    return rentalJson({ billingReady:rentalBillingReady(), provider, properties: properties.data, campaigns: campaigns.data, metrics: metrics.data, urls, moderation:Object.fromEntries(holds.map(p=>[p.listing_id,p.hidden])) });
   } catch (error) { return rentalFailure(error); }
 }
 
@@ -72,6 +74,7 @@ export async function POST(request: NextRequest) {
     const { data: property, error } = await db.from("rental_properties").select("*").eq("id", id).eq("provider_id", provider.user_id).maybeSingle(); checkDb(error);
     if (!property) throw new RentalError("Property not found.", 404);
     const row = property as PropertyRow;
+    if (row.delisted_at) throw new RentalError("This property has been delisted. Contact EOD-HUB about its review or refund.",403);
     if (body.action === "availability") {
       const status = z.enum(["available-now", "pending", "unavailable"]).parse(body.status);
       const date = body.date ? z.string().regex(/^\d{4}-\d{2}-\d{2}$/).parse(body.date) : null;

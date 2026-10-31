@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   try {
     const { db } = await rentalAdministrator(request);
     const [providers, properties, campaigns, billing, emails] = await Promise.all([
-      db.from("rental_providers").select("user_id,full_name,email,phone,company,status,email_verified_at,commitment_at,commitment_version,review_note,created_at").order("created_at", { ascending: false }).limit(1000),
+      db.from("rental_providers").select("user_id,full_name,email,phone,company,status,email_verified_at,commitment_at,commitment_version,review_note,created_at,delisted_at").order("created_at", { ascending: false }).limit(1000),
       db.from("rental_properties").select("*").order("created_at", { ascending: false }).limit(1000),
       db.from("rental_campaigns").select("*").order("created_at", { ascending: false }).limit(1000),
       db.from("rental_billing_cases").select("*").order("opened_at",{ascending:false}).limit(1000),
@@ -41,6 +41,7 @@ export async function PATCH(request: NextRequest) {
       const status = z.enum(["approved","rejected","suspended"]).parse(body.status);
       const { data: provider } = await db.from("rental_providers").select("*").eq("user_id", id).maybeSingle();
       if (!provider) throw new RentalError("Provider not found.", 404);
+      if (provider.delisted_at) throw new RentalError("This provider is permanently delisted. Review Delisting & refunds.",403);
       if (status === "approved" && !provider.email_verified_at) throw new RentalError("The provider must verify their email first.");
       if (status !== "approved" && !note) throw new RentalError("Add a reason for the provider.");
       checkDb((await db.from("rental_providers").update({ status, review_note: note || null, reviewed_at: new Date().toISOString(), reviewed_by: user.id }).eq("user_id", id)).error);
@@ -48,6 +49,7 @@ export async function PATCH(request: NextRequest) {
     } else if (body.action === "review") {
       const decision = z.enum(["approved","changes_requested","rejected"]).parse(body.status);
       const { data: property } = await db.from("rental_properties").select("*").eq("id", id).maybeSingle();
+      if (property?.delisted_at) throw new RentalError("This property is permanently delisted.",403);
       if (!property || !property.submitted || !["pending","approved"].includes(property.review_status)) throw new RentalError("This property has no submitted version to review.");
       if (body.submissionId !== property.submission_id) throw new RentalError("This submission has changed. Refresh before approving.", 409);
       const { data: provider } = await db.from("rental_providers").select("*").eq("user_id", property.provider_id).single();
@@ -65,6 +67,8 @@ export async function PATCH(request: NextRequest) {
         await rentalEmail(provider.email, decision === "changes_requested" ? "Property changes requested" : "Property submission declined", note);
       }
     } else if (body.action === "visibility") {
+      const property=await db.from("rental_properties").select("delisted_at").eq("id",id).single();checkDb(property.error);
+      if(property.data?.delisted_at)throw new RentalError("Confirmed delisting cannot be restored with visibility controls.",403);
       checkDb((await db.from("rental_properties").update({ hidden: z.boolean().parse(body.hidden) }).eq("id", id)).error);
     } else if (body.action === "campaign") {
       const { data: campaign } = await db.from("rental_campaigns").select("*").eq("id", id).single();

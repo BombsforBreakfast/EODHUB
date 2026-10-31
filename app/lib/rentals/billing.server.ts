@@ -6,7 +6,9 @@ import { RENTAL_COMMITMENT_VERSION, RENTAL_PORTAL, propertySchema, planAmount, l
 import { checkDb, RentalError } from "./portal.server";
 import { rentalAdminEmail, rentalEmail } from "./notifications.server";
 import { rentalNeedsNewTerm, billingMoney } from "./billing-lifecycle";
-import { openBillingCase, resolveBillingCases, paidInvoiceEmail, renewalChoiceEmail, drainBillingEmails } from "./billing-notifications.server";
+import { queueBillingEmail, openBillingCase, resolveBillingCases, paidInvoiceEmail, renewalChoiceEmail, drainBillingEmails } from "./billing-notifications.server";
+
+import { OWNER_ADMIN_EMAIL } from "../ownerAdminAccess";
 
 export function rentalBillingReady(env: NodeJS.ProcessEnv = process.env) {
   const key=env.STRIPE_RENTALS_SECRET_KEY || env.STRIPE_SECRET_KEY || "";
@@ -67,6 +69,7 @@ export async function startRentalOrder(db: SupabaseClient, provider: Provider, i
   for(const row of properties as PropertyRow[])await requireClearedRiskReview(db,row.id);
   const items = input.map(item => {
     const row = (properties as PropertyRow[]).find(p => p.id === item.id)!;
+    if (row.delisted_at || provider.delisted_at) throw new RentalError("Delisted properties cannot start a new billing term.",403);
     if (row.review_status === "pending" || row.setup_order_id) throw new RentalError("A property is already being submitted. Finish or cancel its existing checkout first.");
     if (row.published && listingHasPaidAccess(row) && !rentalNeedsNewTerm(row)) throw new RentalError("Submit active listing edits from the property card; they do not require another listing payment.");
     if (row.stripe_subscription_id && !rentalNeedsNewTerm(row)) throw new RentalError("Resolve the existing subscription in Manage billing before starting a new term.");
@@ -121,6 +124,7 @@ export async function finishRentalOrder(db: SupabaseClient, session: Stripe.Chec
 }
 
 export async function approveRentalProperty(db: SupabaseClient, row: PropertyRow, provider: Provider, stripeOverride?: Stripe) {
+  if (row.delisted_at || provider.delisted_at) throw new RentalError("This property or provider has been delisted.",403);
   if (!row.submitted || !row.submission_id || provider.status !== "approved") throw new RentalError("This property is not ready for approval.");
   propertySchema.parse(row.submitted);
   if (row.published && listingHasPaidAccess(row) && !rentalNeedsNewTerm(row)) {
@@ -165,6 +169,12 @@ export async function syncRentalSubscription(db: SupabaseClient, subscription: S
   const { data: row } = await db.from("rental_properties").select("*").eq("id", id).maybeSingle();
   if (!row || (row.stripe_subscription_id && row.stripe_subscription_id !== subscription.id)) return true;
   if (!row.stripe_subscription_id && row.submission_id !== subscription.metadata.rental_submission_id) return true;
+  if (row.delisted_at) {
+    if (subscription.metadata.rental_provider_id !== row.provider_id) throw new RentalError("Subscription ownership mismatch.");
+    if (!["canceled","incomplete_expired"].includes(subscription.status)) await (stripeOverride??rentalStripe()).subscriptions.cancel(subscription.id,{prorate:false,invoice_now:false});
+    checkDb((await db.from("rental_properties").update({payment_status:"canceled",auto_renew:false,payment_url:null}).eq("id",id)).error);
+    return true;
+  }
   checkDb((await db.from("rental_subscription_history").upsert({subscription_id:subscription.id,property_id:row.id,provider_id:row.provider_id},{onConflict:"subscription_id",ignoreDuplicates:true})).error);
   const invoice = typeof subscription.latest_invoice === "string" ? await (stripeOverride ?? rentalStripe()).invoices.retrieve(subscription.latest_invoice) : subscription.latest_invoice;
   const paid = invoice?.status === "paid", end = subscription.items.data[0]?.current_period_end;
@@ -208,7 +218,7 @@ export async function handleRentalStripeEvent(db: SupabaseClient, event: Stripe.
     const latest = await stripe.subscriptions.retrieve(sub.id, { expand: ["latest_invoice"] });
     await syncRentalSubscription(db, latest, stripe);
     const {data: row,error}=await db.from("rental_properties").select("*").eq("stripe_subscription_id",latest.id).maybeSingle(); checkDb(error);
-    if (row) {
+    if (row && !row.delisted_at) {
       if(latest.pause_collection || latest.status==="paused")await openBillingCase(db,row,{incident_key:`stopped:${latest.id}:${latest.pause_collection?.resumes_at??(typeof latest.latest_invoice==="string"?latest.latest_invoice:latest.latest_invoice?.id)??"paused"}`,kind:"payment_stopped",stripe_object_id:latest.id,subscription_id:latest.id,detail:"Payment collection for your listing has been paused. Contact EOD-HUB to review the subscription and resume collection.",started:event.created*1000});
       if (latest.status === "active" && latest.latest_invoice && typeof latest.latest_invoice !== "string") await paidInvoiceEmail(db,row,latest.latest_invoice);
       const changed = (event.data.previous_attributes as {cancel_at_period_end?:boolean}|undefined)?.cancel_at_period_end !== undefined;
@@ -237,6 +247,12 @@ export async function handleRentalStripeEvent(db: SupabaseClient, event: Stripe.
     const { data: row,error }=await db.from("rental_properties").select("*").eq("stripe_subscription_id",sub.id).maybeSingle(); checkDb(error);
     if (!row) return true;
     const currentInvoice = await stripe.invoices.retrieve(invoice.id);
+    if (row.delisted_at) {
+      if (currentInvoice.status==="paid" && currentInvoice.status_transitions.paid_at && currentInvoice.status_transitions.paid_at*1000>Date.parse(row.delisted_at)) {
+        await queueBillingEmail(db,`delisted-late-payment:${currentInvoice.id}`,OWNER_ADMIN_EMAIL,"Payment received after delisting — refund review",`A payment arrived after confirmed delisting for ${row.id}. Review invoice ${currentInvoice.id} in Stripe and the Delisting & refunds task before issuing or recording any additional refund.`,"https://eod-hub.com/admin");
+      }
+      await drainBillingEmails(db);return true;
+    }
     if (currentInvoice.status === "paid") await paidInvoiceEmail(db,row,currentInvoice);
     if (event.type === "invoice.payment_failed" || event.type === "invoice.payment_action_required") {
       if (currentInvoice.status === "open" && ["past_due","incomplete","unpaid"].includes(sub.status)) {
@@ -278,6 +294,7 @@ export async function handleRentalStripeEvent(db: SupabaseClient, event: Stripe.
       const query=db.from("rental_properties").select("*");
       const {data:row,error}=history?await query.eq("id",history.property_id).maybeSingle():await query.eq("stripe_subscription_id",subscriptionId).maybeSingle();checkDb(error);
       if(!row)continue;
+      if(row.delisted_at){await queueBillingEmail(db,`delisted-adjustment:${event.id}`,OWNER_ADMIN_EMAIL,"Delisted listing payment adjustment",`Stripe reported ${event.type} for ${row.id}. Review Delisting & refunds and any remaining balance before recording a cash refund.`,"https://eod-hub.com/admin");await drainBillingEmails(db);return true;}
       const kind=event.type==="charge.refunded"?"refund":event.type.startsWith("charge.dispute.")?"dispute":"fraud_warning";
       const key=kind==="refund"?`${kind}:${object.id}:${(object as Stripe.Charge).amount_refunded}`:`${kind}:${object.id}`;
       if(event.type==="charge.dispute.closed"&&(object as Stripe.Dispute).status==="won"){

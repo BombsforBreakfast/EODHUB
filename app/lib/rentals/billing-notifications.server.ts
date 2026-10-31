@@ -58,7 +58,7 @@ export async function renewalChoiceEmail(db: SupabaseClient, row: PropertyRow, s
   if (subscription.cancel_at_period_end) await queueBillingEmail(db,`${key}:admin`,OWNER_ADMIN_EMAIL,"Listing renewal switched off",`${title(row)}\nPaid term ends ${billingDate(row.paid_until)}. The seven-day renewal window starts then.`,"https://eod-hub.com/admin");
 }
 export async function annualReminderEmail(db: SupabaseClient, row: PropertyRow, now = Date.now()) {
-  if (row.plan !== "annual" || !row.paid_until || !["active","trialing"].includes(row.payment_status)) return;
+  if (row.delisted_at || row.plan !== "annual" || !row.paid_until || !["active","trialing"].includes(row.payment_status)) return;
   const window = annualReminderWindow(row.paid_until,now); if (!window) return;
   await queueBillingEmail(db,`annual:${row.stripe_subscription_id}:${row.paid_until}:${window}`,await providerEmail(db,row), row.auto_renew ? "Your annual listing will renew soon" : "Your annual listing term is ending", `${title(row)}\n\nYour annual term ends ${billingDate(row.paid_until)}. ${row.auto_renew ? "Automatic renewal is on. The next annual listing fee is $100 per property, plus applicable tax. Open your portal to review billing or cancel future renewal before that date." : "Automatic renewal is off. To keep your listing active, open your portal and select Enable automatic renewal before the term ends. You may also submit a new term through the cart after it ends. If you do not renew, the listing pauses after the seven-day renewal window."}`);
 }
@@ -67,6 +67,7 @@ export async function expireBillingCase(db: SupabaseClient, issue: BillingCase, 
   const {data:current,error:caseError}=await db.from("rental_billing_cases").select("status").eq("id",issue.id).single();checkDb(caseError);
   if(current?.status!=="open")return;
   const { data: row, error } = await db.from("rental_properties").select("*").eq("id",issue.property_id).single(); checkDb(error);
+  if (row.delisted_at) {checkDb((await db.from("rental_billing_cases").update({status:"expired"}).eq("id",issue.id).eq("status","open")).error);return;}
   // A late job must never cancel a replacement subscription.
   if (row.stripe_subscription_id === issue.subscription_id) {
     const sub = await stripe.subscriptions.retrieve(issue.subscription_id);

@@ -33,6 +33,9 @@ const { randomUUID } = require('node:crypto');
     await db.exec(fs.readFileSync('supabase/migrations/20261028002502_rental_auth_provisioning_order.sql','utf8'));
     await db.exec(fs.readFileSync('supabase/migrations/20261028104642_rental_excluded_member_count.sql','utf8'));
     await db.exec(fs.readFileSync('supabase/migrations/20261029175043_rental_billing_lifecycle.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261031191913_rental_engagement_analytics.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261031191729_rental_listing_flags.sql','utf8'));
+    await db.exec(fs.readFileSync('supabase/migrations/20261031191733_rental_confirmed_delisting.sql','utf8'));
     const after = (await db.query(`select pg_get_functiondef('public.handle_new_user()'::regprocedure) trigger_definition,(select nspacl::text from pg_namespace where nspname='public') grants`)).rows[0];
     assert.deepEqual(after,before,'Existing Auth trigger and shared schema grants are preserved');
     const scope=(await db.query(`select pg_has_role('authenticator','eod_rental','MEMBER') switchable,pg_has_role('eod_rental','authenticated','MEMBER') member`)).rows[0];
@@ -73,6 +76,7 @@ const { randomUUID } = require('node:crypto');
     for(const role of ['anon','authenticated','eod_rental']){
       await db.exec(`set role ${role}`);
       await assert.rejects(db.query('select public.hub_member_signup_count()'),/permission denied/);
+      await assert.rejects(db.query('select * from public.rental_delistings'),/permission denied/);
       await db.exec('reset role');
     }
     console.log('PASS: Hub signup count excludes rental roles/providers/metadata and stray profiles; aggregate is server-only');
@@ -127,6 +131,19 @@ const { randomUUID } = require('node:crypto');
     await db.query(`update public.rental_billing_cases set status='resolved' where property_id=$1`,[property]);
     await db.query('select public.rental_refresh_billing_hold($1)',[property]);
     assert.equal((await db.query('select billing_hold_until from public.rental_properties where id=$1',[property])).rows[0].billing_hold_until,null);
+    const finalJobs=await db.query(`select * from public.rental_confirm_delisting('property',$1,'Confirmed synthetic removal',$2)`,[property,member]);
+    assert.equal(finalJobs.rows.length,1);
+    await db.query(`update public.rental_properties set hidden=false,auto_renew=true,review_status='approved',delisted_at=null where id=$1`,[property]);
+    const removed=(await db.query(`select hidden,auto_renew,review_status,delisted_at from public.rental_properties where id=$1`,[property])).rows[0];
+    assert.equal(removed.hidden,true);assert.equal(removed.auto_renew,false);assert.equal(removed.review_status,'rejected');assert.ok(removed.delisted_at);
+    const hold=(await db.query(`select * from public.rental_listing_moderation where listing_id=$1`,[property])).rows[0];
+    assert.equal((await db.query(`select public.rental_set_moderation($1,false,'Attempted restore',$2,$3) ok`,[property,member,hold.revision])).rows[0].ok,false,'Final delisting cannot be restored through temporary holds');
+    const repeated=await db.query(`select * from public.rental_confirm_delisting('property',$1,'Repeated synthetic removal',$2)`,[property,member]);assert.equal(repeated.rows[0].id,finalJobs.rows[0].id);assert.deepEqual(repeated.rows[0].effective_at,finalJobs.rows[0].effective_at);
+    await db.query(`select * from public.rental_confirm_delisting('provider',$1,'Confirmed synthetic account removal',$2)`,[owner,member]);
+    await db.query(`update public.rental_providers set status='approved',delisted_at=null where user_id=$1`,[owner]);
+    assert.equal((await db.query(`select status from public.rental_providers where user_id=$1`,[owner])).rows[0].status,'suspended');
+    for(const role of ['anon','authenticated','eod_rental'])assert.equal((await db.query(`select has_table_privilege($1,'public.rental_delistings','SELECT') allowed`,[role])).rows[0].allowed,false);
+    console.log('PASS: confirmed property/account removal, immutable delisting, repeat safety and private refunds');
     console.log('PASS: private billing history/cases/outbox, service-only RPCs, atomic email leases/retries, review holds and metrics');
   } finally { await db.close(); }
 })().catch(error=>{console.error(error.message);process.exitCode=1;});
