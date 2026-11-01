@@ -4,6 +4,7 @@ import {createPortal} from "react-dom";
 import {useQueryClient} from "@tanstack/react-query";
 import {supabase} from "@/app/lib/lib/supabaseClient";
 import {useTheme} from "@/app/lib/ThemeContext";
+import {useSuppressChatroomPeek} from "@/app/hooks/useSuppressChatroomPeek";
 import {parseGoldTags,type JobGold} from "@/app/lib/jobHighlights";
 import {normalizeJobPhrase} from "@/app/lib/jobReviewPreferences";
 import {publishJobGold,useGoldJob} from "@/app/lib/jobHighlights.client";
@@ -14,6 +15,7 @@ export default function JobHighlightEditor({job:source,onChanged}:{job:GoldJob;o
   const job=useGoldJob(source),{t,isDark}=useTheme(),cache=useQueryClient();
   const[open,setOpen]=useState(false),[enabled,setEnabled]=useState(true),[text,setText]=useState(""),[teach,setTeach]=useState(false),[phrase,setPhrase]=useState(""),[mission,setMission]=useState(true),[jobOnly,setJobOnly]=useState(false),[score,setScore]=useState<90|100>(90),[busy,setBusy]=useState(false),[error,setError]=useState("");
   const trigger=useRef<HTMLButtonElement>(null),dialog=useRef<HTMLFormElement>(null);
+  useSuppressChatroomPeek(open,`job-gold-editor-${job.id}`);
   function close(){if(!busy){setOpen(false);requestAnimationFrame(()=>trigger.current?.focus());}}
   useEffect(()=>{if(!open)return;const previous=document.body.style.overflow;document.body.style.overflow="hidden";dialog.current?.querySelector<HTMLTextAreaElement>('textarea')?.focus();
     function key(e:KeyboardEvent){if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();if(!busy){setOpen(false);trigger.current?.focus();}}if(e.key==='Tab'){const controls=Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),textarea:not(:disabled),select:not(:disabled)')??[]);const first=controls[0],last=controls.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}}
