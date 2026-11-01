@@ -8,7 +8,11 @@ Pending jobs still require approval. Gold does not extend the normal listing
 retention period or override rejection, suppression or type exclusions.
 
 Gold appears on member job cards, saved jobs, job details and the job feed. Compact
-recent-feed tiles show the first label. Gold highlights filters are available on
+recent-feed tiles keep their 128 × 96 layout, show the first compact gold label
+and a +N count for additional labels. Opening a tile preserves all labels.
+Highlight edits update tiles within the same session; returning to or focusing
+the feed refreshes its ten recent jobs to pick up changes from another Admin tab.
+Gold highlights filters are available on
 Jobs and in Admin review. The Admin Gold filter turns off Pending only so approved
 picks remain easy to find. Keyword search also searches custom labels. Existing
 list/map filters, layout, permissions and map behavior are retained.

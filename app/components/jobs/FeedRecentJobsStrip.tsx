@@ -10,9 +10,7 @@ import { jobListingCutoffIso } from "../../lib/jobRetention";
 import type { JobListItem } from "../../lib/jobFilters";
 import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../../lib/queries/jobs";
 import { queryKeys } from "../../lib/queryKeys";
-import { httpsAssetUrl } from "../master/masterShared";
-import JobGoldLabels from "./JobGoldLabels";
-import {goldCardStyle} from "@/app/lib/jobHighlights";
+import FeedRecentJobTile from "./FeedRecentJobTile";
 import type { JobModalData } from "./JobDetailsModal";
 
 const FEED_JOBS_LIMIT = 10;
@@ -32,6 +30,9 @@ export default function FeedRecentJobsStrip({ onOpenDetails }: Props) {
     queryFn: () => fetchApprovedJobs<JobListItem>(supabase, FEED_JOBS_LIMIT, listingCutoff),
     enabled: Boolean(userId),
     staleTime: JOBS_LIST_STALE_MS,
+    // Return visits/focus should reflect curation made from another Admin tab.
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const jobs = (jobsQuery.data ?? []).slice(0, FEED_JOBS_LIMIT);
@@ -61,56 +62,7 @@ export default function FeedRecentJobsStrip({ onOpenDetails }: Props) {
                 style={{ background: t.surface, border: `1px solid ${t.border}` }}
               />
             ))
-          : jobs.map((job) => {
-              const title = job.title || job.og_title || "Untitled Job";
-              const imageSrc = httpsAssetUrl(job.og_image);
-              return (
-                <button
-                  key={job.id}
-                  type="button"
-                  className="feed-jobs-tile"
-                  aria-label={`Open job details for ${title}${job.location ? ` in ${job.location}` : ""}`}
-                  onClick={() => onOpenDetails(job as JobModalData)}
-                  style={{
-                    background: t.surface,
-                    border: `1px solid ${t.border}`,
-                    boxShadow: t.shadow,
-                    ...goldCardStyle(job),
-                    color: t.text,
-                  }}
-                >
-                  {imageSrc ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={imageSrc} alt="" className="feed-jobs-tile-bg" />
-                  ) : null}
-                  <span
-                    className="feed-jobs-tile-scrim"
-                    style={{
-                      background: imageSrc
-                        ? "linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.28) 55%, rgba(0,0,0,0.12) 100%)"
-                        : "transparent",
-                    }}
-                  />
-                  <span className="feed-jobs-tile-copy">
-                    <JobGoldLabels job={{...job,gold_tags:job.gold_tags?.slice(0,1)}}/>
-                    <span
-                      className="feed-jobs-tile-title"
-                      style={{ color: imageSrc ? "#fff" : t.text }}
-                    >
-                      {title}
-                    </span>
-                    {job.location?.trim() ? (
-                      <span
-                        className="feed-jobs-tile-location"
-                        style={{ color: imageSrc ? "rgba(255,255,255,0.82)" : t.textMuted }}
-                      >
-                        {job.location.trim()}
-                      </span>
-                    ) : null}
-                  </span>
-                </button>
-              );
-            })}
+          : jobs.map((job) => <FeedRecentJobTile key={job.id} job={job} onOpenDetails={onOpenDetails} />)}
 
         <Link
           href="/jobs"
