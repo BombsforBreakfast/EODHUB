@@ -1,7 +1,7 @@
 export type JobTypeExclusion = { id: string; phrase: string };
 export type JobReviewFeedback = { job_id: string; title: string; company_name: string | null; location: string | null; decision: "approved" | "not_relevant" };
 export type LearnedJobSignal = { phrase: string; approved: number; rejected: number };
-export type JobReviewPreferences = { exclusions: JobTypeExclusion[]; signals: LearnedJobSignal[] };
+export type JobReviewPreferences = { priorities?: import("./jobMissionPriority").JobPriorityRule[]; exclusions: JobTypeExclusion[]; signals: LearnedJobSignal[] };
 export function normalizeJobPhrase(text: string): string {
   return text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }

@@ -6,6 +6,8 @@ import { useParams } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
+import JobGoldLabels from "../../components/jobs/JobGoldLabels";
+import {goldCardStyle,type JobGold} from "../../lib/jobHighlights";
 import JobImage from "../../components/jobs/JobImage";
 import { isJobListingExpired } from "../../lib/jobRetention";
 import { useRequireFullAccess } from "../../hooks/useRequireFullAccess";
@@ -18,7 +20,7 @@ import {
 } from "../../lib/queries/savedJobs";
 import { queryKeys } from "../../lib/queryKeys";
 
-type Job = {
+type Job = JobGold & {
   id: string;
   title: string | null;
   company_name: string | null;
@@ -66,7 +68,7 @@ export default function JobDetailPage() {
       const { data: jobData, error: jobError } = await supabase
         .from("jobs")
         .select(
-          "id,title,company_name,location,category,description,apply_url,pay_min,pay_max,clearance,source_type,og_image,is_approved,created_at"
+          "id,title,company_name,location,category,description,apply_url,pay_min,pay_max,clearance,source_type,og_image,gold_highlight,gold_tags,gold_revision,is_approved,created_at"
         )
         .eq("id", jobId)
         .eq("is_approved", true)
@@ -173,11 +175,13 @@ export default function JobDetailPage() {
           style={{
             border: `1px solid ${t.border}`,
             borderRadius: 16,
+            ...goldCardStyle(job),
             background: t.surface,
             overflow: "hidden",
           }}
         >
           <div style={{ padding: "22px 24px 10px" }}>
+            <JobGoldLabels job={job}/>
             <h1 style={{ margin: 0, fontSize: 30, fontWeight: 900, lineHeight: 1.2 }}>{job.title || "Untitled Job"}</h1>
             <div style={{ marginTop: 10, fontSize: 17, fontWeight: 700 }}>{job.company_name || "Unknown Company"}</div>
             {metaParts.length > 0 && (

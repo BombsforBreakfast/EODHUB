@@ -11,6 +11,8 @@ import type { JobListItem } from "../../lib/jobFilters";
 import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../../lib/queries/jobs";
 import { queryKeys } from "../../lib/queryKeys";
 import { httpsAssetUrl } from "../master/masterShared";
+import JobGoldLabels from "./JobGoldLabels";
+import {goldCardStyle} from "@/app/lib/jobHighlights";
 import type { JobModalData } from "./JobDetailsModal";
 
 const FEED_JOBS_LIMIT = 10;
@@ -73,6 +75,7 @@ export default function FeedRecentJobsStrip({ onOpenDetails }: Props) {
                     background: t.surface,
                     border: `1px solid ${t.border}`,
                     boxShadow: t.shadow,
+                    ...goldCardStyle(job),
                     color: t.text,
                   }}
                 >
@@ -89,6 +92,7 @@ export default function FeedRecentJobsStrip({ onOpenDetails }: Props) {
                     }}
                   />
                   <span className="feed-jobs-tile-copy">
+                    <JobGoldLabels job={{...job,gold_tags:job.gold_tags?.slice(0,1)}}/>
                     <span
                       className="feed-jobs-tile-title"
                       style={{ color: imageSrc ? "#fff" : t.text }}

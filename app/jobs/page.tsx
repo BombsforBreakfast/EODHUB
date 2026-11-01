@@ -29,6 +29,8 @@ import {
 } from "../lib/jobFilters";
 import AdvancedJobFilters from "../components/jobs/AdvancedJobFilters";
 import { deriveJobFacets } from "../lib/jobFacets";
+import JobGoldLabels from "../components/jobs/JobGoldLabels";
+import {goldCardStyle} from "../lib/jobHighlights";
 import JobViewToggle from "../components/jobs/JobViewToggle";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
@@ -406,6 +408,7 @@ export default function JobsPage() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <JobViewToggle value={jobView} onChange={setJobView} />
+          {canUseJobFilters&&<button type="button" aria-pressed={!!filters.goldOnly} onClick={()=>changeFilters({...filters,goldOnly:!filters.goldOnly})} style={{border:"1px solid #c9a23b",borderRadius:9,padding:"10px 12px",background:filters.goldOnly?"#f3d784":"transparent",color:filters.goldOnly?"#392905":t.text,fontWeight:800,cursor:"pointer"}}>★ Gold highlights</button>}
           <a
             href="/post-job"
             style={{ background: "#111", color: "white", border: "1px solid rgba(255,255,255,0.65)", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }}
@@ -476,7 +479,7 @@ export default function JobsPage() {
               {(savedExpanded ? savedJobs : savedJobs.slice(0, isMobile ? 3 : 6)).map((job) => {
                 const meta = [job.company_name, job.location, job.category].filter(Boolean).join(" · ");
                 const modalJob: JobModalData = {
-                  id: job.job_id,
+                  id: job.job_id,gold_highlight:job.gold_highlight,gold_tags:job.gold_tags,gold_revision:job.gold_revision,
                   filter_overrides: job.filter_overrides,
                   filter_source: job.filter_source,
                   title: job.title,
@@ -501,8 +504,9 @@ export default function JobsPage() {
                 return (
                   <div
                     key={job.id}
-                    style={{ border: `1px solid ${t.border}`, borderRadius: t.radiusSm, background: t.bg, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}
+                    style={{ border: `1px solid ${t.border}`, borderRadius: t.radiusSm, background: t.bg, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8, ...goldCardStyle(job) }}
                   >
+                    <JobGoldLabels job={job}/>
                     <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>
                       {job.title || "Untitled Job"}
                     </div>

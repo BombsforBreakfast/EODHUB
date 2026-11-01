@@ -15,7 +15,7 @@ export const FACET_OPTIONS = {
 export type FacetKey = keyof typeof FACET_OPTIONS;
 export type JobFacets = { [K in FacetKey]: keyof (typeof FACET_OPTIONS)[K] };
 export type JobFacetOverrides = Partial<JobFacets>;
-export type FacetJob = {
+export type FacetJob = import("@/app/lib/jobHighlights").JobGold & {
   title?: string | null; og_title?: string | null; description?: string | null;
   og_description?: string | null; category?: string | null; location?: string | null;
   clearance?: string | null; source_type?: string | null;

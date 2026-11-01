@@ -1,7 +1,7 @@
 import { FACET_OPTIONS, deriveJobFacets, jobEmploymentTypes, plainJobText, type FacetKey, type JobFacets } from "./jobFacets";
 import { cleanJobLocation, inferUsLocation, type JobLocationResolution } from "./jobLocationInference";
 
-export type JobListItem = {
+export type JobListItem = import("@/app/lib/jobHighlights").JobGold & {
   id: string;
   created_at: string | null;
   title: string | null;
@@ -32,6 +32,7 @@ export type JobListItem = {
 export type SalaryMin = 25000 | 50000 | 75000 | 100000 | 125000 | 150000;
 
 export type JobFilterState = {
+  goldOnly?: boolean;
   keyword: string;
   locationRegion: string;
   salaryMin: SalaryMin | "";
@@ -55,7 +56,7 @@ export const DEFAULT_JOB_FILTERS: JobFilterState = {
   keyword: "", locationRegion: "", salaryMin: "", regions: [], geography: "", geographies: [], employers: [],
   includeUnknownLocation: false, excludeKeywords: "", searchScope: "all", selections: {},
   minimumPay: "", payPeriod: "year", payMatch: "range", includeUnknownPay: false,
-  advertisedPayOnly: false, postedWithin: "",
+  advertisedPayOnly: false, postedWithin: "", goldOnly:false,
 };
 
 /** Validate browser-saved preferences rather than trusting localStorage shape. */
@@ -67,7 +68,7 @@ export function restoreJobFilters(value: unknown): JobFilterState {
   if (out.minimumPay && (!Number.isFinite(Number(out.minimumPay)) || Number(out.minimumPay) < 0)) out.minimumPay = "";
   if (Array.isArray(input.regions)) out.regions = [...new Set(input.regions.filter((v): v is string => typeof v === "string" && v.length < 100).slice(0, 100).map(resolveRegionFilter))];
   // Employer selection was retired. Old preferences must not hide listings.
-  for (const key of ["includeUnknownLocation", "includeUnknownPay", "advertisedPayOnly"] as const) out[key] = input[key] === true;
+  for (const key of ["includeUnknownLocation", "includeUnknownPay", "advertisedPayOnly", "goldOnly"] as const) out[key] = input[key] === true;
   if (input.searchScope === "title") out.searchScope = "title";
   if (input.payPeriod === "hour") out.payPeriod = "hour";
   if (input.payMatch === "starting") out.payMatch = "starting";
@@ -319,8 +320,9 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState, no
   const geographies = filters.geographies?.length ? filters.geographies : filters.geography ? [filters.geography] : [];
   const minimum = Number(filters.minimumPay || filters.salaryMin || 0);
   return jobs.filter(job => {
+    if(filters.goldOnly&&!job.gold_highlight)return false;
     const facets = job.facets ?? deriveJobFacets(job);
-    const haystack = plainJobText(filters.searchScope === "title" ? job.title || job.og_title : [job.title, job.og_title, job.description, job.og_description, job.company_name, job.category, job.clearance].filter(Boolean).join(" ")).toLowerCase();
+    const haystack = plainJobText(filters.searchScope === "title" ? job.title || job.og_title : [job.title, job.og_title, job.description, job.og_description, job.company_name, job.category, job.clearance, (job.gold_tags??[]).join(" ")].filter(Boolean).join(" ")).toLowerCase();
     if (!keywords.every(word => haystack.includes(word)) || excluded.some(word => haystack.includes(word))) return false;
     for (const [key, values] of Object.entries(filters.selections ?? {})) {
       // Ignore legacy preferences even before stored filters are restored.
@@ -359,6 +361,7 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState, no
 
 export function jobFilterChips(filters: JobFilterState): { label: string; clear: Partial<JobFilterState> }[] {
   const chips: { label: string; clear: Partial<JobFilterState> }[] = [];
+  if(filters.goldOnly)chips.push({label:"Gold highlights",clear:{goldOnly:false}});
   if (filters.keyword.trim()) chips.push({ label: `Search: ${filters.keyword}`, clear: { keyword: "" } });
   if (filters.searchScope === "title") chips.push({ label: "Search titles only", clear: { searchScope: "all" } });
   if (filters.excludeKeywords?.trim()) chips.push({ label: `Exclude: ${filters.excludeKeywords}`, clear: { excludeKeywords: "" } });

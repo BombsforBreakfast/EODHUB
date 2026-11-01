@@ -24,6 +24,7 @@ test("preference actions require admin auth; preview has no writes and exclusion
     if (table === "profiles") return Response.json([{ is_admin: admin }]);
     if (method !== "GET") writes.push(`${method}:${table}`);
     if (table === "job_type_exclusions") return Response.json([]);
+    if (table === "job_priority_rules") return Response.json([]);
     if (table === "job_review_feedback") return Response.json([]);
     if (table === "jobs" && method === "GET") {
       if (url.searchParams.has("id")) return Response.json({ ...job, is_approved: approveBeforeCleanup });

@@ -4,7 +4,7 @@ import { jobReviewPage, type JobReviewFilter } from "../../../lib/jobReviewPrior
 import { loadJobReviewPreferences } from "../../../lib/server/jobReviewPreferences";
 
 const JOB_ADMIN_COLUMNS =
-  "id, created_at, title, company_name, location, category, description, og_description, apply_url, pay_min, pay_max, clearance, is_approved, applications_under_review, source_type, reliefweb_job_id, relevance_score, import_metadata, filter_overrides";
+  "id, created_at, title, company_name, location, category, description, og_description, apply_url, pay_min, pay_max, clearance, is_approved, applications_under_review, source_type, reliefweb_job_id, relevance_score, import_metadata, filter_overrides, gold_highlight, gold_tags, gold_revision, gold_updated_at";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 
@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 
   const priority = req.nextUrl.searchParams.get("priority");
   if (priority !== null) {
-    if (!["high", "possible", "low", "all"].includes(priority)) return NextResponse.json({ error: "Invalid priority filter" }, { status: 400 });
+    if (!["high", "possible", "low", "all", "gold"].includes(priority)) return NextResponse.json({ error: "Invalid priority filter" }, { status: 400 });
     const rows = [];
     for (let start = 0; ; start += 500) {
       let query = adminClient.from("jobs").select(JOB_ADMIN_COLUMNS).neq("is_rejected", true).order("id").range(start, start + 499);

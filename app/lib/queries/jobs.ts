@@ -4,7 +4,7 @@ import { jobListingCutoffIso } from "../jobRetention";
 export const JOBS_LIST_STALE_MS = 10 * 60_000;
 
 const JOBS_PAGE_COLUMNS =
-  "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, source_type, applications_under_review, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone, filter_overrides, filter_source:import_metadata->filter_source, import_country:import_metadata->>adzuna_country, description_is_excerpt:import_metadata->description_is_excerpt";
+  "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, source_type, gold_highlight, gold_tags, gold_revision, gold_updated_at, applications_under_review, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone, filter_overrides, filter_source:import_metadata->filter_source, import_country:import_metadata->>adzuna_country, description_is_excerpt:import_metadata->description_is_excerpt";
 
 /**
  * Approved, non-expired jobs for the full /jobs listing. Read-only; safe to

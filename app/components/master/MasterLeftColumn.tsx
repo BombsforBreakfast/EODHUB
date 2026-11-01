@@ -13,6 +13,8 @@ import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
 import JobCardActions from "../jobs/JobCardActions";
 import JobFeedCard from "../jobs/JobFeedCard";
+import JobGoldLabels from "../jobs/JobGoldLabels";
+import {goldCardStyle} from "../../lib/jobHighlights";
 import JobDetailsModal, { type JobModalData } from "../jobs/JobDetailsModal";
 import EventAttendeeAvatarRows from "../events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../events/EventAttendeesListModal";
@@ -1539,7 +1541,7 @@ export default function MasterLeftColumn({
                 {desktopSavedJobs.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No saved jobs.</div>}
                 {desktopSavedJobs.slice(0, 4).map((job) => {
                   const modalJob: JobModalData = {
-                    id: job.job_id,
+                    id: job.job_id,gold_highlight:job.gold_highlight,gold_tags:job.gold_tags,gold_revision:job.gold_revision,
                     title: job.title,
                     company_name: job.company_name,
                     location: job.location,
@@ -1560,7 +1562,8 @@ export default function MasterLeftColumn({
                     poc_phone: job.poc_phone,
                   };
                   return (
-                    <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6,...goldCardStyle(job) }}>
+                      <JobGoldLabels job={job}/>
                       <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{job.title || "Job"}</div>
                       <div style={{ fontSize: 11, color: t.textMuted }}>{job.company_name || "Saved listing"}</div>
                       <JobCardActions
