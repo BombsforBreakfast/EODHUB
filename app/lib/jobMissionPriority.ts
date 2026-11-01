@@ -7,7 +7,7 @@ export function jobMissionPriority(title:string,body:string,rules:JobPriorityRul
   if(matchesJobPhrase(role,"chemical security elimination")&&/\b(?:sme|subject matter expert)\b/.test(role))return{score:100,reason:"100: Chemical Security and Elimination SME is an explicit Admin priority role"};
   // Specific experience/qualifications, not repeated keywords, establish a direct match.
   const sentences=body.split(/[.;\n]/).map(normalizeJobPhrase);
-  const credential=sentences.some(s=>/\b(?:master eod technician|(?:eod|bomb) (?:technician|tech)|explosive ordnance disposal (?:technician|qualification)|navscoleod|naval school eod|naval school (?:of )?explosive ordnance disposal|eod school)\b/i.test(s)&&
+  const credential=sentences.some(s=>/\b(?:master eod technician|(?:eod|bomb) (?:technician|tech)|(?:eod|explosive ordnance disposal) (?:technician|qualifications?|qualified)|navscoleod|naval school eod|naval school (?:of )?explosive ordnance disposal|eod school)\b/i.test(s)&&
     !/\b(?:not required|no .{0,25}required|work(?:ing)? with|support(?:ing)? (?:the |our )?eod|coordinate with|customers? include|founded|founder)\b/i.test(s)&&
     /\b(?:experience|experienced|qualifications?|qualified|graduate|graduation|certified|certification|background|served|service as|must|requires?|required|understanding)\b/i.test(s));
   if(credential)return{score:100,reason:"100: EOD technician experience or qualification explicitly identified in the description"};
