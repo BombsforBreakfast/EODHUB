@@ -33,6 +33,16 @@ test("job-specific priorities do not spill into another same-title listing",()=>
  assert.equal(scoreJobReview({id:"verified-job",title:"Strategic and Operational Planner",description:"Short source excerpt."},rules).score,100);
  assert.equal(scoreJobReview({id:"another",title:"Strategic and Operational Planner",description:"Short source excerpt."},rules).score,0);
 });
+test("SOAE qualification wording scores 100 when present, including desired qualifications",()=>{
+  const title="Strategic Offensive Arms Elimination (SOAE) Expert";
+  for(const description of ["Desired skills and qualifications: Explosive Ordnance Disposal qualified.","Desired qualifications: EOD-qualified.","An EOD qualification is desired.","Explosive ordnance disposal qualifications preferred."]){
+    assert.equal(scoreJobReview({id:"soae",title,description}).score,100,description);
+  }
+  for(const description of ["EOD qualification is not required.","Experience working with EOD-qualified personnel.","Our company was founded by an Explosive Ordnance Disposal qualified veteran."]){
+    assert.ok(scoreJobReview({id:"soae",title,description}).score<70,description);
+  }
+  assert.ok(scoreJobReview({id:"soae",title,description:"Project analyst supporting threat reduction."}).score<70,"A title alone does not claim an omitted qualification");
+});
 test("gold selection is explicit, globally filterable before pagination and searchable by custom tags",()=>{
   const rows=[{id:"one",title:"Technical Project Manager",description:"CBRN",gold_highlight:false},{id:"two",title:"Mission Advisor",description:"EOD",gold_highlight:true,gold_tags:["Great pay","Job of the day"]}];
   assert.equal(jobReviewPage(rows,"gold",0,1).jobs[0].id,"two");assert.equal(jobReviewPage(rows,"gold",0,1).priorityCounts.gold,1);assert.equal(scoreJobReview(rows[1]).score,100);

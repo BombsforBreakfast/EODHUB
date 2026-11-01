@@ -38,6 +38,9 @@ learns bounded title adjustments after three distinct examples agree.
   that omit the qualification text. The explanation states the actual reason.
 - Explicit EOD technician experience / qualifications or EOD school graduation
   in the body score 100. NAVSCOLEOD and Naval School EOD variants are recognized.
+  This includes EOD qualified / Explosive Ordnance Disposal qualified, whether
+  required or desired. A reviewed job-specific override can cover a source
+  excerpt that ends before those qualifications, as with the SOAE Expert listing.
   Negated requirements, employer-founder boilerplate, repeated keywords and
   descriptions that only say “working with EOD technicians” do not qualify.
 - Technical Project Manager and Policy SME / Policy Subject Matter Expert score
