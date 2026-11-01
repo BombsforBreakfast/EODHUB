@@ -9,6 +9,7 @@ type Preview = { phrase: string; count: number; examples: Array<{ id: string; ti
 export default function JobReviewPreferencesPanel({ target, queueSize, onClose, onChanged }: { target: Target | null; queueSize: number; onClose: () => void; onChanged: () => Promise<void> }) {
   const { t } = useTheme();
   const [rules, setRules] = useState<JobTypeExclusion[]>([]);
+  const [priorities,setPriorities]=useState<import("../../lib/jobMissionPriority").JobPriorityRule[]>([]);
   const [patterns, setPatterns] = useState(0);
   const [phrase, setPhrase] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -24,7 +25,7 @@ export default function JobReviewPreferencesPanel({ target, queueSize, onClose, 
   }
   async function load() {
     const result = await request();
-    setRules(result.exclusions); setPatterns(result.learnedPatterns);
+    setRules(result.exclusions); setPatterns(result.learnedPatterns);setPriorities(result.priorities??[]);
   }
   useEffect(() => { void load().catch(err => setError(String(err.message))); }, [queueSize]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -45,12 +46,14 @@ export default function JobReviewPreferencesPanel({ target, queueSize, onClose, 
   const button = { padding: "7px 11px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, cursor: "pointer" };
   return <div style={{ marginBottom: 16, color: t.text, fontSize: 13 }}>
     <details>
-      <summary style={{ cursor: "pointer" }}>Exclusions & learning · {rules.length} custom rules · {patterns} learned title patterns</summary>
+      <summary style={{ cursor: "pointer" }}>Exclusions & learning · {rules.length} exclusion rules · {patterns} learned title patterns · {priorities.length} priority rules</summary>
       <p>New approvals and “Not relevant” decisions teach ranking after at least 3 distinct listings agree. Adjustments are capped at 10 points. Delete is for expired, duplicate, or other removals and does not teach preferences.</p>
       <p>Built-in exclusions include police, sheriff, firefighter and helicopter pilot roles, along with your earlier exclusions.</p>
       {rules.map(rule => <div key={rule.id} style={{ marginBottom: 5 }}><strong>{rule.phrase}</strong> <button style={button} disabled={busy} onClick={() => void act({ action: "remove_exclusion", id: rule.id })}>Remove rule</button></div>)}
+      <h4>Priority rules</h4><p>Use Gold highlight → Set a review priority on a job to add a role pattern. These rules raise review scores without approving jobs or adding public labels.</p>
+      {priorities.map(rule=><div key={rule.id} style={{marginBottom:8}}><strong>{rule.phrase}</strong> · {rule.target_score}/100{rule.job_id?" · this job only":""}{rule.mission_required?" · mission evidence required":""} <button style={button} disabled={busy} onClick={()=>void act({action:"remove_priority",id:rule.id})}>Remove priority rule</button></div>)}
       <p>Removing a rule allows future matching listings. Previously deleted listings stay in deletion memory.</p>
-      <button style={button} disabled={busy} onClick={() => { if (window.confirm("Reset learned ranking preferences? Your type exclusions and remembered deletions will stay.")) void act({ action: "reset_learning" }); }}>Reset learned ranking</button>
+      <button style={button} disabled={busy} onClick={() => { if (window.confirm("Reset learned ranking preferences? Your explicit priority rules, type exclusions and remembered deletions will stay.")) void act({ action: "reset_learning" }); }}>Reset learned ranking</button>
     </details>
     {message && <p role="status">{message}</p>}
     {error && <p role="alert" style={{ color: "#dc2626" }}>{error}</p>}

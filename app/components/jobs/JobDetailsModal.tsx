@@ -3,6 +3,10 @@
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import JobGoldLabels from "./JobGoldLabels";
+import JobHighlightEditor from "./JobHighlightEditor";
+import {goldCardStyle} from "@/app/lib/jobHighlights";
+import {useGoldJob} from "@/app/lib/jobHighlights.client";
 import { useTheme } from "../../lib/ThemeContext";
 import { useSuppressChatroomPeek } from "../../hooks/useSuppressChatroomPeek";
 import JobImage from "./JobImage";
@@ -59,7 +63,7 @@ function formatExternalUrl(url: string | null | undefined): string | null {
 }
 
 export default function JobDetailsModal({
-  job,
+  job:sourceJob,
   open,
   onClose,
   saved,
@@ -73,6 +77,7 @@ export default function JobDetailsModal({
   onJobDeleted,
   onApplicationsUnderReviewChanged,
 }: Props) {
+  const job=useGoldJob(sourceJob);
   const { t } = useTheme();
   useSuppressChatroomPeek(open && Boolean(job), "job-details-modal");
 
@@ -140,6 +145,7 @@ export default function JobDetailsModal({
           maxHeight: "calc(100dvh - 24px)",
           background: t.surface,
           border: `1px solid ${t.border}`,
+          ...goldCardStyle(job),
           borderRadius: t.radius,
           boxShadow: "0 16px 48px rgba(0,0,0,0.28)",
           display: "flex",
@@ -186,6 +192,7 @@ export default function JobDetailsModal({
                 })}
               </div>
             )}
+            <JobGoldLabels job={job}/>
             {job.applications_under_review && (
               <div style={{ marginTop: 10 }}>
                 <JobApplicationsUnderReviewBadge variant="pill" />
@@ -328,6 +335,7 @@ export default function JobDetailsModal({
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {canAdminDelete && (
               <>
+                <JobHighlightEditor job={job}/>
                 <JobAdminApplicationsUnderReviewButton
                   jobId={job.id}
                   underReview={job.applications_under_review === true}

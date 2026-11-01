@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import JobGoldLabels from "./JobGoldLabels";
+import JobHighlightEditor from "./JobHighlightEditor";
+import {goldCardStyle} from "@/app/lib/jobHighlights";
+import {useGoldJob} from "@/app/lib/jobHighlights.client";
 import { useTheme } from "../../lib/ThemeContext";
 import { httpsAssetUrl, type JobRow } from "../master/masterShared";
 import JobCardActions from "./JobCardActions";
@@ -25,7 +29,7 @@ type Props = {
 };
 
 export default function JobFeedCard({
-  job,
+  job:sourceJob,
   onOpenDetails,
   saved,
   canSave,
@@ -36,6 +40,7 @@ export default function JobFeedCard({
   onJobDeleted,
   onApplicationsUnderReviewChanged,
 }: Props) {
+  const job=useGoldJob(sourceJob);
   const { t } = useTheme();
   const modalJob = job as JobModalData;
   const [imageAvailable, setImageAvailable] = useState(() => Boolean(job.og_image?.trim()));
@@ -48,6 +53,7 @@ export default function JobFeedCard({
         overflow: "hidden",
         background: t.surface,
         boxShadow: t.shadow,
+        ...goldCardStyle(job),
       }}
     >
       {job.applications_under_review && <JobApplicationsUnderReviewBadge />}
@@ -59,6 +65,7 @@ export default function JobFeedCard({
       />
 
       <div style={{ padding: 16 }}>
+        <JobGoldLabels job={job}/>
         <JobCardClickableText
           imageAvailable={imageAvailable}
           onOpenDetails={() => onOpenDetails(modalJob)}
@@ -136,6 +143,7 @@ export default function JobFeedCard({
         >
           {canAdminDelete && (
             <>
+              <JobHighlightEditor job={job}/>
               <JobAdminApplicationsUnderReviewButton
                 jobId={job.id}
                 underReview={job.applications_under_review === true}

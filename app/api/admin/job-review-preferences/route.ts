@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   if (auth.error) return auth.error;
   try {
     const preferences = await loadJobReviewPreferences(auth.client!);
-    return NextResponse.json({ exclusions: preferences.exclusions, learnedPatterns: preferences.signals.length });
+    return NextResponse.json({ exclusions: preferences.exclusions, learnedPatterns: preferences.signals.length, priorities:preferences.priorities??[] });
   } catch (error) { return failure(error); }
 }
 function failure(error: unknown) {
@@ -37,6 +37,10 @@ export async function POST(req: NextRequest) {
       const { error } = await client.from("job_review_feedback").delete().not("job_id", "is", null);
       if (error) throw error;
       return NextResponse.json({ success: true });
+    }
+    if (body.action === "remove_priority") {
+      if(typeof body.id!=="string"||!/^[a-f0-9-]{36}$/i.test(body.id))return NextResponse.json({error:"Invalid rule ID"},{status:400});
+      const result=await client.from("job_priority_rules").delete().eq("id",body.id);if(result.error)throw result.error;return NextResponse.json({success:true});
     }
     if (body.action === "remove_exclusion") {
       if (typeof body.id !== "string" || !/^[a-f0-9-]{36}$/i.test(body.id)) return NextResponse.json({ error: "Invalid rule ID" }, { status: 400 });

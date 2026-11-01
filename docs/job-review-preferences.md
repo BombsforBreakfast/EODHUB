@@ -27,3 +27,8 @@ Ranking uses the newest 2,000 feedback records, deduplicates reposts by normaliz
 “Reset learned ranking” clears feedback only. It does not clear type rules, change published jobs, or erase import memory. Existing approvals are not backfilled, so learning starts from new review actions.
 
 Both preferences tables have RLS enabled and no public or authenticated-client grants. All reading/mutation passes through admin-authenticated server routes using the service role. Public Jobs, maps, rentals, source relevance scores, and source intake searches are unchanged.
+
+
+## Explicit priorities and gold highlights
+
+[Gold job highlights](job-gold-highlights.md) adds manual editorial labels and immediate title-priority rules, separate from the three-example learned feedback. Removing highlights or resetting feedback preserves explicit priorities. The Admin panel lists those rules for separate removal. New mission-priority floors retain visible education notes and never bypass exclusions or approval.

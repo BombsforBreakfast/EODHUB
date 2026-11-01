@@ -4,7 +4,7 @@ import { queryKeys } from "../queryKeys";
 
 export const SAVED_JOBS_STALE_MS = 5 * 60_000;
 
-export type SavedJobRow = {
+export type SavedJobRow = import("../jobHighlights").JobGold & {
   filter_overrides?: unknown;
   filter_source?: unknown;
   id: string;
@@ -29,7 +29,7 @@ export type SavedJobRow = {
   poc_phone: string | null;
 };
 
-type RawSavedJob = {
+type RawSavedJob = import("../jobHighlights").JobGold & {
   filter_overrides?: unknown;
   filter_source?: unknown;
   import_country?: string | null;
@@ -63,6 +63,7 @@ type RawSavedJobRow = {
 export function mapSavedJobRow(row: RawSavedJobRow): SavedJobRow {
   const job = Array.isArray(row.jobs) ? row.jobs[0] ?? null : row.jobs;
   return {
+    gold_highlight:job?.gold_highlight??false,gold_tags:job?.gold_tags??[],gold_revision:job?.gold_revision??0,
     id: row.id,
     job_id: row.job_id,
     filter_overrides: job?.filter_overrides,
@@ -95,7 +96,7 @@ export async function fetchSavedJobs(
   const { data, error } = await supabase
     .from("saved_jobs")
     .select(
-      "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone, filter_overrides, filter_source:import_metadata->filter_source, import_country:import_metadata->>adzuna_country, description_is_excerpt:import_metadata->description_is_excerpt)",
+      "id, job_id, jobs(gold_highlight, gold_tags, gold_revision, title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone, filter_overrides, filter_source:import_metadata->filter_source, import_country:import_metadata->>adzuna_country, description_is_excerpt:import_metadata->description_is_excerpt)",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -108,7 +109,7 @@ export function savedJobIdsFromRows(rows: SavedJobRow[] | undefined): Set<string
   return new Set((rows ?? []).map((row) => row.job_id));
 }
 
-export function savedJobRowFromJob(job: {
+export function savedJobRowFromJob(job: import("../jobHighlights").JobGold & {
   filter_overrides?: unknown;
   filter_source?: unknown;
   id: string;
@@ -132,6 +133,7 @@ export function savedJobRowFromJob(job: {
   poc_phone?: string | null;
 }): SavedJobRow {
   return {
+    gold_highlight:job.gold_highlight,gold_tags:job.gold_tags,gold_revision:job.gold_revision,
     id: `optimistic:${job.id}`,
     filter_overrides: job.filter_overrides,
     filter_source: job.filter_source,

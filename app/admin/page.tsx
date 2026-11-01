@@ -25,6 +25,9 @@ import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { EventCalendarCard } from "../components/events/EventCalendarCard";
 import { EventDetailPanel } from "../components/events/EventDetailPanel";
 import JobFacetEditor from "../components/jobs/JobFacetEditor";
+import JobGoldLabels from "../components/jobs/JobGoldLabels";
+import JobHighlightEditor from "../components/jobs/JobHighlightEditor";
+import {goldCardStyle} from "../lib/jobHighlights";
 import JobReviewPreferencesPanel from "../components/admin/JobReviewPreferencesPanel";
 import { parseFacetOverrides, type JobFacetOverrides } from "../lib/jobFacets";
 import AdminRentalsPanel from "../components/admin/AdminRentalsPanel";
@@ -182,7 +185,7 @@ type JobImportMetadata = {
   countries?: string[];
 };
 
-type Job = {
+type Job = import("../lib/jobHighlights").JobGold & {
   review_priority?: { score: number; band: "high" | "possible" | "low"; reasons: string[]; matchedKeywords: string[] };
   filter_overrides?: JobFacetOverrides;
   id: string;
@@ -875,11 +878,12 @@ export default function AdminPage() {
   const [businessOrgPausedPages, setBusinessOrgPausedPages] = useState<BusinessOrgListedPage[]>([]);
   const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobRulesRevision,setJobRulesRevision]=useState(0);
   const [excludeJobType, setExcludeJobType] = useState<Job | null>(null);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsTotal, setJobsTotal] = useState(0);
-  const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all">("high");
-  const [jobsPriorityCounts, setJobsPriorityCounts] = useState({ high: 0, possible: 0, low: 0, all: 0 });
+  const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all" | "gold">("high");
+  const [jobsPriorityCounts, setJobsPriorityCounts] = useState({ high: 0, possible: 0, low: 0, all: 0, gold:0 });
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
   const jobsRequest = useRef(0);
@@ -1863,7 +1867,7 @@ export default function AdminPage() {
     if (page > lastPage) { void loadJobs(lastPage); return; }
     setJobsPage(page);
     setJobsTotal(total);
-    setJobsPriorityCounts(json.priorityCounts ?? { high: 0, possible: 0, low: 0, all: total });
+    setJobsPriorityCounts(json.priorityCounts ?? { high: 0, possible: 0, low: 0, all: total, gold:0 });
     setJobs((json.jobs ?? []) as Job[]);
     setSelectedJobs(new Set());
     } catch (error) {
@@ -4882,13 +4886,13 @@ export default function AdminPage() {
 
             {jobsSubTab === "submissions" && (
               <>
-            <JobReviewPreferencesPanel target={excludeJobType} queueSize={jobsPriorityCounts.all} onClose={() => setExcludeJobType(null)} onChanged={async () => { await Promise.all([loadJobs(), loadPendingCounts()]); }} />
+            <JobReviewPreferencesPanel key={jobRulesRevision} target={excludeJobType} queueSize={jobsPriorityCounts.all} onClose={() => setExcludeJobType(null)} onChanged={async () => { await Promise.all([loadJobs(), loadPendingCounts()]); }} />
             <div aria-label="Job priority filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
-              {([['high', 'Strong matches'], ['possible', 'Possible matches'], ['low', 'Low confidence'], ['all', 'All jobs']] as const).map(([value, label]) => (
-                <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => setJobsPriority(value)}>{label} ({jobsPriorityCounts[value]})</button>
+              {([['high', 'Strong matches'], ['possible', 'Possible matches'], ['low', 'Low confidence'], ['all', 'All jobs'], ['gold', 'Gold highlights']] as const).map(([value, label]) => (
+                <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => {if(value==="gold")setPendingOnly(false);setJobsPriority(value);}}>{label} ({jobsPriorityCounts[value]})</button>
               ))}
             </div>
-            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Engineering, chemistry and biology degrees carry a small score penalty. Explicit Explosive Ordnance Disposal and UXO titles pass straight to approval unless excluded. Other jobs remain available for review.</p>
+            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Direct EOD / UXO / Bomb Tech titles, explicit EOD qualifications and Chemical Security and Elimination SME roles score 100. Gold highlights are your editorial picks; priority rules teach similar future jobs. Other engineering, chemistry and biology degrees carry a small score penalty. Explicit Explosive Ordnance Disposal and UXO titles pass straight to approval unless excluded. Other jobs remain available for review.</p>
             <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
                 {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} matching ${pendingOnly ? "pending " : ""}jobs of ${jobsPriorityCounts.all.toLocaleString()} total · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}
@@ -4946,7 +4950,7 @@ export default function AdminPage() {
               {jobs.map((job) => (
                 <div
                   key={job.id}
-                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s" }}
+                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s",...goldCardStyle(job) }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0 }}>
@@ -4958,6 +4962,7 @@ export default function AdminPage() {
                       />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
+                        <JobGoldLabels job={job}/>
                         {job.review_priority && <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
                           <strong style={{ color: job.review_priority.band === "high" ? "#16a34a" : job.review_priority.band === "possible" ? "#d97706" : t.textMuted }}>{job.review_priority.score}/100 · {job.review_priority.band === "high" ? "Strong match" : job.review_priority.band === "possible" ? "Possible match" : "Low confidence"}</strong>
                           <div>{job.review_priority.reasons.slice(0, 4).join(" · ")}</div>
@@ -5018,6 +5023,7 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+                      <JobHighlightEditor job={job} onChanged={async()=>{await loadJobs();setJobRulesRevision(v=>v+1);}}/>
                       <button
                         style={actionBtn(editingJob?.id === job.id ? "#6b7280" : "#374151")}
                         onClick={() => editingJob?.id === job.id ? setEditingJob(null) : startEditJob(job)}

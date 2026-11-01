@@ -21,5 +21,7 @@ export async function loadJobReviewPreferences(client: SupabaseClient): Promise<
     feedback.push(...(data ?? []) as JobReviewFeedback[]);
     if ((data ?? []).length < 500) break;
   }
-  return { exclusions, signals: learnedJobSignals(feedback) };
+  const priorities: import("../jobMissionPriority").JobPriorityRule[]=[];
+  for(let start=0;;start+=500){const page=await client.from("job_priority_rules").select("id,job_id,phrase,mission_required,target_score").order("id").range(start,start+499);if(page.error)throw new Error(`Could not load job priority rules: ${page.error.message}`);priorities.push(...(page.data??[]));if((page.data?.length??0)<500)break;}
+  return { exclusions, priorities, signals: learnedJobSignals(feedback) };
 }

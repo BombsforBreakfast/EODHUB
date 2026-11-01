@@ -20,7 +20,7 @@ test("priority API ranks across sources before paging and retains access to lowe
     assert.equal(url.hostname, "db.example");
     if (url.pathname.includes("/auth/")) return Response.json({ id: "admin", aud: "authenticated", role: "authenticated" });
     if (url.pathname.endsWith("/profiles")) return Response.json([{ is_admin: true }]);
-    if (url.pathname.endsWith("/job_type_exclusions") || url.pathname.endsWith("/job_review_feedback")) return Response.json([]);
+    if (url.pathname.endsWith("/job_priority_rules") || url.pathname.endsWith("/job_type_exclusions") || url.pathname.endsWith("/job_review_feedback")) return Response.json([]);
     assert.equal(url.searchParams.get("is_rejected"), "neq.true");
     assert.equal(url.searchParams.get("is_approved"), "neq.true");
     assert.equal(url.searchParams.has("source_type"), false);
@@ -32,9 +32,9 @@ test("priority API ranks across sources before paging and retains access to lowe
     let body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.jobs[0].id, "c");
-    assert.equal(body.jobs[0].review_priority.score, 85);
+    assert.equal(body.jobs[0].review_priority.score, 100);
     assert.equal(body.totalCount, 2);
-    assert.deepEqual(body.priorityCounts, { high: 2, possible: 1, low: 1, all: 4 });
+    assert.deepEqual(body.priorityCounts, { high: 2, possible: 1, low: 1, all: 4, gold:0 });
     body = await (await GET(request("priority=high&limit=1&offset=1"))).json();
     assert.equal(body.jobs[0].id, "d");
     body = await (await GET(request("priority=all"))).json();

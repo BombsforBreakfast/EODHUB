@@ -3,7 +3,7 @@
 import React from "react";
 import { useTheme } from "../../lib/ThemeContext";
 
-export type JobRow = {
+export type JobRow = import("@/app/lib/jobHighlights").JobGold & {
   id: string;
   created_at: string | null;
   title: string | null;

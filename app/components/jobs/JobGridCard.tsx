@@ -1,6 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import JobGoldLabels from "./JobGoldLabels";
+import JobHighlightEditor from "./JobHighlightEditor";
+import {goldCardStyle} from "@/app/lib/jobHighlights";
+import {useGoldJob} from "@/app/lib/jobHighlights.client";
 import { useTheme } from "../../lib/ThemeContext";
 import { jobLocationNote, type JobListItem } from "../../lib/jobFilters";
 import JobCardActions from "./JobCardActions";
@@ -31,7 +35,7 @@ type Props = {
 };
 
 export default function JobGridCard({
-  job,
+  job:sourceJob,
   onOpenDetails,
   saved,
   canSave,
@@ -45,6 +49,7 @@ export default function JobGridCard({
   onApplicationsUnderReviewChanged,
   formatSource,
 }: Props) {
+  const job=useGoldJob(sourceJob);
   const { t } = useTheme();
   const modalJob = job as JobModalData;
   const [imageAvailable, setImageAvailable] = useState(() => Boolean(job.og_image?.trim()));
@@ -57,7 +62,7 @@ export default function JobGridCard({
     : null;
 
   return (
-    <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, overflow: "hidden", background: t.surface, boxShadow: t.shadow, display: "flex", flexDirection: "column" }}>
+    <div style={{ border: `1px solid ${t.border}`, borderRadius: t.radius, overflow: "hidden", background: t.surface, boxShadow: t.shadow, display: "flex", flexDirection: "column", ...goldCardStyle(job) }}>
       {job.applications_under_review && <JobApplicationsUnderReviewBadge />}
       <JobImage
         src={job.og_image}
@@ -66,6 +71,7 @@ export default function JobGridCard({
         onAvailabilityChange={setImageAvailable}
       />
       <div style={{ padding: 16, display: "flex", flexDirection: "column", flex: 1 }}>
+        <JobGoldLabels job={job}/>
         <JobCardClickableText
           imageAvailable={imageAvailable}
           onOpenDetails={() => onOpenDetails(modalJob)}
@@ -138,6 +144,7 @@ export default function JobGridCard({
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {canAdminDelete && (
               <>
+                <JobHighlightEditor job={job}/>
                 <JobAdminApplicationsUnderReviewButton
                   jobId={job.id}
                   underReview={job.applications_under_review === true}
