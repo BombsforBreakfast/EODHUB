@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       product = subscription.data.stripe_product_id;
     }
     const params: Stripe.Checkout.SessionCreateParams = {
-      mode: monthly ? "subscription" : "payment", client_reference_id: reserved.id,
+      mode: monthly ? "subscription" : "payment", payment_method_types: ["card"], client_reference_id: reserved.id,
       // Stable across retries and Lambda instances, with an eight-letter suffix.
       integration_identifier: `eodhub_support_${monthly ? "monthly" : "once"}_${Array.from(createHash("sha256").update(reserved.id).digest().subarray(0, 8), byte => String.fromCharCode(97 + byte % 26)).join("")}`,
       name_collection: { individual: { enabled: true, optional: true } },
