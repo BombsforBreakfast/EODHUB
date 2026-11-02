@@ -4,7 +4,7 @@ import { HubSupportButton, WebSupportOnly } from "@/app/components/support/HubSu
 import { HUB_SUPPORT_DISCLOSURE, HUB_SUPPORT_PAYMENT_DISCLOSURE } from "@/app/lib/hubSupport";
 import styles from "@/app/components/support/hubSupport.module.css";
 
-export const metadata: Metadata = { title: "Support the Hub | EOD-HUB", description: "Voluntary, one-time support for the EOD-HUB community platform." };
+export const metadata: Metadata = { title: "Support the Hub | EOD-HUB", description: "Voluntary support for the EOD-HUB community platform." };
 export default function SupportTheHubPage() {
   return <main className={styles.page}>
     <Link href="/login">EOD-HUB</Link>

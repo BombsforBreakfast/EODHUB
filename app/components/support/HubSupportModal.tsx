@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import Image from "next/image";
+import Link from "next/link";
+import type { SupportFrequency } from "@/app/lib/hubSupportMonthly";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { HUB_SUPPORT_COSTS, HUB_SUPPORT_DISCLOSURE, HUB_SUPPORT_PAYMENT_DISCLOSURE, HUB_SUPPORT_PRESETS, parseSupportAmount, supportDollars } from "@/app/lib/hubSupport";
 import type { SupportView } from "./HubSupportProvider";
@@ -16,8 +18,15 @@ export default function HubSupportModal({ view, onChange, onClose }: { view: Sup
   const [custom, setCustom] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [attempt, setAttempt] = useState<{ id: string; amount: number } | null>(null);
+  const [frequency, setFrequency] = useState<SupportFrequency>("one_time");
+  const [monthlyEnabled, setMonthlyEnabled] = useState(false);
+  const [attempt, setAttempt] = useState<{ id: string; amount: number; frequency: SupportFrequency } | null>(null);
   const amount = selection === "custom" ? parseSupportAmount(custom) : selection;
+  useEffect(() => {
+    let active = true;
+    fetch("/api/hub-support/options", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(body => { if (active) setMonthlyEnabled(body?.monthlyEnabled === true); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     const element = dialog.current;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -35,10 +44,10 @@ export default function HubSupportModal({ view, onChange, onClose }: { view: Sup
     e.preventDefault();
     if (busy || amount === null) return;
     setBusy(true); setError("");
-    const request = attempt?.amount === amount ? attempt : { id: crypto.randomUUID(), amount };
+    const request = attempt?.amount === amount && attempt.frequency === frequency ? attempt : { id: crypto.randomUUID(), amount, frequency };
     setAttempt(request);
     try {
-      const response = await fetch("/api/hub-support/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amountCents: amount, requestId: request.id }) });
+      const response = await fetch("/api/hub-support/checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amountCents: amount, requestId: request.id, frequency }) });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Checkout could not open. Please try again.");
       const url = new URL(body.url);
@@ -52,7 +61,7 @@ export default function HubSupportModal({ view, onChange, onClose }: { view: Sup
     style={{ "--support-surface": t.surface, "--support-text": t.text, "--support-muted": t.textMuted, "--support-border": t.border, "--support-input": t.input } as CSSProperties}>
     <div className={styles.content}>
       <div className={styles.top}><span className={styles.eyebrow}>COMMUNITY SUPPORTED</span><button className={styles.close} type="button" aria-label="Close support dialog" onClick={onClose}>×</button></div>
-      <h2 ref={title} tabIndex={-1} className={view === "contribute" ? styles.contributionTitle : undefined} id="hub-support-title">{view === "why" ? "A little energy. A stronger Hub." : "Buy the Hub an energy drink."}</h2>
+      <h2 ref={title} tabIndex={-1} className={view === "contribute" ? styles.contributionTitle : undefined} id="hub-support-title">{view === "why" ? "A little energy. A stronger Hub." : frequency === "monthly" ? "Keep the Hub fueled, every month." : "Buy the Hub an energy drink."}</h2>
       {view === "why" ? <>
         <p className={styles.lead}>For the price of an energy drink, you can help keep EOD-HUB running.</p>
         <h3>Built for our community</h3>
@@ -65,14 +74,16 @@ export default function HubSupportModal({ view, onChange, onClose }: { view: Sup
       </> : <>
         <p className={`${styles.lead} ${styles.contributionLead}`}>A small boost helps keep the Hub running.</p>
         <form onSubmit={checkout}>
-          <fieldset disabled={busy} className={styles.fieldset}><legend>Choose a one-time contribution · USD</legend><div className={styles.amounts}>
+          {monthlyEnabled ? <fieldset disabled={busy} className={`${styles.fieldset} ${styles.frequency}`}><legend>How would you like to support?</legend><div role="group" aria-label="Support frequency">{(["one_time", "monthly"] as const).map(value => <button type="button" key={value} aria-pressed={frequency === value} onClick={() => { setFrequency(value); setError(""); }}>{value === "one_time" ? "One-time" : "Monthly"}</button>)}</div></fieldset> : null}
+          <fieldset disabled={busy} className={styles.fieldset}><legend>{frequency === "monthly" ? "Choose a monthly contribution · USD" : "Choose a one-time contribution · USD"}</legend><div className={styles.amounts}>
             {HUB_SUPPORT_PRESETS.map(cents => <button key={cents} type="button" aria-pressed={selection === cents} onClick={() => { setSelection(cents); setError(""); }}>{supportDollars(cents).replace(".00", "")}</button>)}
             <button type="button" aria-pressed={selection === "custom"} onClick={() => { setSelection("custom"); setError(""); }}>Custom</button>
           </div>{selection === "custom" ? <label className={styles.custom}>Custom amount (USD)<input autoFocus inputMode="decimal" type="text" value={custom} onChange={e => setCustom(e.target.value)} placeholder="10.00" maxLength={6} aria-describedby="support-amount-help" /><small id="support-amount-help">Enter $1–$500, with up to two decimal places.</small></label> : null}</fieldset>
           <p className={styles.note}>If you think EOD-HUB is a worthwhile mission, or it has helped you or someone you know, please consider contributing.</p>
-          <button className={styles.primary} type="submit" disabled={busy || amount === null}>{busy ? "Opening secure checkout…" : `Continue${amount !== null ? ` with ${supportDollars(amount)}` : " to checkout"}`}</button>
-          <p className={styles.hint}>One-time payment. No subscription. No account required.</p>
+          <button className={styles.primary} type="submit" disabled={busy || amount === null}>{busy ? "Opening secure checkout…" : `Continue${amount !== null ? ` with ${supportDollars(amount)}${frequency === "monthly" ? "/month" : ""}` : " to checkout"}`}</button>
+          <p className={styles.hint}>{frequency === "monthly" ? "Charged today and monthly until you cancel. Cancel any time before your next billing date to stop future charges. No Hub account required." : "One-time payment. No subscription. No account required."}</p>
           <p className={styles.hint}>{HUB_SUPPORT_PAYMENT_DISCLOSURE}</p>
+          <Link className={styles.textButton} href="/support-the-hub/manage" onClick={onClose}>Manage monthly support</Link>
           {error ? <p className={styles.error} role="alert">{error}</p> : null}
         </form>
         <section className={styles.merch} aria-labelledby="hub-support-merch-title">

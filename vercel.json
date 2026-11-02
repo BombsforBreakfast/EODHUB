@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/hub-support",
+      "schedule": "13 * * * *"
+    },
+    {
       "path": "/api/cron/rentals",
       "schedule": "27 * * * *"
     },

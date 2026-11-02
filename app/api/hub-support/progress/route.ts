@@ -1,5 +1,6 @@
 import { type NextRequest } from "next/server";
 import { supportDb, supportGuard, supportJson } from "@/app/lib/server/hubSupport";
+import { supportNetCents } from "@/app/lib/hubSupportMonthly";
 
 export async function GET(request: NextRequest) {
   const denied = supportGuard(request);
@@ -13,7 +14,7 @@ export async function GET(request: NextRequest) {
     const db = supportDb();
     for (let offset = 0; ; offset += 500) {
       const { data, error } = await db.from("hub_contributions")
-        .select("amount_cents,refunded_cents,paid_at")
+        .select("amount_cents,refunded_cents,disputed_cents,paid_at")
         .eq("livemode", true).not("paid_at", "is", null)
         .gte("paid_at", `${month}-01T00:00:00Z`)
         .order("id").range(offset, offset + 499);
@@ -21,7 +22,7 @@ export async function GET(request: NextRequest) {
       for (const row of data ?? []) {
         const paid = formatter.formatToParts(new Date(row.paid_at));
         const paidMonth = `${paid.find(p => p.type === "year")!.value}-${paid.find(p => p.type === "month")!.value}`;
-        if (paidMonth === month) raisedCents += Math.max(0, row.amount_cents - row.refunded_cents);
+        if (paidMonth === month) raisedCents += supportNetCents(row);
       }
       if (!data || data.length < 500) break;
     }

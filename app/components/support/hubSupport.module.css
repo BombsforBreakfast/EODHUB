@@ -20,6 +20,10 @@
 .content .contributionLead { font-size:clamp(12px,3.3vw,14px); line-height:1.5; margin-top:0; margin-bottom:20px; }
 .fieldset { border:0; padding:0; margin:0; min-width:0; }
 .fieldset legend { font-size:13px; font-weight:650; margin-bottom:12px; }
+.frequency { margin-bottom:20px; }
+.frequency > div { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.frequency button { min-height:44px; border-radius:10px; border:1px solid var(--support-border); background:var(--support-input); color:inherit; font-weight:750; cursor:pointer; }
+.frequency button[aria-pressed=true] { background:#15803d; color:#fff; border-color:#15803d; }
 .amounts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
 .amounts button { border:1px solid var(--support-border); border-radius:10px; background:var(--support-input); color:inherit; min-height:52px; font-size:17px; font-weight:750; cursor:pointer; }
 .amounts button:last-child { font-size:13px; }

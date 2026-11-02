@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkRateLimit, getClientIp } from "@/app/lib/server/rateLimit";
 import {
-  FAILED_AUTH_REASONS,
   isFailedAuthReason,
   type FailedAuthReason,
 } from "@/app/lib/auth/failedAuthReasons";
@@ -95,6 +94,3 @@ export async function POST(req: NextRequest) {
 
   return ALWAYS_OK;
 }
-
-// Exported for callers/tests that need to know which reasons the endpoint accepts.
-export { FAILED_AUTH_REASONS };

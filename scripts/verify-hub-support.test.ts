@@ -14,7 +14,7 @@ test("checkout and payment handler never use legacy membership credentials or en
   const checkout = readFileSync("app/api/hub-support/checkout/route.ts", "utf8");
   const webhook = readFileSync("app/api/webhooks/hub-support/route.ts", "utf8");
   const config = readFileSync("app/lib/server/hubSupport.ts", "utf8");
-  assert.match(checkout, /mode: "payment"/);
+  assert.match(checkout, /mode: monthly \? "subscription" : "payment"/);
   assert.match(config, /STRIPE_SUPPORT_SECRET_KEY/);
   for (const source of [checkout, webhook, config]) assert.doesNotMatch(source, /process\.env\.STRIPE_SECRET_KEY|from\("profiles"\)|billing_entitlements|syncStripeMemberSubscription|subscription_status/);
   assert.match(checkout, /idempotencyKey/);

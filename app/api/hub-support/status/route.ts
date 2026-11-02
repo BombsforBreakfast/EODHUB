@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   if (!/^cs_(test_|live_)?[a-zA-Z0-9]{20,250}$/.test(id)) return supportJson({ error: "Invalid checkout reference." }, 400);
   try {
     // The opaque Stripe session ID permits only a minimal, non-personal receipt.
-    const { data, error } = await supportDb().from("hub_contributions").select("amount_cents,currency,status").eq("checkout_session_id", id).maybeSingle();
+    const { data, error } = await supportDb().from("hub_contributions").select("amount_cents,currency,status,frequency").eq("checkout_session_id", id).maybeSingle();
     if (error) throw error;
     if (!data) return supportJson({ error: "Payment confirmation is not available yet." }, 404);
     return supportJson(data);
