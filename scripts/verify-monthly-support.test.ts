@@ -6,6 +6,7 @@ import { supportFixture } from "./hub-support-fixture";
 import { monthlySupportReady, supportNetCents, validMonthlyItem } from "../app/lib/hubSupportMonthly";
 import { signSupportManagement, supportEmailHash, verifySupportManagement } from "../app/lib/server/hubSupportManagement";
 import { handleMonthlySupportEvent } from "../app/lib/server/hubSupportSubscriptions";
+import { drainSupportEmails, queueSupportEmail, sendSupportEmail } from "../app/lib/server/hubSupportEmail";
 process.env.HUB_SUPPORT_MANAGE_SECRET = "synthetic-local-only-secret-32-characters";
 process.env.HUB_SUPPORT_SITE_URL = "https://example.com";
 delete process.env.RESEND_API_KEY;
@@ -34,6 +35,31 @@ test("monthly ownership validation rejects different products, amounts and billi
   assert.equal(validMonthlyItem([item],"prod_support",500),false);
   assert.equal(validMonthlyItem([item,item],"prod_support",300),false);
   assert.equal(validMonthlyItem([{...item,price:{...item.price,recurring:{interval:"year",interval_count:1}}}],"prod_support",300),false);
+});
+test("billing mail leases retry failed delivery without acknowledging it or duplicating a delivered receipt", async () => {
+  const fixture=await supportFixture();
+  try {
+    const mail={recipient:"synthetic@example.com",subject:"Synthetic confirmation",message:"No real charge",link:"https://example.com/support-the-hub/manage",livemode:false};
+    await queueSupportEmail(fixture.db,"paid:in_synthetic",mail);await queueSupportEmail(fixture.db,"paid:in_synthetic",mail);
+    assert.deepEqual(await drainSupportEmails(fixture.db,false,async()=>false),{attempted:1,sent:0});
+    assert.equal((await fixture.pg.query("select sent_at from hub_support_billing_emails")).rows[0].sent_at,null);
+    assert.deepEqual(await drainSupportEmails(fixture.db,false,async()=>true),{attempted:0,sent:0},"A claimed record cannot send concurrently");
+    await fixture.pg.query("update hub_support_billing_emails set claimed_until='2000-01-01'");
+    assert.deepEqual(await drainSupportEmails(fixture.db,false,async (queued,key)=>{assert.equal(queued.recipient,mail.recipient);assert.match(key,/^hub-support-mail-/);return true;}),{attempted:1,sent:1});
+    assert.deepEqual(await drainSupportEmails(fixture.db,false,async()=>true),{attempted:0,sent:0});
+  } finally {await fixture.pg.close();}
+});
+test("billing emails escape content and cannot send to unapproved sandbox recipients",async()=>{
+  const original=global.fetch;let calls=0,body:Record<string,string>={};
+  process.env.RESEND_API_KEY="re_synthetic_local_only";process.env.RESEND_FROM_EMAIL="test@example.com";process.env.HUB_SUPPORT_TEST_EMAIL_ALLOWLIST="synthetic@example.com";
+  global.fetch=(async (url:unknown,options:RequestInit)=>{assert.equal(String(url),"https://api.resend.com/emails");calls++;body=JSON.parse(String(options.body));return new Response(JSON.stringify({id:"local_mail_only"}),{status:200,headers:{"Content-Type":"application/json"}});}) as typeof fetch;
+  try {
+    const mail={recipient:"synthetic@example.com",subject:"Synthetic <confirmation>",message:"<script>never render HTML</script>",link:"https://example.com/support-the-hub/manage",livemode:false};
+    assert.equal(await sendSupportEmail({...mail,recipient:"unapproved@example.com"},"local-denied"),false);assert.equal(calls,0);
+    assert.equal(await sendSupportEmail(mail,"local-only"),true);assert.equal(calls,1);
+    assert.match(body.html,/&lt;script&gt;/);assert.doesNotMatch(body.html,/<script>/);
+    assert.equal(body.to,"synthetic@example.com");assert.match(body.text,/No real charge|never render HTML/);
+  } finally {global.fetch=original;delete process.env.RESEND_API_KEY;delete process.env.HUB_SUPPORT_TEST_EMAIL_ALLOWLIST;}
 });
 test("monthly lifecycle persists real SQL, dedupes receipts and payments, recovers failures, and isolates unrelated billing", async () => {
   const fixture=await supportFixture();

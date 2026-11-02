@@ -15,7 +15,7 @@ export async function sendSupportEmail(mail:SupportMail,key:string){
 }
 export async function queueSupportEmail(db:SupabaseClient,key:string,mail:SupportMail){const r=await db.from("hub_support_billing_emails").upsert({message_key:key,...mail},{onConflict:"message_key",ignoreDuplicates:true});if(r.error)throw Error("Could not queue support email");}
 export async function drainSupportEmails(db:SupabaseClient,live:boolean,send=sendSupportEmail){
-  const {data,error}=await db.rpc("hub_support_claim_emails",{p_live:live});if(error)throw Error("Could not claim support emails");let sent=0;
+  const {data,error}=await db.rpc("hub_support_claim_emails",{p_live:live});if(error||!Array.isArray(data))throw Error("Could not claim support emails");let sent=0;
   for(const row of data??[]){try{if(await send(row,`hub-support-mail-${row.id}`)){const saved=await db.from("hub_support_billing_emails").update({sent_at:new Date().toISOString()}).eq("id",row.id);if(saved.error)throw Error("Could not record email delivery");sent++;}}catch{console.error("[hub-support email] queued for retry",row.id);}}
   return {attempted:data?.length??0,sent};
 }

@@ -14,8 +14,9 @@ export async function supportFixture() {
   const db = {
     async rpc(name: string, args: Row) {
       try {
-        const keys = Object.keys(args), result = await pg.query(`select public.${identifier(name)}(${keys.map((k,i) => `${identifier(k)}=>$${i+1}`).join(",")}) result`, Object.values(args));
-        return { data: result.rows[0].result, error: null };
+        const keys = Object.keys(args), call = `public.${identifier(name)}(${keys.map((k,i) => `${identifier(k)}=>$${i+1}`).join(",")})`;
+        const many = name === "hub_support_claim_emails", result = await pg.query(many ? `select * from ${call}` : `select ${call} result`, Object.values(args));
+        return { data: many ? result.rows : result.rows[0].result, error: null };
       } catch (error) { return { data: null, error }; }
     },
     from(table: string) {
