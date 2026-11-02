@@ -2,7 +2,7 @@
 
 Web-only split CTA on login and the Hub menu's bottom row, before ATLW. Both controls are hidden until client platform detection confirms a browser. Installed Capacitor apps receive neither CTA nor payment content. Anonymous browser visitors can contribute without a profile.
 
-This is one-time support for a business, not charitable fundraising, membership, advertising, or a digital purchase. It never reads/writes membership credentials, profiles, entitlements, or verification flags. `/support` remains the help page. `/support-the-hub` and its thank-you page are public, subject to the existing geographic restrictions.
+Support can be one-time or monthly. One-time and $3 are initially selected, with $1/$3/$5 and custom $1–$500 USD choices. Monthly support is voluntary business support, not charitable fundraising, membership, advertising, or a digital purchase. It never changes profiles, entitlements, or verification flags. `/support` remains the help page. `/support-the-hub`, its thank-you page, and `/support-the-hub/manage` are public, subject to the existing geographic restrictions.
 
 ## Configuration
 
@@ -18,7 +18,30 @@ Use dedicated **server-only** environment variables, with distinct production/no
 
 No publishable key is needed: the server creates hosted Checkout sessions. No card fields or secret keys reach the client. Stripe activation, payout bank details, business information, receipt settings, and an identifiable statement descriptor must be ready before a live release.
 
-Webhook URL: `/api/webhooks/hub-support`, subscribed to `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded`, and `charge.refunded`. Use the Stripe API version matching the installed SDK's default, or Stripe's snapshot-event compatibility for that version. Do not connect the legacy membership webhook. API keys need Checkout session read/write and PaymentIntent read permissions; no customer/account/member writes are needed.
+Webhook URL: `/api/webhooks/hub-support`. Preserve the existing events and add `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `customer.updated`, `invoice.paid`, `invoice.payment_failed`, `charge.dispute.created`, `charge.dispute.closed`, and `radar.early_fraud_warning.created`. Existing events are `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded`, and `charge.refunded`. Match the installed SDK's API version (`2026-03-25.dahlia`); do not connect the legacy membership webhook. Dedicated Support key: Checkout sessions write; Payment Intents, Charges and Refunds, Customers, Products, Prices, Invoices/Invoice Payments, and Subscriptions read; Customer Portal write. Direct subscription/customer/product writes, refund writes, Connect, account settings, payouts and transfers are unnecessary.
+
+## Monthly billing and guest management
+
+Apply `20261102015912_monthly_hub_support.sql` before deploying the new Checkout route. It is additive and preserves the old one-time RPCs for deployment overlap. New subscription, email-outbox and billing-review tables, plus all new RPCs, are service-role-only. Hub members and Rental providers receive no access to them.
+
+Additional server configuration:
+
+- `HUB_SUPPORT_MONTHLY_ENABLED=true` only after live verification; otherwise new monthly checkout is hidden/refused while cancellation remains available.
+- `STRIPE_SUPPORT_MONTHLY_PRODUCT_ID`: dedicated monthly Support product. No membership or Rentals prices.
+- `STRIPE_SUPPORT_PORTAL_CONFIGURATION_ID`: dedicated active portal; invoice history and payment-method update enabled, cancellation at period end, subscription/customer updates and generic login disabled.
+- `HUB_SUPPORT_MANAGE_SECRET`: separate random secret of at least 32 characters for signed links and email lookup hashes.
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`: existing verified transactional email sender.
+- Test delivery is blocked unless its exact recipient is in `HUB_SUPPORT_TEST_EMAIL_ALLOWLIST`. Do not set a test allowlist in production.
+
+Each monthly Checkout creates a distinct Stripe customer. It is never merged with Rentals billing or a Hub profile. `invoice.paid` is the sole recurring-payment authority, with one ledger row per invoice; the first invoice reuses the Checkout reservation. Checkout completion only links the subscription. Actual paid amounts, minus refunds and open/lost disputes, contribute to the monthly funding total; future commitments do not. Failed invoices queue customer and owner email once per invoice and recover automatically after payment. Support status never gates Hub access.
+
+Every monthly paid invoice queues a confirmation email containing the amount, invoice reference and management instructions. Cancellation confirmations explain that future renewals stop; current payments are not automatically refunded. Owner Admin has Confirmed payments / Monthly supporters / Billing review, with manual acknowledgement of reviewed issues. Refunds and disputes are reconciled from the Invoice Payments graph; Stripe remains the place to decide refunds or submit evidence. Fraud/dispute events never automatically refund or cancel support.
+
+Management requests return the same response for matching and unknown emails. Database quotas permit three requests/email/hour and ten/source/hour. Matching recipients receive a signed link for each Support subscription, expiring after one hour. Tokens bind the local subscription, current email hash and payment environment, remain in URL fragments, and are removed from browser history after load. The server rechecks the Stripe customer/subscription/product/amount and requires an isolated customer before opening the portal; client-supplied customer IDs are never accepted. No Hub account or password is created.
+
+The hourly `/api/cron/hub-support` job requires `CRON_SECRET`, reconciles subscriptions in rotation, and retries leased email-outbox deliveries. Sent content is erased after 30 days while dedupe keys remain. For secret rotation, temporarily disable new monthly checkout, rotate the management secret, resync all known Support subscriptions to regenerate email hashes, verify fresh management links, then re-enable checkout. Existing signed links expire and users request a fresh one.
+
+This change preserves the current tax settings and does not add registrations or automatically classify voluntary support as advertising or a charitable donation. Confirm business-support tax treatment before enabling new tax collection.
 
 ## Payment behavior
 
@@ -34,4 +57,4 @@ The test request waits for delivery attempts and reports separate iPhone/Android
 
 ## Verify
 
-`npx tsx --test scripts/verify-hub-support.test.ts`, TypeScript, targeted lint, then sandbox checkout (guest, signed-in, custom amount, cancellation, success, webhook duplicate and refund). Verify service-role-only database permissions and native CTA absence. Do not test with a real card until the owner explicitly authorizes a real transaction. Keep old membership configuration untouched.
+Run `node --require ./scripts/register-server-tests.cjs --import tsx --test scripts/verify-hub-support.test.ts scripts/verify-monthly-support.test.ts scripts/verify-owner-admin-access.test.ts`. For isolated SQL checks, provide a locally installed `PGLITE_MODULE` and run `node scripts/verify-monthly-support-db.cjs`. The optional `verify-monthly-support-sandbox.ts` requires an explicitly supplied test Support key and asserts the separate EOD-Hub sandbox account; it runs test clocks, renewals, declines, recovery, a partial refund and cancellation against local Postgres, disables delivered email, and cleans up its clock. Follow with a full build, targeted lint and browser Checkout/management checks. Never run a live-card test without an explicitly authorized transaction.

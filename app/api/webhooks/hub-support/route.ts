@@ -6,6 +6,8 @@ import { supportDb, supportJson, supportStripe } from "@/app/lib/server/hubSuppo
 import { readLimitedBody } from "@/app/lib/server/promotionRequests";
 import { OWNER_ADMIN_USER_ID } from "@/app/lib/ownerAdminAccess";
 import { dispatchPushForNotification } from "@/app/lib/server/pushDispatch";
+import { handleMonthlySupportEvent } from "@/app/lib/server/hubSupportSubscriptions";
+import { drainSupportEmails } from "@/app/lib/server/hubSupportEmail";
 
 export const runtime = "nodejs";
 export async function POST(request: NextRequest) {
@@ -20,6 +22,17 @@ export async function POST(request: NextRequest) {
   } catch { return supportJson({ error: "Webhook verification failed" }, 400); }
   if (event.livemode !== live) return supportJson({ error: "Payment mode mismatch" }, 400);
   try {
+    const db = supportDb();
+    const monthly = await handleMonthlySupportEvent({ db, stripe, live }, event);
+    if (monthly.handled) {
+      after(async () => {
+        try {
+          if (monthly.notice?.notification_id && monthly.notice.message) await dispatchPushForNotification(db, { recipientUserId: OWNER_ADMIN_USER_ID, type: "hub_contribution", title: "New Hub contribution", body: monthly.notice.message, link: "/admin/hub-support" }, monthly.notice.notification_id);
+          await drainSupportEmails(db, live);
+        } catch { console.error("[hub-support] delivery deferred to support sweep"); }
+      });
+      return supportJson({ received: true });
+    }
     let id: string | undefined; let amount: number | null = null; let intent: string | null = null; let session: string | null = null; let refunded = 0;
     let kind: "paid" | "expired" | "refund";
     if (["checkout.session.completed", "checkout.session.expired", "checkout.session.async_payment_succeeded"].includes(event.type)) {
@@ -40,7 +53,6 @@ export async function POST(request: NextRequest) {
       kind = "refund"; id = payment.metadata.contribution_id; amount = charge.amount; intent = intentId; refunded = charge.amount_refunded;
     } else return supportJson({ received: true });
     if (!z.uuid().safeParse(id).success || !isSupportAmount(amount)) throw new Error("Invalid support payment");
-    const db = supportDb();
     const { data, error } = await db.rpc("apply_hub_support_event", { p_event: event.id, p_id: id, p_live: live, p_kind: kind, p_amount: amount, p_intent: intent, p_session: session, p_refunded: refunded });
     if (error) throw error;
     // The transaction returns an ID only once. Retry events never enqueue a

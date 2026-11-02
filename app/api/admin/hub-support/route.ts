@@ -1,18 +1,49 @@
 import { type NextRequest } from "next/server";
 import { authenticateAdminApiRequest } from "@/app/lib/server/adminApiAuth";
 import { isOwnerAdmin, OWNER_ADMIN_USER_ID } from "@/app/lib/ownerAdminAccess";
-import { supportJson } from "@/app/lib/server/hubSupport";
+import { supportJson, supportStripe } from "@/app/lib/server/hubSupport";
 import { createNotification } from "@/app/lib/notificationsServer";
 import { checkRateLimit } from "@/app/lib/server/rateLimit";
-import { withSupportContributors } from "@/app/lib/server/hubSupportContributors";
+import { withSupportContributors, supportSubscriberDetails } from "@/app/lib/server/hubSupportContributors";
+import type { SupportSubscription } from "@/app/lib/hubSupportMonthly";
+import { z } from "zod";
+import { readLimitedBody } from "@/app/lib/server/promotionRequests";
+
+export async function PATCH(request: NextRequest) {
+  const access = await authenticateAdminApiRequest(request);
+  if (!access.ok) return supportJson({ error: access.error }, access.status);
+  if (!isOwnerAdmin({ userId: access.user.id, email: access.user.email, isAdmin: true })) return supportJson({ error: "Forbidden" }, 403);
+  try {
+    const input = z.object({ incidentKey: z.string().min(1).max(250) }).strict().parse(JSON.parse((await readLimitedBody(request, 1024)).toString("utf8")));
+    const result = await access.admin.from("hub_support_billing_issues").update({ status: "resolved", resolved_at: new Date().toISOString() }).eq("incident_key", input.incidentKey);
+    if (result.error) throw Error();
+    return supportJson({ ok: true });
+  } catch { return supportJson({ error: "Could not mark the billing issue reviewed." }, 400); }
+}
 
 export async function GET(request: NextRequest) {
   const access = await authenticateAdminApiRequest(request);
   if (!access.ok) return supportJson({ error: access.error }, access.status);
   if (!isOwnerAdmin({ userId: access.user.id, email: access.user.email, isAdmin: true })) return supportJson({ error: "Forbidden" }, 403);
-  const { data, error } = await access.admin.from("hub_contributions").select("id,amount_cents,refunded_cents,status,livemode,created_at,paid_at,checkout_session_id").not("paid_at", "is", null).order("paid_at", { ascending: false }).limit(100);
+  const { data, error } = await access.admin.from("hub_contributions").select("id,amount_cents,refunded_cents,disputed_cents,frequency,support_subscription_id,status,livemode,created_at,paid_at,checkout_session_id").not("paid_at", "is", null).order("paid_at", { ascending: false }).limit(100);
   if (error) return supportJson({ error: "Could not load contributions." }, 503);
-  return supportJson({ items: await withSupportContributors(data) });
+  const [subResult, issuesResult, mailResult] = await Promise.all([
+    access.admin.from("hub_support_subscriptions").select("*").not("stripe_subscription_id", "is", null).order("created_at", { ascending: false }).limit(100),
+    access.admin.from("hub_support_billing_issues").select("incident_key,kind,detail,stripe_object_id,created_at,support_subscription_id").eq("status", "open").order("created_at", { ascending: false }).limit(100),
+    access.admin.from("hub_support_billing_emails").select("id", { count: "exact", head: true }).is("sent_at", null).eq("livemode", true),
+  ]);
+  if (subResult.error || issuesResult.error || mailResult.error) return supportJson({ error: "Could not load monthly support billing." }, 503);
+  const config = (() => { try { return supportStripe(); } catch { return null; } })();
+  const subscribers = [];
+  const deadline = Date.now() + 8000;
+  for (let start = 0; start < subResult.data.length; start += 5) {
+    subscribers.push(...await Promise.all((subResult.data as SupportSubscription[]).slice(start, start + 5).map(async row => {
+      let contact = null;
+      if (config && Date.now() < deadline) try { contact = await supportSubscriberDetails(row, config); } catch { /* Ledger remains visible. */ }
+      return { id: row.id, amount_cents: row.amount_cents, livemode: row.livemode, status: row.status, cancel_at_period_end: row.cancel_at_period_end, current_period_end: row.current_period_end, contributor_name: contact?.contributor_name ?? null, contributor_email: contact?.contributor_email ?? null };
+    })));
+  }
+  return supportJson({ items: await withSupportContributors(data), subscribers, issues: issuesResult.data, pendingEmails: mailResult.count });
 }
 
 /** An owner-only delivery check; never creates a payment or accepts a recipient. */

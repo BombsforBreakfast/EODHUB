@@ -14,7 +14,7 @@ export default function SupportThanksPage() {
 
 function SupportThanksContent() {
   const session = useSearchParams().get("session_id");
-  const [receipt, setReceipt] = useState<{ status: string; amount_cents: number } | null>(null);
+  const [receipt, setReceipt] = useState<{ status: string; amount_cents: number; frequency: string } | null>(null);
   const [message, setMessage] = useState("Checking your payment confirmation…");
   useEffect(() => {
     if (isNativeApp()) return;
@@ -36,6 +36,7 @@ function SupportThanksContent() {
   const paid = receipt?.status === "paid" || receipt?.status === "partially_refunded";
   return <main className={styles.page}><Link href="/login">EOD-HUB</Link><WebSupportOnly>
     <h1>{paid ? "Thanks for supporting the Hub." : receipt?.status === "refunded" ? "Your contribution was refunded." : "Payment confirmation"}</h1>
-    <p role="status">{paid ? `Your ${supportDollars(receipt.amount_cents)} one-time contribution is confirmed. We appreciate your support.${receipt.status === "partially_refunded" ? " A partial refund has also been recorded." : ""}` : receipt?.status === "expired" ? "This checkout expired. No contribution was completed through it." : receipt?.status === "refunded" ? "A refund has been recorded. Contact Hello@eod-hub.com if you need help." : !session ? "No payment reference was supplied. Check your Stripe receipt before making another contribution." : message}</p>
+    <p role="status">{paid ? `Your ${supportDollars(receipt.amount_cents)} ${receipt.frequency === "monthly" ? "monthly support payment" : "one-time contribution"} is confirmed. We appreciate your support.${receipt.frequency === "monthly" ? " Support renews monthly until you cancel. Your confirmation email includes management instructions." : ""}${receipt.status === "partially_refunded" ? " A partial refund has also been recorded." : ""}` : receipt?.status === "expired" ? "This checkout expired. No contribution was completed through it." : receipt?.status === "refunded" ? "A refund has been recorded. Contact Hello@eod-hub.com if you need help." : !session ? "No payment reference was supplied. Check your Stripe receipt before making another contribution." : message}</p>
+    <p><Link href="/support-the-hub/manage">Manage monthly support</Link></p>
   </WebSupportOnly><Link href="/login">Back to EOD-HUB</Link></main>;
 }

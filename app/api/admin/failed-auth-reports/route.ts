@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
-  FAILED_AUTH_REASONS,
   classifyFailedLoginAttempt,
   isFailedAuthReason,
   type FailedLoginClassification,
@@ -437,5 +436,3 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(response);
 }
-
-export { FAILED_AUTH_REASONS };
