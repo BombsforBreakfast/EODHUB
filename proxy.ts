@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { getRequestCountryCode, isDeniedGeoCountry } from "@/app/lib/geoAccess";
 import { RENTAL_ROLE, RENTAL_PORTAL, bearerClaimsRental, rentalApiAllowed } from "@/app/lib/rentals/provider";
+import { TICKETING_ROLE, TICKETING_ROOT, bearerClaimsTicketing, ticketingApiAllowed } from "@/app/lib/ticketing/access";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -18,6 +19,7 @@ function isPublicPolicyPath(pathname: string) {
  * Everything else redirects to /login when the user is not authenticated.
  */
 function isPublicPath(pathname: string) {
+  if (pathname === TICKETING_ROOT || pathname.startsWith(`${TICKETING_ROOT}/`)) return true;
   // Public promotion intake and voluntary contributions need no member session.
   if (pathname === "/promote" || pathname.startsWith("/promote/")) return true;
   if (pathname === "/support-the-hub" || pathname.startsWith("/support-the-hub/")) return true;
@@ -83,7 +85,15 @@ export async function proxy(request: NextRequest) {
 
   // API routes handle their own auth; after geo check, pass through.
   if (path.startsWith("/api/")) {
-    if (!rentalApiAllowed(path, request.method)) {
+    if (!ticketingApiAllowed(path)) {
+      if (bearerClaimsTicketing(request.headers.get("authorization"))) return NextResponse.json({ error: "This account has access to ticketing only." }, { status: 403 });
+      if (supabaseUrl && supabaseKey && hasSupabaseAuthCookies(request)) {
+        const client = createServerClient(supabaseUrl, supabaseKey, { cookies: { getAll: () => request.cookies.getAll(), setAll: () => {} } });
+        const { data } = await client.auth.getSession();
+        if (data.session?.user.role === TICKETING_ROLE) return NextResponse.json({ error: "This account has access to ticketing only." }, { status: 403 });
+      }
+    }
+    if (!rentalApiAllowed(path, request.method) && !ticketingApiAllowed(path)) {
       // Deny-only inspection. Modified/forged tokens still fail each API's
       // real authentication; this shortcut never authorizes a request.
       if (bearerClaimsRental(request.headers.get("authorization"))) {
@@ -139,6 +149,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (user.role === RENTAL_ROLE) return NextResponse.redirect(new URL(RENTAL_PORTAL, request.url));
+  if (user.role === TICKETING_ROLE) return NextResponse.redirect(new URL(TICKETING_ROOT, request.url));
 
   return supabaseResponse;
 }

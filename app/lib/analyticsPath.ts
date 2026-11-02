@@ -51,7 +51,9 @@ const PAGE_TIME_ANALYTICS_EXCLUDED = new Set([
 
 export function isExcludedFromPageTimeAnalytics(rawPath: string): boolean {
   if (!rawPath) return true;
-  return PAGE_TIME_ANALYTICS_EXCLUDED.has(normalizeAnalyticsPath(rawPath));
+  const path = normalizeAnalyticsPath(rawPath);
+  // Keep controlled ticketing-pilot traffic out of live Hub engagement totals.
+  return path === "/ticketing" || path.startsWith("/ticketing/") || PAGE_TIME_ANALYTICS_EXCLUDED.has(path);
 }
 
 // Coarse user-agent bucket (no fingerprinting). Used for "device mix" cards.
