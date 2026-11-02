@@ -22,7 +22,7 @@ Webhook URL: `/api/webhooks/hub-support`. Preserve the existing events and add `
 
 ## Monthly billing and guest management
 
-Apply `20261101170448_monthly_hub_support.sql` before deploying the new Checkout route. It is additive and preserves the old one-time RPCs for deployment overlap. New subscription, email-outbox and billing-review tables, plus all new RPCs, are service-role-only. Hub members and Rental providers receive no access to them.
+Apply `20261102015912_monthly_hub_support.sql` before deploying the new Checkout route. It is additive and preserves the old one-time RPCs for deployment overlap. New subscription, email-outbox and billing-review tables, plus all new RPCs, are service-role-only. Hub members and Rental providers receive no access to them.
 
 Additional server configuration:
 

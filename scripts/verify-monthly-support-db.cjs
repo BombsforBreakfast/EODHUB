@@ -6,7 +6,7 @@ const assert=require('node:assert/strict'),fs=require('node:fs'),{randomUUID}=re
  create table public.notifications(id uuid primary key default gen_random_uuid());grant select on public.notifications to service_role;
  create function public.create_notification(p_recipient_user_id uuid,p_type text,p_category text,p_entity_type text,p_entity_id uuid,p_actor_name text,p_title text,p_message text,p_link text,p_group_key text,p_dedupe_key text,p_metadata jsonb) returns public.notifications language plpgsql as $$declare n public.notifications;begin insert into public.notifications default values returning * into n;return n;end$$;
  insert into auth.users values('a28ddac8-dc3a-4ae1-83f5-b675e7b85871','micheal.p.twigg@gmail.com');insert into public.profiles values('a28ddac8-dc3a-4ae1-83f5-b675e7b85871','micheal.p.twigg@gmail.com',true);`);
- for(const file of ['20261018180000_hub_support.sql','20261018190000_hub_support_owner_notifications.sql','20261101170448_monthly_hub_support.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8'));
+ for(const file of ['20261018180000_hub_support.sql','20261018190000_hub_support_owner_notifications.sql','20261102015912_monthly_hub_support.sql'])await db.exec(fs.readFileSync('supabase/migrations/'+file,'utf8'));
  const id=randomUUID(),source='a'.repeat(64),query=async(sql,args=[]) => (await db.query(sql,args)).rows;
  await db.exec('set role service_role');
  const reserve=async(frequency='monthly',amount=300)=> (await query(`select public.reserve_hub_support_v2($1,$2,true,$3,$4,'prod_support') result`,[id,amount,source,frequency]))[0].result;

@@ -9,7 +9,7 @@ export async function supportFixture() {
   const pg = new PGlite();
   await pg.exec(`create role anon;create role authenticated;create role eod_rental;create role service_role bypassrls;grant usage on schema public to public;
     create schema auth;create table auth.users(id uuid,email text);create table public.profiles(user_id uuid,email text,is_admin boolean);create table public.notifications(id uuid);`);
-  for (const file of ["20261018180000_hub_support.sql", "20261018190000_hub_support_owner_notifications.sql", "20261101170448_monthly_hub_support.sql"]) await pg.exec(readFileSync("supabase/migrations/"+file,"utf8"));
+  for (const file of ["20261018180000_hub_support.sql", "20261018190000_hub_support_owner_notifications.sql", "20261102015912_monthly_hub_support.sql"]) await pg.exec(readFileSync("supabase/migrations/"+file,"utf8"));
   const identifier = (name: string) => { if (!/^[a-z_][a-z_0-9]*$/.test(name)) throw Error("Invalid test identifier"); return `"${name}"`; };
   const db = {
     async rpc(name: string, args: Row) {
