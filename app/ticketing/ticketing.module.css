@@ -212,6 +212,13 @@
 .wizardSteps { display:flex; gap:10px; overflow:auto; padding-bottom:12px; margin-bottom:24px; }
 .wizardSteps button { flex-shrink:0; border:1px solid var(--ticket-line); padding:8px 11px; border-radius:8px; color:var(--ticket-muted); background:var(--ticket-bg); font-size:12px; }
 .wizardSteps .activeStep { color:var(--ticket-text); border-color:var(--ticket-blue); }
+.wizardSteps button { display:inline-flex; align-items:center; gap:8px; }
+.wizardSteps .stepWarning { color:#b77b00; flex-shrink:0; }
+.saveStatus { color:var(--ticket-muted); font-size:12px; margin:0 0 16px; }
+.ticketTypeEditor { border:1px solid var(--ticket-line); border-radius:var(--ticket-radius-sm); padding:16px; margin:0; min-width:0; }
+.ticketTypeEditor legend { font-size:14px; font-weight:650; padding:0 6px; }
+.ticketTypeFields { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap:14px; }
+.ticketTypeFooter { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; }
 .wizardGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
 .dateTimeField { border:0; padding:0; margin:0; min-width:0; }
 .dateTimeField legend { color:var(--ticket-muted); font-size:13px; font-weight:600; margin-bottom:8px; }
@@ -304,6 +311,8 @@
   .eventRows article > div:nth-child(2) { min-width:180px; }
 }
 @media (max-width:800px) {
+  .ticketTypeFields { grid-template-columns:1fr 1fr; }
+  .ticketTypeFields > label:first-child { grid-column:1 / -1; }
   .typeEditorRow { grid-template-columns:1fr 1fr; }
   .wizardGrid { grid-template-columns:1fr; }
   .header { flex-wrap:wrap; }

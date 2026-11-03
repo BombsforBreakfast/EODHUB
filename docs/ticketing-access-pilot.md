@@ -16,6 +16,14 @@ Operator responses omit drafts, staff rosters, invitations, private profiles bel
 
 Event details require a start and finish date/time in the event's selected time zone. The finish must be strictly later; overnight events use the following finish date. Both endpoints are saved in the existing private JSON documents, shown on the review screen and coordinator/admin event card, and available when resuming a draft. Older drafts remain editable with an empty finish until completed. There is no schema migration for these fields. Ticket issuance/check-in remain in the next implementation pass.
 
+Events support one initial ticket type plus five additions. Each has a stable ID, custom audience name, USD price (including free) and inventory. Submission checks distinct names/IDs, 1–6 types and total capacity up to 100,000. Legacy single-price drafts still load as General admission. The submitted event includes all types, their combined capacity and minimum admission price.
+
+Organizer details autosave privately at account level and prefill later events. Incomplete edits live under the private profile's `_draft` key; they cannot turn a new incomplete profile into a submission-ready organizer. The workspace returns a validated profile plus that person's own pending edits. Existing valid profile details remain available while an edit is unfinished.
+
+The editor autosaves partial fields, ticket types and page position, and flushes on navigation/close/page hide. A separate 24-hour browser-tab recovery record is keyed by verified user ID. Writes use a stable client draft ID, unique save receipt and optimistic revision; repeats acknowledge the existing save, and genuine conflicts preserve local entries. Remounts share the same queued writer and current revision. Background requests include the editor's user ID, which must match the current verified actor. Opening a submitted event without editing does not downgrade its review status. No database migration or Auth changes are required.
+
+All wizard sections are navigable. Completed sections show a check; missing required information shows a yellow exclamation mark and an accessible label. An empty optional flyer is complete. Review stays incomplete until required sections and fresh acknowledgments are complete, and submission remains blocked until then.
+
 - `TICKETING_PILOT_ENABLED=1`: server-only switch. `VERCEL_ENV=production` always disables the pilot.
 - In local development, `TICKETING_PILOT_ORIGIN=http://127.0.0.1:65464`; loopback origins only.
 - In Vercel Preview, the configured branch URL (falling back to deployment URL) is the canonical origin. Use that exact host for the portal, links and API requests.
@@ -32,7 +40,7 @@ The three ticketing migrations are applied to the existing project. Actual GoTru
 The forward migrations keep the server role away from internal Auth tables and use `PT409` for stale-revision conflicts. Do not use transaction error `40001` for an ordinary business conflict: PostgREST may retry it. Invitation email attestation is supplied from the server-verified actor, never caller JSON. Apply the complete migration chain when setting up another environment.
 
 ```powershell
-node --import tsx --require ./scripts/register-server-tests.cjs --test scripts/verify-ticketing-schedule.test.ts scripts/verify-ticketing-local-time.test.ts scripts/verify-ticketing-entry.test.ts scripts/verify-ticketing-access.test.ts scripts/verify-owner-admin-access.test.ts scripts/verify-rental-passwordless.test.ts scripts/verify-rental-billing.test.ts scripts/verify-rental-billing-lifecycle.test.ts scripts/verify-rental-delisting.test.ts
+node --import tsx --require ./scripts/register-server-tests.cjs --test scripts/verify-ticketing-autosave.test.ts scripts/verify-ticketing-schedule.test.ts scripts/verify-ticketing-local-time.test.ts scripts/verify-ticketing-entry.test.ts scripts/verify-ticketing-access.test.ts scripts/verify-owner-admin-access.test.ts scripts/verify-rental-passwordless.test.ts scripts/verify-rental-billing.test.ts scripts/verify-rental-billing-lifecycle.test.ts scripts/verify-rental-delisting.test.ts
 node node_modules/typescript/bin/tsc --noEmit --incremental false
 node node_modules/next/dist/bin/next build --webpack
 ```

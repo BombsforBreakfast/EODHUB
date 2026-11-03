@@ -1,40 +1,54 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, useState, type FormEvent } from "react";
-import { ArrowLeft, ArrowRight, Check, Upload, X } from "lucide-react";
-import { emptyEventDraft, normalizeHostWebsite, parseEventDraft, parseEventSchedule, parseHostWebsite, parseTicketPrice, type CoordinatorProfile, type EventDraft, type SubmissionView } from "@/app/lib/ticketing/event-intake";
-import { ticketMoney, ticketPrice } from "@/app/lib/ticketing/model";
+import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, Check, CircleAlert, Upload, X } from "lucide-react";
+import { draftTicketTypes, parseCoordinatorProfile, parseEventDraft, parseEventSchedule, parseHostWebsite, parseTicketPrice, parseTicketTypes, normalizeHostWebsite, wizardStepComplete, type CoordinatorDraft, type CoordinatorProfile, type EventTextField, type SubmissionView } from "@/app/lib/ticketing/event-intake";
+import { openEventEditor, type EditorRecovery } from "@/app/lib/ticketing/editor-autosave";
+import { ticketMoney } from "@/app/lib/ticketing/model";
 import { displayLocalDateTime } from "@/app/lib/ticketing/local-time";
 import LocalDateTimeField from "./LocalDateTimeField";
+import TicketTypesEditor from "./TicketTypesEditor";
 import styles from "./ticketing.module.css";
 
 type Props = {
   admin: boolean;
   email: string;
+  userId: string;
+  draftId: string;
   profile: CoordinatorProfile | null;
+  profileDraft?: CoordinatorDraft | null;
+  recovery?: EditorRecovery | null;
+  onProfileSaved: (state: { profile: CoordinatorProfile | null; profileDraft: CoordinatorDraft | null }) => void;
   initial?: SubmissionView;
   profileOnly?: boolean;
   post: <Result = unknown>(body: Record<string, unknown>) => Promise<Result>;
-  close: () => void;
   complete: (eventId?: string) => Promise<void>;
 };
 
 const steps = ["Your profile", "Event details", "Location & contact", "Photo / flyer", "Tickets", "Review"];
 
-export default function EventWizard({ email, profile, initial, profileOnly = false, post, close, complete }: Props) {
-  const [step, setStep] = useState(0);
-  const [draft, setDraft] = useState<EventDraft>(() => initial ? { ...initial.draft } : emptyEventDraft());
-  const [personal, setPersonal] = useState(() => ({ name: profile?.name ?? "", email, phone: profile?.phone ?? "", organization: profile?.organization ?? "", affiliation: String(profile?.affiliation ?? ""), affiliationDetails: profile?.affiliationDetails ?? "" }));
+export default function EventWizard({ email, userId, draftId, profile, profileDraft, recovery, onProfileSaved, initial, profileOnly = false, post, complete }: Props) {
+  const [editor] = useState(() => openEventEditor({ userId, email, draftId, profileOnly, profile, profileDraft, recovery, serverDraft: initial?.draft, head: initial ? { id: initial.eventId, revision: initial.revision } : undefined, post, onProfileSaved }));
+  const view = useSyncExternalStore(editor.subscribe, editor.getSnapshot, editor.getSnapshot);
+  const { draft, personal } = view;
+  const step = profileOnly ? 0 : draft.wizardStep;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmContact, setConfirmContact] = useState(false);
   const [confirmAuthority, setConfirmAuthority] = useState(false);
-  const [saved, setSaved] = useState<{ id: string; revision: number } | null>(() => initial ? { id: initial.eventId, revision: initial.revision } : null);
   const fileInput = useRef<HTMLInputElement>(null);
   const titles = profileOnly ? ["Your profile"] : steps;
-  const change = (field: keyof EventDraft, value: string) => setDraft(previous => ({ ...previous, [field]: value }));
-  const field = (label: string, name: keyof EventDraft, options: { type?: string; required?: boolean; maxLength?: number; placeholder?: string; disabled?: boolean } = {}) => <label>{label}<input name={name} type={options.type ?? "text"} value={draft[name]} onChange={event => change(name, event.target.value)} required={options.required ?? true} maxLength={options.maxLength ?? 160} placeholder={options.placeholder} disabled={options.disabled} /></label>;
+  const change = (field: EventTextField, value: string) => editor.changeDraft({ ...editor.getSnapshot().draft, [field]: value });
+  const setPersonal = (update: (value: CoordinatorDraft) => CoordinatorDraft) => editor.changePersonal(update(editor.getSnapshot().personal));
+  const field = (label: string, name: EventTextField, options: { type?: string; required?: boolean; maxLength?: number; placeholder?: string; disabled?: boolean } = {}) => <label>{label}<input name={name} type={options.type ?? "text"} value={draft[name]} onChange={event => change(name, event.target.value)} required={options.required ?? true} maxLength={options.maxLength ?? 160} placeholder={options.placeholder} disabled={options.disabled} /></label>;
+  useEffect(() => {
+    editor.resume();
+    const flush = () => { void editor.flush().catch(() => undefined); };
+    const hidden = () => { if (document.visibilityState === "hidden") flush(); };
+    window.addEventListener("pagehide", flush); window.addEventListener("online", flush); document.addEventListener("visibilitychange", hidden);
+    return () => { window.removeEventListener("pagehide", flush); window.removeEventListener("online", flush); document.removeEventListener("visibilitychange", hidden); flush(); };
+  }, [editor]);
 
   async function upload(file: File) {
     setError("");
@@ -51,57 +65,67 @@ export default function EventWizard({ email, profile, initial, profileOnly = fal
     finally { setBusy(false); }
   }
 
+  async function navigate(index: number) {
+    setBusy(true); setError("");
+    try { editor.changeDraft({ ...editor.getSnapshot().draft, wizardStep: index }); await editor.flush(); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "Could not save your changes."); }
+    finally { setBusy(false); }
+  }
+
   async function next(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError(""); setBusy(true);
+    event.preventDefault(); setError(""); setBusy(true);
     try {
-      if (step === 0) {
-        await post({ action: "save-profile", ...personal });
-        if (profileOnly) { await complete(); return; }
-        setDraft(previous => ({ ...previous, organizer: previous.organizer || personal.organization }));
-      }
-      if (step === 1) {
-        parseEventSchedule(draft);
-        const hostUrl = parseHostWebsite(draft.hostUrl);
-        setDraft(previous => ({ ...previous, hostUrl }));
-      }
-      if (step === 4) parseTicketPrice(draft.ticketPrice);
+      if (step === 0) parseCoordinatorProfile(personal, email);
+      if (profileOnly) { await editor.flush(); editor.finish(); await complete(); return; }
+      if (step === 1) { parseEventSchedule(draft); editor.changeDraft({ ...editor.getSnapshot().draft, hostUrl: parseHostWebsite(draft.hostUrl) }); }
+      if (step === 4) parseTicketTypes(draft);
       if (step === titles.length - 1) {
-        parseEventDraft(draft);
-        const result = await post<{ id: string }>({ action: saved ? "revise-event" : "create-event", ...draft, eventId: saved?.id, expectedRevision: saved?.revision, confirmContact, confirmAuthority });
-        await complete(result.id);
+        parseCoordinatorProfile(personal, email); parseEventDraft(draft);
+        await editor.flush();
+        const current = editor.getSnapshot();
+        const result = await post<{ id: string }>({ action: current.head ? "revise-event" : "create-event", editorUserId: userId, ...current.draft, eventId: current.head?.id, expectedRevision: current.head?.revision, confirmContact, confirmAuthority });
+        editor.finish(); await complete(result.id);
       } else {
-        await persistDraft();
-        setStep(value => value + 1);
+        const current = editor.getSnapshot();
+        editor.changeDraft({ ...current.draft, organizer: current.draft.organizer || personal.organization, wizardStep: step + 1 });
+        await editor.flush();
       }
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not save this event."); }
     finally { setBusy(false); }
   }
 
-  async function persistDraft() {
-    const result = await post<{ id: string; revision: number }>({ action: "save-draft", draft: { ...draft, hostUrl: normalizeHostWebsite(draft.hostUrl) }, eventId: saved?.id, expectedRevision: saved?.revision });
-    setSaved(result);
-    return result;
-  }
-
   async function saveDraft() {
     setBusy(true); setError("");
-    try {
-      const result = await persistDraft();
-      await complete(result.id);
-    } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not save this draft."); }
+    try { await editor.flush(); const id = editor.getSnapshot().head?.id; editor.close(); await complete(id); }
+    catch (failure) { setError(failure instanceof Error ? failure.message : "Could not save this draft."); }
     finally { setBusy(false); }
   }
 
-  let totals = { baseCents: 0, feeCents: 0, totalCents: 0 };
-  try { totals = ticketPrice(parseTicketPrice(draft.ticketPrice), 1); } catch { totals = { baseCents: 0, feeCents: 0, totalCents: 0 }; }
+  async function retrySave() {
+    setBusy(true); setError("");
+    try { await editor.flush(); } catch { /* The save status explains the failure while retaining local edits. */ }
+    finally { setBusy(false); }
+  }
+  async function discardLocal() {
+    if (!window.confirm("Discard the unsaved edits from this browser and load the latest saved version?")) return;
+    editor.discard(); await complete();
+  }
+  const ready = [0, 1, 2, 3, 4].map(index => wizardStepComplete(index, draft, personal, email));
+  const allReady = ready.every(Boolean);
+  const ticketRows = draftTicketTypes(draft);
+  const ticketAmount = (value: string) => { try { return ticketMoney(parseTicketPrice(value)); } catch { return "Price not set"; } };
 
-  return <section className={styles.wizard} aria-label={profileOnly ? "Coordinator profile" : "Event creation wizard"}>
+  return <section className={styles.wizard} aria-label={profileOnly ? "Coordinator profile" : "Event creation wizard"} data-event-id={draftId}>
     <header className={styles.sectionHeading}>
       <div><h2>{profileOnly ? "Your coordinator profile" : initial ? "Edit event" : "Create an event"}</h2><p className={styles.muted}>Pilot workspace · your changes are saved securely. Ticket sales are disabled.</p></div>
-      <button type="button" className={styles.iconButton} aria-label="Close event wizard" disabled={busy} onClick={close}><X size={20} /></button>
+      <button type="button" className={styles.iconButton} aria-label="Close event wizard" disabled={busy} onClick={() => void saveDraft()}><X size={20} /></button>
     </header>
-    {!profileOnly ? <><p className={styles.eyebrow}>Step {step + 1} of {titles.length}</p><nav className={styles.wizardSteps} aria-label="Event wizard steps">{titles.map((title, index) => <button key={title} type="button" className={index === step ? styles.activeStep : ""} disabled={index > step || busy} aria-current={index === step ? "step" : undefined} onClick={() => { setStep(index); setError(""); }}>{index + 1}. {title}</button>)}</nav></> : null}
+    <p className={styles.saveStatus} role="status" aria-live="polite">{view.status === "saved" ? "All changes saved" : view.status === "error" ? "Changes kept in this browser · sync needs attention" : "Saving changes…"}</p>
+    {view.saveError ? <aside className={styles.notice}><p>{view.saveError}</p>{view.conflict ? <button type="button" className={styles.secondary} onClick={() => void discardLocal()}>Discard local changes & load saved version</button> : <button type="button" className={styles.secondary} disabled={busy} onClick={() => void retrySave()}>Retry save</button>}</aside> : null}
+    {!profileOnly ? <><p className={styles.eyebrow}>Step {step + 1} of {titles.length}</p><nav className={styles.wizardSteps} aria-label="Event wizard steps">{titles.map((title, index) => {
+      const done = index === 5 ? allReady && confirmContact && confirmAuthority : ready[index];
+      return <button key={title} type="button" className={index === step ? styles.activeStep : ""} disabled={busy} aria-current={index === step ? "step" : undefined} aria-label={title + (done ? " · complete" : " · requires information")} onClick={() => void navigate(index)}>{index + 1}. {title}{done ? <Check size={14} aria-hidden="true" /> : <CircleAlert className={styles.stepWarning} size={16} aria-hidden="true" />}</button>;
+    })}</nav><p className={styles.finePrint}>Choose any section to return to it. A yellow ! marks required information still missing. The photo / flyer is optional.</p></> : null}
     <form className={styles.form} onSubmit={next}>
       <fieldset disabled={busy} className={styles.wizardFields}>
         {step === 0 ? <>
@@ -146,23 +170,20 @@ export default function EventWizard({ email, profile, initial, profileOnly = fal
           </div>
           {draft.flyerUrl ? <div className={styles.wizardFlyer}><Image src={draft.flyerUrl} alt="Uploaded event flyer preview" width={600} height={800} unoptimized /><button type="button" className={styles.textButton} onClick={() => change("flyerUrl", "")}>Remove image</button></div> : null}
         </> : step === 4 ? <>
-          <h3>General admission</h3>
-          <div className={styles.wizardGrid}><label>Ticket price (USD)<input type="number" min="0" max="10000" step="0.01" value={draft.ticketPrice} onChange={event => change("ticketPrice", event.target.value)} required /></label><label>Number of tickets available<input type="number" min="1" max="100000" step="1" value={draft.capacity} onChange={event => change("capacity", event.target.value)} required /></label></div>
-          <div className={styles.priceRows}><p><span>Admission</span><strong>{ticketMoney(totals.baseCents)}</strong></p><p><span>Example Hub ticketing fee</span><strong>{ticketMoney(totals.feeCents)}</strong></p><p><span>Example buyer total</span><strong>{ticketMoney(totals.totalCents)}</strong></p></div>
-          <p className={styles.notice}>Ticket sales are disabled during this pilot. Final fees, taxes and refund terms will be confirmed before checkout opens.</p>
+          <TicketTypesEditor value={ticketRows} onChange={ticketTypes => editor.changeDraft({ ...editor.getSnapshot().draft, ticketTypes })} />
         </> : <>
           <h3>{draft.title}</h3><dl className={styles.reviewDetails}>
             <dt>Hosted by</dt><dd>{draft.organizer}</dd><dt>Starts</dt><dd>{displayLocalDateTime(draft.localStart)}</dd><dt>Finishes</dt><dd>{displayLocalDateTime(draft.localEnd)}</dd><dt>Time zone</dt><dd>{draft.timeZone}</dd><dt>Where</dt><dd>{draft.venue}<br />{[draft.address, draft.city, draft.region, draft.postalCode, draft.country].filter(Boolean).join(", ")}</dd>
-            <dt>Public contact</dt><dd>{draft.contactName}<br />{draft.contactPhone}<br />{draft.contactEmail}</dd><dt>Host website</dt><dd>{draft.hostUrl || "Not supplied"}</dd><dt>Admission</dt><dd>{ticketMoney(totals.baseCents)} · {draft.capacity} tickets available</dd><dt>Details</dt><dd className={styles.preserveText}>{draft.description}</dd>
+            <dt>Public contact</dt><dd>{draft.contactName}<br />{draft.contactPhone}<br />{draft.contactEmail}</dd><dt>Host website</dt><dd>{draft.hostUrl || "Not supplied"}</dd><dt>Ticket types</dt><dd>{ticketRows.map(row => <p key={row.id}><strong>{row.name || "Unnamed ticket type"}</strong> · {ticketAmount(row.price)} · {row.capacity || "Quantity not set"} tickets</p>)}</dd><dt>Details</dt><dd className={styles.preserveText}>{draft.description}</dd>
           </dl>
           {draft.flyerUrl ? <div className={styles.wizardFlyer}><Image src={draft.flyerUrl} alt="Event flyer to submit" width={450} height={600} unoptimized /></div> : null}
-          <p className={styles.notice}>Your submission goes to the Hub owner for review. Approval does not publish this pilot event or open ticket sales.</p>
+          <p className={styles.notice}>{!allReady ? "Complete the sections marked ! before submitting. " : ""}Your submission goes to the Hub owner for review. Approval does not publish this pilot event or open ticket sales.</p>
           <label className={styles.acknowledgment}><input type="checkbox" checked={confirmContact} onChange={event => setConfirmContact(event.target.checked)} required /><span>The event POC details are appropriate to display publicly. My coordinator profile remains private.</span></label>
           <label className={styles.acknowledgment}><input type="checkbox" checked={confirmAuthority} onChange={event => setConfirmAuthority(event.target.checked)} required /><span>I am authorized to list this event and have permission to use any uploaded images.</span></label>
         </>}
       </fieldset>
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
-      <div className={styles.wizardActions}>{step > 0 ? <button type="button" className={styles.secondary} disabled={busy} onClick={() => { setStep(value => value - 1); setError(""); }}><ArrowLeft size={16} />Back</button> : <button type="button" className={styles.secondary} disabled={busy} onClick={close}>Close</button>}{!profileOnly ? <button type="button" className={styles.secondary} disabled={busy} onClick={() => void saveDraft()}>Save draft & close</button> : null}<button className={styles.primary} type="submit" disabled={busy}>{busy ? "Saving…" : profileOnly ? "Save coordinator profile" : step === titles.length - 1 ? "Submit for review" : "Save & continue"}{step === titles.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}</button></div>
+      <div className={styles.wizardActions}>{step > 0 ? <button type="button" className={styles.secondary} disabled={busy} onClick={() => void navigate(step - 1)}><ArrowLeft size={16} />Back</button> : <button type="button" className={styles.secondary} disabled={busy} onClick={() => void saveDraft()}>Close</button>}{!profileOnly ? <button type="button" className={styles.secondary} disabled={busy} onClick={() => void saveDraft()}>Save draft & close</button> : null}<button className={styles.primary} type="submit" disabled={busy || view.conflict || (!profileOnly && step === 5 && !allReady)}>{busy ? "Saving…" : profileOnly ? "Save coordinator profile" : step === titles.length - 1 ? "Submit for review" : "Save & continue"}{step === titles.length - 1 ? <Check size={16} /> : <ArrowRight size={16} />}</button></div>
     </form>
   </section>;
 }

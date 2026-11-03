@@ -6,7 +6,7 @@ import { Resend } from "resend";
 import { findAuthUsersByEmail } from "@/app/lib/auth/adminAuthLookup";
 import { isOwnerAdmin, OWNER_ADMIN_EMAIL } from "@/app/lib/ownerAdminAccess";
 import { activeAssignment, assignedAccess, isTicketingIdentity, ticketingEmail, ticketingOrigin, TICKETING_COOKIE, TICKETING_ROLE, uuidPattern, type Assignment } from "./access";
-import { emptyEventDraft, eventFields, parseCoordinatorProfile, parseEventDraft, type EventDraft } from "./event-intake";
+import { cleanCoordinatorDraft, cleanTicketTypeDrafts, coordinatorProfileState, emptyEventDraft, eventFields, parseCoordinatorProfile, parseEventDraft, type CoordinatorProfile, type EventDraft } from "./event-intake";
 
 export class TicketingError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export const ticketingHeaders = { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" };
@@ -85,9 +85,12 @@ const text = (value: unknown, max: number) => typeof value === "string" ? value.
 export function cleanDraft(body: Record<string, unknown>): EventDraft {
   const result = emptyEventDraft();
   for (const key of Object.keys(result) as (keyof EventDraft)[]) {
+    if (key === "ticketTypes" || key === "wizardStep" || key === "_autosaveId") continue;
     if (key === "category") { result.category = body[key] === "Fitness" ? "Fitness" : "Community"; continue; }
     result[key] = text(body[key], key === "description" ? 5000 : key === "hostUrl" ? 500 : key === "flyerUrl" ? 250 : 254);
   }
+  result.wizardStep = Number.isInteger(body.wizardStep) ? Math.max(0, Math.min(5, Number(body.wizardStep))) : 0;
+  if (body.ticketTypes !== undefined) result.ticketTypes = cleanTicketTypeDrafts(body.ticketTypes);
   return result;
 }
 export async function requestTicketingSignIn(db: SupabaseClient, emailValue: unknown, origin: string, ip: string) {
@@ -178,23 +181,47 @@ export async function ticketingWorkspace(actor: TicketingActor) {
     const emails = new Map(identities);
     staff = staff.map(row => ({ ...row, email: emails.get(String(row.user_id)) }));
   }
-  return { actor: { id: actor.user.id, email: actor.user.email, admin: actor.admin, can_create: actor.admin || actor.account.can_submit_events }, profile: actor.account.profile, events, staff, audit, invitations, mode: "pilot", checkoutEnabled: false };
+  return { actor: { id: actor.user.id, email: actor.user.email, admin: actor.admin, can_create: actor.admin || actor.account.can_submit_events }, ...coordinatorProfileState(actor.account.profile, actor.user.email!), events, staff, audit, invitations, mode: "pilot", checkoutEnabled: false };
 }
 export async function ticketingCommand(actor: TicketingActor, body: Record<string, unknown>) {
   const { db, user } = actor;
-  await ticketingLimit(db, "workspace", user.id, 120, 600);
+  if (body.editorUserId !== undefined && body.editorUserId !== user.id) throw new TicketingError("Your sign-in changed. Reopen the editor with the account that started this draft.", 403);
+  const autosave = body.action === "save-draft" || body.action === "save-profile-draft";
+  await ticketingLimit(db, autosave ? "autosave" : "workspace", user.id, autosave ? 240 : 120, 600);
+  if (body.action === "save-profile-draft") {
+    const pending = cleanCoordinatorDraft(body, user.email!);
+    let profile: CoordinatorProfile | null = null;
+    try { profile = parseCoordinatorProfile(pending, user.email!); } catch { /* Preserve incomplete organizer details without treating them as submission-ready. */ }
+    const previous = coordinatorProfileState(actor.account.profile, user.email!).profile;
+    checkTicketingDb((await db.from("ticketing_accounts").update({ profile: profile ?? { ...previous, _draft: pending } }).eq("user_id", user.id)).error);
+    return { profile: profile ?? previous, profileDraft: profile ? null : pending };
+  }
   if (body.action === "save-profile") {
     let profile; try { profile = parseCoordinatorProfile(body, user.email!); } catch (error) { throw new TicketingError((error as Error).message); }
     checkTicketingDb((await db.from("ticketing_accounts").update({ profile }).eq("user_id", user.id)).error);
     return { ok: true };
   }
   if (["save-draft", "create-event", "revise-event"].includes(String(body.action))) {
-    const id = body.eventId ? String(body.eventId) : randomUUID();
+    if (body.draftId && body.action !== "save-draft") throw new TicketingError("Use a saved event before submitting.");
+    const id = body.eventId ? String(body.eventId) : body.draftId ? String(body.draftId) : randomUUID();
     if (!uuidPattern.test(id)) throw new TicketingError("Invalid event.");
     if (body.eventId && (!Number.isInteger(body.expectedRevision) || Number(body.expectedRevision) < 1)) throw new TicketingError("Reload this event before saving.", 409);
     if (body.eventId) requireTicketingEvent(actor, id);
     else if (!actor.admin && !actor.account.can_submit_events) throw new TicketingError("An organizer invitation is required to create an event.", 403);
-    const draft = cleanDraft((body.draft ?? body) as Record<string, unknown>);
+    let draft: EventDraft;
+    try { draft = cleanDraft((body.draft ?? body) as Record<string, unknown>); } catch (error) { throw new TicketingError((error as Error).message); }
+    if (body.action === "save-draft" && body.writeId !== undefined) {
+      if (!uuidPattern.test(String(body.writeId))) throw new TicketingError("Invalid save identifier.");
+      const prior = await db.from("ticketing_events").select("id,created_by,revision,draft,review_status").eq("id", id).maybeSingle();
+      checkTicketingDb(prior.error);
+      if (prior.data) {
+        requireTicketingEvent(actor, id);
+        if (!body.eventId && prior.data.created_by !== user.id) throw new TicketingError("This draft belongs to another account.", 403);
+        if (prior.data.review_status === "draft" && prior.data.draft?._autosaveId === body.writeId) return { id, revision: prior.data.revision };
+        if (!body.eventId) throw new TicketingError("This draft was saved in another tab. Reload before saving.", 409);
+      }
+      draft._autosaveId = String(body.writeId);
+    }
     if (draft.flyerUrl) {
       if (!/^\/api\/ticketing\/flyer\?id=[0-9a-f-]{36}$/.test(draft.flyerUrl)) throw new TicketingError("Use an image uploaded through this event wizard.");
       const flyerId = new URL(draft.flyerUrl, "https://example.invalid").searchParams.get("id");
@@ -208,11 +235,12 @@ export async function ticketingCommand(actor: TicketingActor, body: Record<strin
     const submit = body.action !== "save-draft";
     let event = null;
     if (submit) {
-      if (!actor.account.profile) throw new TicketingError("Complete your coordinator profile first.");
+      if (!coordinatorProfileState(actor.account.profile, user.email!).profile) throw new TicketingError("Complete your coordinator profile first.");
       if (body.confirmContact !== true || body.confirmAuthority !== true) throw new TicketingError("Confirm your public contact and authority to list this event.");
       try { event = eventFields(parseEventDraft(draft)); } catch (error) { throw new TicketingError((error as Error).message); }
     }
     const result = await db.rpc("ticketing_save_event", { p_actor: user.id, p_id: id, p_expected: body.eventId ? Number(body.expectedRevision) : 0, p_draft: draft, p_event: event, p_submit: submit });
+    if (result.error?.code === "23505") throw new TicketingError("This draft was saved in another tab. Reload before saving.", 409);
     checkTicketingDb(result.error); return { id, revision: result.data.revision };
   }
   if (body.action === "review-event") {
