@@ -130,7 +130,7 @@ export async function requestTicketingSignIn(db: SupabaseClient, emailValue: unk
   const url = `${origin}/ticketing/access#token_hash=${encodeURIComponent(token)}`;
   const sent = await new Resend(process.env.RESEND_API_KEY).emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "EOD-HUB <noreply@resend.dev>", to: email, subject: "EOD-HUB Events: your pilot sign-in link",
-    text: `Sign in to the EOD-HUB ticketing pilot:\n${url}\n\nOpen the link, then select Continue. It expires in 30 minutes and works once. No password is needed. This does not enroll you as a Hub community member. Live ticket sales are disabled. Ignore this email if you did not request it.`,
+    text: `Sign in to the EOD-HUB ticketing pilot:\n${url}\n\nOpen the link to sign in and go directly to your event workspace. It expires in 30 minutes and works once. No password is needed. This does not enroll you as a Hub community member. Live ticket sales are disabled. Ignore this email if you did not request it.`,
   });
   checkTicketingDb((await db.from("ticketing_email_log").insert({ user_id: user.id, kind: "signin", delivered_to_provider: !sent.error })).error);
   if (sent.error) throw new TicketingError("The sign-in email could not be sent. Please request another link.", 503);

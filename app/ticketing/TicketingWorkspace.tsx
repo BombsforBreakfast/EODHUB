@@ -1,11 +1,12 @@
 "use client";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from "react";
 import { ArrowRight, LogOut, Moon, Plus, RefreshCw, Sun } from "lucide-react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { emptyEventDraft, type CoordinatorProfile, type EventDraft, type SubmissionView } from "@/app/lib/ticketing/event-intake";
 import type { PilotEvent } from "@/app/lib/ticketing/model";
+import { createTicketingEntryLoader, ticketingEntryDestination } from "@/app/lib/ticketing/entry.client";
 import EventWizard from "./EventWizard";
 import styles from "./ticketing.module.css";
 
@@ -22,6 +23,13 @@ async function request<T = unknown>(url: string, body?: Record<string, unknown>)
 }
 const post = <T,>(body: Record<string, unknown>) => request<T>("/api/ticketing/workspace", body);
 const title = (event: SavedEvent) => event.draft?.title || event.event?.title || "Untitled draft";
+async function loadWorkspace(): Promise<Workspace | null> {
+  const response = await fetch("/api/ticketing/workspace", { cache: "no-store" });
+  const value = await response.json();
+  if (response.status === 401) return null;
+  if (!response.ok) throw new Error(value.error ?? "Could not load your workspace.");
+  return value;
+}
 
 export default function TicketingWorkspace() {
   const { t, isDark, toggleDark } = useTheme();
@@ -31,7 +39,6 @@ export default function TicketingWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [token, setToken] = useState("");
   const [invitation, setInvitation] = useState("");
   const [selected, setSelected] = useState("");
   const [wizard, setWizard] = useState<{ event?: SavedEvent; profileOnly?: boolean } | null>(null);
@@ -42,22 +49,45 @@ export default function TicketingWorkspace() {
   const [inviteExpiry, setInviteExpiry] = useState("");
   const [preparedLink, setPreparedLink] = useState("");
   const [reviewNote, setReviewNote] = useState("");
-  const refresh = useCallback(async () => {
-    const response = await fetch("/api/ticketing/workspace", { cache: "no-store" });
-    const value = await response.json();
-    if (response.status === 401) { setWorkspace(null); setLoaded(true); return; }
-    if (!response.ok) throw new Error(value.error ?? "Could not load your workspace.");
-    setWorkspace(value); setSelected(current => value.events.some((event: SavedEvent) => event.id === current) ? current : value.events[0]?.id ?? ""); setLoaded(true);
+  const entryLoader = useRef<ReturnType<typeof createTicketingEntryLoader<Workspace>> | null>(null);
+  const currentEntry = useRef<Promise<{ workspace: Workspace | null; verifiedLink: boolean }> | null>(null);
+  const applyWorkspace = useCallback((value: Workspace | null) => {
+    setWorkspace(value);
+    setSelected(current => value?.events.some(event => event.id === current) ? current : value?.events[0]?.id ?? "");
   }, []);
+  const refresh = useCallback(async () => { applyWorkspace(await loadWorkspace()); setLoaded(true); }, [applyWorkspace]);
   useEffect(() => {
-    const fragment = new URLSearchParams(window.location.hash.slice(1));
-    const login = fragment.get("token_hash"), invite = fragment.get("invitation");
-    if (login) setToken(login);
-    if (invite) { setInvitation(invite); sessionStorage.setItem("ticketing-pending-invite", invite); }
-    else setInvitation(sessionStorage.getItem("ticketing-pending-invite") ?? "");
-    if (login || invite) window.history.replaceState(null, "", window.location.pathname);
-    void refresh().catch(failure => { setError(failure.message); setLoaded(true); });
-  }, [refresh]);
+    let active = true;
+    if (!entryLoader.current) entryLoader.current = createTicketingEntryLoader(token => request("/api/ticketing/auth", { action: "verify", token }), loadWorkspace);
+    const open = () => {
+      const fragment = new URLSearchParams(window.location.hash.slice(1));
+      const login = fragment.get("token_hash"), invite = fragment.get("invitation");
+      if (login || invite) window.history.replaceState(null, "", window.location.pathname + window.location.search);
+      if (invite) setInvitation(invite);
+      try {
+        if (invite) sessionStorage.setItem("ticketing-pending-invite", invite);
+        else { const stored = sessionStorage.getItem("ticketing-pending-invite"); if (stored) setInvitation(stored); }
+      } catch { /* The current invitation still works if browser storage is blocked. */ }
+      setLoaded(false); setBusy(true); setError("");
+      const promise = entryLoader.current!(login);
+      currentEntry.current = promise;
+      void promise.then(result => {
+        if (!active || currentEntry.current !== promise) return;
+        applyWorkspace(result.workspace);
+        if (result.verifiedLink && result.workspace) {
+          const destination = ticketingEntryDestination(result.workspace);
+          if (window.location.pathname !== destination) window.location.replace(destination);
+        }
+      }).catch(failure => {
+        if (!active || currentEntry.current !== promise) return;
+        applyWorkspace(null); setError(failure instanceof Error ? failure.message : "This sign-in link could not be used. Request a new link.");
+      }).finally(() => { if (active && currentEntry.current === promise) { setLoaded(true); setBusy(false); } });
+    };
+    open();
+    const followLink = () => { if (/(?:^#|&)(?:token_hash|invitation)=/.test(window.location.hash)) open(); };
+    window.addEventListener("hashchange", followLink);
+    return () => { active = false; window.removeEventListener("hashchange", followLink); };
+  }, [applyWorkspace]);
   async function run(action: () => Promise<void>) {
     setError(""); setNotice(""); setBusy(true);
     try { await action(); } catch (failure) { setError(failure instanceof Error ? failure.message : "Please try again."); }
@@ -75,11 +105,11 @@ export default function TicketingWorkspace() {
   }
   return <div className={styles.page} style={variables}>
     <p className={styles.previewBanner}><span>CONTROLLED PILOT</span>Saved event workspaces · ticket checkout is disabled</p>
-    <header className={styles.header}><Link className={styles.brand} href="/ticketing"><Image src="/branding/eod-crab-logo.png" width={40} height={40} alt="" /><span>EOD-HUB<small>Events & tickets</small></span></Link><nav aria-label="Ticketing navigation"><button className={styles.iconButton} onClick={toggleDark} aria-label={isDark ? "Use light theme" : "Use dark theme"}>{isDark ? <Sun size={18} /> : <Moon size={18} />}</button>{workspace ? <button type="button" disabled={busy} className={styles.textButton} onClick={() => void run(async () => { await request("/api/ticketing/auth", { action: "signout" }); setWorkspace(null); setToken(""); })}><LogOut size={16} />Sign out</button> : null}</nav></header>
+    <header className={styles.header}><Link className={styles.brand} href="/ticketing"><Image src="/branding/eod-crab-logo.png" width={40} height={40} alt="" /><span>EOD-HUB<small>Events & tickets</small></span></Link><nav aria-label="Ticketing navigation"><button className={styles.iconButton} onClick={toggleDark} aria-label={isDark ? "Use light theme" : "Use dark theme"}>{isDark ? <Sun size={18} /> : <Moon size={18} />}</button>{workspace ? <button type="button" disabled={busy} className={styles.textButton} onClick={() => void run(async () => { await request("/api/ticketing/auth", { action: "signout" }); setWorkspace(null); })}><LogOut size={16} />Sign out</button> : null}</nav></header>
     <main className={styles.section}>
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
-      {!loaded ? <p>Loading your event workspace…</p> : token ? <section className={styles.purchaseBox}><h1>Continue to your event workspace</h1><p>This single-use email link verifies your sign-in. It does not change your Hub membership.</p><button className={styles.primary} disabled={busy} onClick={() => void run(async () => { await request("/api/ticketing/auth", { action: "verify", token }); setToken(""); await refresh(); })}>Continue <ArrowRight size={17} /></button></section> : !workspace ? <section className={styles.accessCard}><h1>Event sign-in</h1><p>Use your invited email. Existing Hub members can use their regular email; no password is needed.</p>{invitation ? <p className={styles.notice}>Sign in with the email this invitation was sent to. You’ll then accept its event access.</p> : null}<form className={styles.form} onSubmit={signIn}><label>Email address<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required maxLength={254} /></label><button className={styles.primary} disabled={busy}>{busy ? "Sending…" : "Email me a sign-in link"}<ArrowRight size={17} /></button></form><p className={styles.finePrint}>Pilot access is invitation-only. This portal does not grant access to the EOD-HUB community.</p></section> : <>
+      {!loaded ? <p role="status">Opening your event workspace…</p> : !workspace ? <section className={styles.accessCard}><h1>Event sign-in</h1><p>Use your invited email. Existing Hub members can use their regular email; no password is needed.</p>{invitation ? <p className={styles.notice}>Sign in with the email this invitation was sent to. You’ll then accept its event access.</p> : null}<form className={styles.form} onSubmit={signIn}><label>Email address<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required maxLength={254} /></label><button className={styles.primary} disabled={busy}>{busy ? "Sending…" : "Email me a sign-in link"}<ArrowRight size={17} /></button></form><p className={styles.finePrint}>Pilot access is invitation-only. This portal does not grant access to the EOD-HUB community.</p></section> : <>
         <div className={styles.sectionHeading}><div><h1>{workspace.actor.admin ? "Ticketing administration" : "Your event workspace"}</h1><p className={styles.muted}>{workspace.actor.email}{workspace.actor.admin ? " · Hub owner" : ""}</p></div><div className={styles.buttonRow}><button className={styles.secondary} disabled={busy} onClick={() => void run(refresh)}><RefreshCw size={16} />Refresh</button>{workspace.actor.can_create ? <button className={styles.primary} onClick={() => setWizard({})}><Plus size={16} />Create event</button> : null}</div></div>
         {invitation ? <aside className={styles.notice}><p>An invitation is ready to accept for this signed-in email.</p><button className={styles.primary} disabled={busy} onClick={() => void run(async () => { await post({ action: "accept-invite", token: invitation }); sessionStorage.removeItem("ticketing-pending-invite"); setInvitation(""); await refresh(); setNotice("Invitation accepted. Your event access is ready."); })}>Accept invitation</button><button className={styles.textButton} onClick={() => { setInvitation(""); sessionStorage.removeItem("ticketing-pending-invite"); }}>Dismiss</button></aside> : null}
         {!wizard && (workspace.actor.admin || workspace.actor.can_create || managed.length > 0) ? <div className={styles.buttonRow}><button className={styles.secondary} onClick={() => setWizard({ profileOnly: true })}>Your private coordinator profile</button><button className={styles.secondary} onClick={() => { setInviteOpen(!inviteOpen); setInviteEvent(current?.can_manage ? current.id : ""); setInviteRole(workspace.actor.admin ? "coordinator" : "checkin_staff"); setPreparedLink(""); }}>Invite {workspace.actor.admin ? "a tester or event staff" : "a door operator"}</button></div> : null}

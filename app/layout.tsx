@@ -58,9 +58,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const showVercelAnalytics = process.env.NODE_ENV === "production";
+  // Browser extensions can add body attributes before hydration. Keep this
+  // escape hatch on the body only so nested UI mismatches still surface.
   return (
     <html lang="en" data-theme="dark">
       <body
+        suppressHydrationWarning
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         data-dark="true"
       >
