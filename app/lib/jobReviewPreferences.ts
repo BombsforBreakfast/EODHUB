@@ -9,8 +9,13 @@ export function matchesJobPhrase(title: string, phrase: string): boolean {
   const term = normalizeJobPhrase(phrase);
   return !!term && ` ${normalizeJobPhrase(title)} `.includes(` ${term} `);
 }
+/** Saved exclusions apply to the complete title; ranking still uses phrases. */
+export function matchesExcludedJobTitle(title: string, phrase: string): boolean {
+  const term = normalizeJobPhrase(phrase);
+  return !!term && normalizeJobPhrase(title) === term;
+}
 export function excludedJobType(title: string, rules: JobTypeExclusion[]): JobTypeExclusion | undefined {
-  return rules.find(rule => matchesJobPhrase(title, rule.phrase));
+  return rules.find(rule => matchesExcludedJobTitle(title, rule.phrase));
 }
 // Title phrases only: do not learn preferences from employer boilerplate or generic single words.
 export function learnedJobSignals(feedback: JobReviewFeedback[]): LearnedJobSignal[] {

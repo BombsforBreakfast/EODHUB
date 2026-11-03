@@ -29,16 +29,14 @@ export default function JobReviewPreferencesPanel({ target, queueSize, onClose, 
   }
   useEffect(() => { void load().catch(err => setError(String(err.message))); }, [queueSize]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const title = target?.title ?? "";
-    const preset = /\bpolice\b/i.test(title) ? "police" : /\bfire[ -]*fighter/i.test(title) ? "firefighter" : /\b(?:heli|helo)copter/i.test(title) && /pilot/i.test(title) ? "helicopter pilot" : title;
-    setPhrase(preset); setPreview(null); if (target) { setError(""); setMessage(""); }
+    setPhrase(target?.title ?? ""); setPreview(null); if (target) { setError(""); setMessage(""); }
   }, [target]);
   async function act(body: object) {
     setBusy(true); setError(""); setMessage("");
     try {
       const result = await request(body);
       await load(); await onChanged();
-      setMessage(result.message || ("removed" in result ? `Type excluded. ${result.removed} pending listings removed.` : "Preferences updated."));
+      setMessage(result.message || ("removed" in result ? `Exact title excluded. ${result.removed} pending listings removed.` : "Preferences updated."));
       onClose();
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save preferences"); }
     finally { setBusy(false); }
@@ -48,6 +46,7 @@ export default function JobReviewPreferencesPanel({ target, queueSize, onClose, 
     <details>
       <summary style={{ cursor: "pointer" }}>Exclusions & learning · {rules.length} exclusion rules · {patterns} learned title patterns · {priorities.length} priority rules</summary>
       <p>New approvals and “Not relevant” decisions teach ranking after at least 3 distinct listings agree. Adjustments are capped at 10 points. Delete is for expired, duplicate, or other removals and does not teach preferences.</p>
+      <p>All saved exclusions match complete titles. “Program Manager” excludes only that title; “Senior Program Manager” remains available. Capitalization, punctuation and spacing are ignored.</p>
       <p>Built-in exclusions include police, sheriff, firefighter and helicopter pilot roles, along with your earlier exclusions.</p>
       {rules.map(rule => <div key={rule.id} style={{ marginBottom: 5 }}><strong>{rule.phrase}</strong> <button style={button} disabled={busy} onClick={() => void act({ action: "remove_exclusion", id: rule.id })}>Remove rule</button></div>)}
       <h4>Priority rules</h4><p>Use Gold highlight → Set a review priority on a job to add a role pattern. These rules raise review scores without approving jobs or adding public labels.</p>
@@ -59,16 +58,16 @@ export default function JobReviewPreferencesPanel({ target, queueSize, onClose, 
     {error && <p role="alert" style={{ color: "#dc2626" }}>{error}</p>}
     {target && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 1200, display: "grid", placeItems: "center", padding: 20 }}>
       <section role="dialog" aria-modal="true" aria-labelledby="exclude-job-type-title" style={{ background: t.input, color: t.text, borderRadius: 14, padding: 24, width: "min(560px, 100%)", maxHeight: "85vh", overflowY: "auto" }}>
-        <h3 id="exclude-job-type-title">Exclude this type</h3>
-        <p>Choose a word or phrase from the title. Matching titles will be blocked in future imports from every source, and pending imported matches will be removed. Approved listings stay live.</p>
-        <label>Title word or phrase<input autoFocus disabled={busy} maxLength={100} value={phrase} onChange={e => { setPhrase(e.target.value); setPreview(null); }} style={{ width: "100%", padding: 9, marginTop: 8, border: `1px solid ${t.border}`, borderRadius: 8, color: t.text, background: t.input }} /></label>
-        <p>Whole words, with spaces and punctuation treated alike. Use a role type such as “helicopter pilot”. Descriptions are not matched.</p>
-        {preview && <div><strong>{preview.count} pending listings match “{preview.phrase}”</strong><ul>{preview.examples.map(job => <li key={job.id}>{job.title}</li>)}</ul></div>}
+        <h3 id="exclude-job-type-title">Exclude this exact title</h3>
+        <p>Only the complete title entered below will be blocked in future imports from every source, and pending imported matches will be removed. Approved listings stay live.</p>
+        <label>Complete job title<input autoFocus disabled={busy} maxLength={100} value={phrase} onChange={e => { setPhrase(e.target.value); setPreview(null); }} style={{ width: "100%", padding: 9, marginTop: 8, border: `1px solid ${t.border}`, borderRadius: 8, color: t.text, background: t.input }} /></label>
+        <p>Adding, removing or reordering words makes a different title. Capitalization, punctuation and spacing are ignored. Descriptions are not matched.</p>
+        {preview && <div><strong>{preview.count} pending listings exactly match “{preview.phrase}”</strong><ul>{preview.examples.map(job => <li key={job.id}>{job.title}</li>)}</ul></div>}
         {error && <p role="alert" style={{ color: "#dc2626" }}>{error}</p>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button style={button} disabled={busy} onClick={onClose}>Cancel</button>
           <button style={button} disabled={busy || !phrase.trim()} onClick={async () => { setBusy(true); setError(""); try { setPreview(await request({ action: "preview_exclusion", phrase })); } catch (err) { setError(err instanceof Error ? err.message : "Preview failed"); } finally { setBusy(false); } }}>Preview matches</button>
-          {preview && <button style={{ ...button, background: "#b91c1c", color: "white" }} disabled={busy} onClick={() => void act({ action: "add_exclusion", phrase: preview.phrase })}>{busy ? "Saving…" : `Exclude type & remove ${preview.count} pending`}</button>}
+          {preview && <button style={{ ...button, background: "#b91c1c", color: "white" }} disabled={busy} onClick={() => void act({ action: "add_exclusion", phrase: preview.phrase })}>{busy ? "Saving…" : `Exclude exact title & remove ${preview.count} pending`}</button>}
         </div>
       </section>
     </div>}

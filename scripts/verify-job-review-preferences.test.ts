@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { scoreJobReview, jobReviewPage } from "../app/lib/jobReviewPriority";
 import { jobDegreePenalty } from "../app/lib/jobDegreeRequirements";
-import { learnedJobSignals, learnedJobAdjustment, matchesJobPhrase, type JobReviewFeedback } from "../app/lib/jobReviewPreferences";
+import { learnedJobSignals, learnedJobAdjustment, matchesExcludedJobTitle, matchesJobPhrase, type JobReviewFeedback } from "../app/lib/jobReviewPreferences";
 import { JobImportMemory, filterRememberedJobs } from "../app/lib/server/jobImportMemory";
 import { createClient } from "@supabase/supabase-js";
 
@@ -23,6 +23,15 @@ test("only engineering, chemistry and biology degrees have a small non-stacking 
   assert.equal(scoreJobReview({ ...technical, description: null, og_description: technical.description }).score, 75);
 });
 const feedback = (count: number, decision: JobReviewFeedback["decision"], title = "EOD Technician"): JobReviewFeedback[] => Array.from({ length: count }, (_, i) => ({ job_id: `${decision}-${i}`, title, company_name: `Employer ${i}`, location: "Tampa", decision }));
+
+test("saved exclusions require the complete normalized title, including single-word rules", () => {
+  for (const title of ["Program Manager", "  PROGRAM—MANAGER  ", "Prógram   Manager"]) assert.equal(matchesExcludedJobTitle(title, "program manager"), true, title);
+  for (const title of ["Senior Program Manager", "Program Manager II", "Program Analyst", "Manager", "Manager Program", "Program Deputy Manager"]) assert.equal(matchesExcludedJobTitle(title, "program manager"), false, title);
+  assert.equal(matchesExcludedJobTitle("Ammunition", "ammunition"), true);
+  assert.equal(matchesExcludedJobTitle("UXO Ammunition Technician", "ammunition"), false);
+  assert.equal(matchesExcludedJobTitle("", "!*"), false);
+  assert.equal(matchesJobPhrase("Senior Program Manager", "program manager"), true, "Ranking and priorities retain phrase matching");
+});
 test("learning requires three distinct consistent examples, deduplicates reposts and caps overlapping signals", () => {
   assert.deepEqual(learnedJobSignals(feedback(2, "approved")), []);
   const positives = learnedJobSignals(feedback(3, "approved"));
@@ -36,17 +45,19 @@ test("learning requires three distinct consistent examples, deduplicates reposts
 });
 test("absolute exclusions beat learned boosts; learning cannot promote body-only jobs to strong matches", () => {
   const preferences = { exclusions: [{ id: "custom", phrase: "eod technician" }], signals: learnedJobSignals(feedback(10, "approved")) };
-  assert.equal(scoreJobReview({ id: "x", title: "Senior EOD Technician" }, preferences).score, 0);
+  assert.equal(scoreJobReview({ id: "x", title: "EOD Technician" }, preferences).score, 0);
+  assert.equal(scoreJobReview({ id: "x", title: "Senior EOD Technician" }, preferences).score, 100);
   assert.equal(scoreJobReview({ id: "x", title: "EOD Analyst" }, { ...preferences, exclusions: [] }).score, 0);
   const bodyOnly = scoreJobReview({ id: "x", title: "Program Manager", description: "EOD UXO CBRN WMD UAS mine action" }, { exclusions: [], signals: learnedJobSignals(feedback(10, "approved", "Program Manager")) });
   assert.equal(bodyOnly.score, 69); assert.equal(bodyOnly.band, "possible");
   assert.equal(matchesJobPhrase("Police-Officer", "police officer"), true);
   assert.equal(matchesJobPhrase("Policy Manager", "police"), false);
 });
-test("custom type exclusions block future imports even with no exact-listing memory", async () => {
-  const memory = new JobImportMemory([], Date.now(), [{ id: "rule", phrase: "helicopter pilot" }]);
+test("custom exclusions block only complete titles during imports, without blocking related roles", async () => {
+  const memory = new JobImportMemory([], Date.now(), [{ id: "rule", phrase: "program manager" }, { id: "single", phrase: "ammunition" }]);
   const client = createClient("https://db.example", "test", { global: { fetch: async () => { throw new Error("No database mutation expected"); } } });
-  const result = await filterRememberedJobs(client, [{ title: "Senior Helicopter Pilot", companyName: "New employer" }, { title: "UXO Technician", companyName: "New employer" }], x => x, memory);
-  assert.equal(result.skipped, 1);
-  assert.deepEqual(result.candidates.map(x => x.title), ["UXO Technician"]);
+  const titles = ["Program-Manager", "Senior Program Manager", "Program Analyst", "Ammunition", "UXO Ammunition Technician"];
+  const result = await filterRememberedJobs(client, titles.map(title => ({ title, companyName: "New employer" })), x => x, memory);
+  assert.equal(result.skipped, 2);
+  assert.deepEqual(result.candidates.map(x => x.title), ["Senior Program Manager", "Program Analyst", "UXO Ammunition Technician"]);
 });

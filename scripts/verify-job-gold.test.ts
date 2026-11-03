@@ -25,7 +25,8 @@ test("explicit learned priority rules are conditional, nonstacking and subordina
   const rule={id:"rule",phrase:"mission advisor",mission_required:true,target_score:90 as const},preferences={exclusions:[],signals:[],priorities:[rule]};
   assert.equal(scoreJobReview({id:"x",title:"Senior Mission Advisor",description:"CWMD support"},preferences).score,90);
   assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"Office support"},preferences).score,0);
-  assert.equal(scoreJobReview({id:"x",title:"Senior Mission Advisor",description:"CWMD"},{...preferences,exclusions:[{id:"no",phrase:"mission advisor"}]}).score,0);
+  assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"CWMD"},{...preferences,exclusions:[{id:"no",phrase:"mission advisor"}]}).score,0);
+  assert.equal(scoreJobReview({id:"x",title:"Senior Mission Advisor",description:"CWMD"},{...preferences,exclusions:[{id:"no",phrase:"mission advisor"}]}).score,90);
   assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"CWMD"},{...preferences,priorities:[rule,{...rule,id:"another"}]}).score,90);
 });
 test("job-specific priorities do not spill into another same-title listing",()=>{

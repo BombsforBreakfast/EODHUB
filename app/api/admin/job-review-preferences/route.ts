@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { matchesJobPhrase, normalizeJobPhrase } from "@/app/lib/jobReviewPreferences";
+import { matchesExcludedJobTitle, normalizeJobPhrase } from "@/app/lib/jobReviewPreferences";
 import { loadJobReviewPreferences } from "@/app/lib/server/jobReviewPreferences";
 import { removeJobWithImportMemory } from "@/app/lib/server/removeJobWithImportMemory";
 export const maxDuration = 300;
@@ -50,13 +50,13 @@ export async function POST(req: NextRequest) {
     }
     if (!["preview_exclusion", "add_exclusion"].includes(body.action)) return NextResponse.json({ error: "Invalid action" }, { status: 400 });
     const phrase = typeof body.phrase === "string" ? normalizeJobPhrase(body.phrase) : "";
-    if (phrase.length < 3 || phrase.length > 100 || !/[a-z]/.test(phrase)) return NextResponse.json({ error: "Enter a title word or phrase, 3–100 characters." }, { status: 400 });
+    if (phrase.length < 3 || phrase.length > 100 || !/[a-z]/.test(phrase)) return NextResponse.json({ error: "Enter a complete job title, 3–100 characters." }, { status: 400 });
     const matches: Array<{ id: string; title: string }> = [];
     for (let start = 0; ; start += 500) {
       const { data, error } = await client.from("jobs").select("id,title").neq("is_rejected", true).neq("is_approved", true)
         .in("source_type", ["adzuna", "usajobs", "linkedin", "reliefweb"]).order("id").range(start, start + 499);
       if (error) throw error;
-      matches.push(...(data ?? []).filter(row => matchesJobPhrase(row.title ?? "", phrase)));
+      matches.push(...(data ?? []).filter(row => matchesExcludedJobTitle(row.title ?? "", phrase)));
       if ((data ?? []).length < 500) break;
     }
     if (body.action === "preview_exclusion") return NextResponse.json({ phrase, count: matches.length, examples: matches.slice(0, 8) });

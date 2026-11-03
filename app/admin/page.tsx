@@ -5044,7 +5044,7 @@ export default function AdminPage() {
                         Delete
                       </button>
                       {!job.is_approved && <button style={actionBtn("#b45309")} disabled={!!actionLoading || batchActing} onClick={() => rejectJob(job.id, true)}>Not relevant</button>}
-                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobType(job)}>Exclude this type</button>
+                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobType(job)}>Exclude exact title</button>
                     </div>
                   </div>
                   {editingJob?.id === job.id && (

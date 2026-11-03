@@ -12,6 +12,8 @@ test("automatic approval requires an explicit ordnance title, never EOD or descr
 test("explicit titles remain subject to all exclusions and ReliefWeb suppression", () => {
   for (const title of ["UXO Analyst", "Explosive Ordnance Disposal Police Officer", "UXO Scientist", "Student UXO Technician"]) assert.equal(jobAutoApprovalReason({ title }), null, title);
   assert.equal(jobAutoApprovalReason({ title: "UXO Technician" }, [{ id: "rule", phrase: "uxo technician" }]), null);
+  assert.ok(jobAutoApprovalReason({ title: "UXO Technician III" }, [{ id: "rule", phrase: "uxo technician" }]), "A saved exclusion must match the complete title");
+  assert.ok(jobAutoApprovalReason({ title: "UXO Ammunition Technician" }, [{ id: "rule", phrase: "ammunition" }]), "Single-word exclusions must not suppress a different explicit title");
   assert.equal(jobAutoApprovalReason({ title: "UXO Technician", source_type: "reliefweb", import_metadata: { suppressed: true } }), null);
   assert.equal(jobAutoApprovalReason({ title: "UXO Technician", source_type: "reliefweb", import_metadata: { relevance_confidence: "low" } }), null);
 });
