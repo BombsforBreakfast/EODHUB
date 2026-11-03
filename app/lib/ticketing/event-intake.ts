@@ -92,6 +92,25 @@ export function parseEventSchedule(body: Record<string, unknown>) {
   return { timeZone, localStart, localEnd, startsAt, endsAt };
 }
 
+export function normalizeHostWebsite(value: string) {
+  const input = value.trim();
+  const hasScheme = /^[a-z][a-z\d+.-]*:/i.test(input);
+  const hostWithPort = /^[^/?#:\s]+:\d+(?:[/?#]|$)/.test(input);
+  if (!input || (hasScheme && !hostWithPort)) return input;
+  return input.startsWith("//") ? `https:${input}` : `https://${input}`;
+}
+
+export function parseHostWebsite(value: unknown) {
+  const input = normalizeHostWebsite(intakeText(value ?? "", 0, 500, "host website"));
+  if (!input) return "";
+  let url: URL;
+  try { url = new URL(input); } catch { throw new Error("Enter a valid website, such as eod-hub.com."); }
+  if (url.protocol !== "https:" || url.username || url.password) throw new Error("The host website must use HTTPS without embedded credentials.");
+  const normalized = url.href;
+  if (normalized.length > 500) throw new Error("Keep the host website address under 500 characters.");
+  return normalized;
+}
+
 export function parseEventDraft(body: Record<string, unknown>) {
   const category = body.category;
   if (category !== "Fitness" && category !== "Community") throw new Error("Choose an event category.");
@@ -99,12 +118,7 @@ export function parseEventDraft(body: Record<string, unknown>) {
   const capacityText = intakeText(body.capacity, 1, 6, "ticket capacity");
   const capacity = Number(capacityText);
   if (!/^\d+$/.test(capacityText) || !Number.isInteger(capacity) || capacity < 1 || capacity > 100000) throw new Error("Capacity must be between 1 and 100,000 tickets.");
-  const hostUrl = intakeText(body.hostUrl ?? "", 0, 500, "host website");
-  if (hostUrl) {
-    let url: URL;
-    try { url = new URL(hostUrl); } catch { throw new Error("Enter a full HTTPS host website address."); }
-    if (url.protocol !== "https:" || url.username || url.password) throw new Error("The host website must use HTTPS without embedded credentials.");
-  }
+  const hostUrl = parseHostWebsite(body.hostUrl);
   const flyerUrl = intakeText(body.flyerUrl ?? "", 0, 250, "flyer upload");
   if (flyerUrl && !/^\/api\/ticketing\/flyer\?id=[0-9a-f-]{36}$/.test(flyerUrl)) throw new Error("Upload a flyer using the event wizard.");
   const draft: EventDraft = {
