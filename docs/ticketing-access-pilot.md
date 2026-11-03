@@ -25,6 +25,10 @@ Uploaded static JPG/PNG/WebP files are bounded, decoded, resized and re-encoded 
 
 ## Validation
 
+The three ticketing migrations are applied to the existing project. Actual GoTrue verification, independent sessions sharing drafts, cross-event denial, revoked operator access and a browser save/restart walkthrough passed with disposable synthetic identities. Existing Auth/profile/count functions retain their original definitions and the live Hub signup count stayed at 2,131. Local owner/invited-user mail delivery is enabled for user-initiated testing; actual email delivery and physical-device testing are still to be completed.
+
+The forward migrations keep the server role away from internal Auth tables and use `PT409` for stale-revision conflicts. Do not use transaction error `40001` for an ordinary business conflict: PostgREST may retry it. Invitation email attestation is supplied from the server-verified actor, never caller JSON. Apply the complete migration chain when setting up another environment.
+
 ```powershell
 node --import tsx --require ./scripts/register-server-tests.cjs --test scripts/verify-ticketing-access.test.ts scripts/verify-owner-admin-access.test.ts scripts/verify-rental-passwordless.test.ts scripts/verify-rental-billing.test.ts scripts/verify-rental-billing-lifecycle.test.ts scripts/verify-rental-delisting.test.ts
 node node_modules/typescript/bin/tsc --noEmit --incremental false

@@ -62,11 +62,11 @@ begin
   a:=public.ticketing_save_event(coord_a,event_a,a.revision,'{"title":"Saved from second device"}',null,false);
   caught:=false;
   begin perform public.ticketing_save_event(coord_a,event_a,a.revision-1,'{"title":"Stale tab"}',null,false);
-  exception when serialization_failure then caught:=true; end;
+  exception when sqlstate 'PT409' then caught:=true; end;
   if not caught then raise exception 'Stale overwrite was accepted'; end if;
   caught:=false;
   begin perform public.ticketing_save_event(coord_a,event_a,null,'{"title":"Missing revision"}',null,false);
-  exception when serialization_failure then caught:=true; end;
+  exception when sqlstate 'PT409' then caught:=true; end;
   if not caught then raise exception 'Missing revision bypassed conflict protection'; end if;
 
   insert into public.ticketing_assignments(event_id,user_id,role,expires_at,assigned_by)
@@ -90,12 +90,12 @@ begin
   if not caught then raise exception 'Coordinator appointed another coordinator'; end if;
   invite_id:=public.ticketing_invite(coord_a,target_email,'checkin_staff',event_a,repeat('d',64),now()+interval '1 hour');
   caught:=false;
-  begin perform public.ticketing_accept_invite(coord_b,repeat('d',64)); exception when insufficient_privilege then caught:=true; end;
+  begin perform public.ticketing_accept_invite(coord_b,repeat('d',64),(select email from auth.users where id=coord_b)); exception when insufficient_privilege then caught:=true; end;
   if not caught then raise exception 'Invitation accepted by wrong email'; end if;
-  if not public.ticketing_accept_invite(customer,repeat('d',64)) then raise exception 'Invitation acceptance failed'; end if;
+  if not public.ticketing_accept_invite(customer,repeat('d',64),target_email) then raise exception 'Invitation acceptance failed'; end if;
   if not public.ticketing_has_access(customer,event_a,true) then raise exception 'Accepted invitation did not grant scanner access'; end if;
   if public.ticketing_has_access(customer,event_a,false) then raise exception 'Operator invitation granted management'; end if;
-  if not public.ticketing_accept_invite(customer,repeat('d',64)) then raise exception 'Same-user retry not idempotent'; end if;
+  if not public.ticketing_accept_invite(customer,repeat('d',64),target_email) then raise exception 'Same-user retry not idempotent'; end if;
 
   insert into public.ticketing_login_requests(digest,user_id,origin,expires_at)
     values(repeat('e',64),customer,'https://pilot.example.invalid',now()+interval '30 minutes');

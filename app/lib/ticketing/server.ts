@@ -18,7 +18,7 @@ export function ticketingFailure(error: unknown) {
   return ticketingJson({ error: "Could not complete that action. Please try again." }, 503);
 }
 export function checkTicketingDb(error: { code?: string; message: string } | null) {
-  if (error?.code === "40001") throw new TicketingError("This event changed on another device. Reload before saving.", 409);
+  if (error?.code === "PT409" || error?.code === "40001") throw new TicketingError("This event changed on another device. Reload before saving.", 409);
   if (error?.code === "42501") throw new TicketingError("This account does not have permission for that action.", 403);
   if (error) throw new TicketingError("Could not save or load ticketing records. Please retry.", 503);
 }
@@ -33,8 +33,9 @@ export function ticketingRequest(request: Request, write = false) {
 export function ticketingDatabase() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL, key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new TicketingError("Ticketing is temporarily unavailable.", 503);
-  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: ticketingFetch } });
 }
+const ticketingFetch: typeof fetch = (input, init) => fetch(input, { ...init, signal: init?.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000) });
 export async function ticketingBody(request: Request, maximum = 35000): Promise<Record<string, unknown>> {
   if (!request.headers.get("content-type")?.startsWith("application/json")) throw new TicketingError("Use JSON.", 415);
   const reader = request.body?.getReader();
@@ -141,7 +142,7 @@ export async function verifyTicketingSignIn(db: SupabaseClient, tokenValue: unkn
   const request = await db.from("ticketing_login_requests").select("user_id,expires_at,consumed_at,origin").eq("digest", digest).maybeSingle(); checkTicketingDb(request.error);
   if (!request.data || request.data.origin !== origin || request.data.consumed_at || Date.parse(request.data.expires_at) <= Date.now()) throw new TicketingError("This sign-in link is invalid or expired. Request a new link.", 401);
   // verifyOtp changes its client's session. Keep it off the privileged client.
-  const verifier = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
+  const verifier = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, { auth: { persistSession: false, autoRefreshToken: false }, global: { fetch: ticketingFetch } });
   const verification = await verifier.auth.verifyOtp({ token_hash: tokenValue, type: "email" });
   if (verification.error || !verification.data.user?.email_confirmed_at || verification.data.user.id !== request.data.user_id) throw new TicketingError("This sign-in link is invalid or expired. Request a new link.", 401);
   const secret = randomBytes(32).toString("base64url");
@@ -237,7 +238,7 @@ export async function ticketingCommand(actor: TicketingActor, body: Record<strin
   }
   if (body.action === "accept-invite") {
     if (typeof body.token !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.token)) throw new TicketingError("Invalid invitation.");
-    const result = await db.rpc("ticketing_accept_invite", { p_actor: user.id, p_digest: hashTicketingSecret(body.token) });
+    const result = await db.rpc("ticketing_accept_invite", { p_actor: user.id, p_digest: hashTicketingSecret(body.token), p_verified_email: user.email! });
     checkTicketingDb(result.error); if (!result.data) throw new TicketingError("This invitation has already been used by another identity.", 403);
     return { ok: true };
   }
