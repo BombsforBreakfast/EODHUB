@@ -16,3 +16,9 @@ export function displayManualTime(value: string): string {
   const hour = Number(value.slice(0, 2));
   return `${hour % 12 || 12}:${value.slice(3)} ${hour < 12 ? "AM" : "PM"}`;
 }
+
+export function displayLocalDateTime(value: string | undefined): string {
+  if (!value) return "Not set";
+  const [date, time = ""] = value.split("T");
+  return `${date || "Date not set"} · ${displayManualTime(time) || "Time not set"}`;
+}

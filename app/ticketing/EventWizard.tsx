@@ -3,8 +3,9 @@
 import Image from "next/image";
 import { useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, Upload, X } from "lucide-react";
-import { emptyEventDraft, parseEventDraft, parseTicketPrice, type CoordinatorProfile, type EventDraft, type SubmissionView } from "@/app/lib/ticketing/event-intake";
-import { eventStartFromLocal, ticketMoney, ticketPrice } from "@/app/lib/ticketing/model";
+import { emptyEventDraft, parseEventDraft, parseEventSchedule, parseTicketPrice, type CoordinatorProfile, type EventDraft, type SubmissionView } from "@/app/lib/ticketing/event-intake";
+import { ticketMoney, ticketPrice } from "@/app/lib/ticketing/model";
+import { displayLocalDateTime } from "@/app/lib/ticketing/local-time";
 import LocalDateTimeField from "./LocalDateTimeField";
 import styles from "./ticketing.module.css";
 
@@ -59,7 +60,7 @@ export default function EventWizard({ email, profile, initial, profileOnly = fal
         if (profileOnly) { await complete(); return; }
         setDraft(previous => ({ ...previous, organizer: previous.organizer || personal.organization }));
       }
-      if (step === 1) eventStartFromLocal(draft.localStart, draft.timeZone);
+      if (step === 1) parseEventSchedule(draft);
       if (step === 4) parseTicketPrice(draft.ticketPrice);
       if (step === titles.length - 1) {
         parseEventDraft(draft);
@@ -117,11 +118,12 @@ export default function EventWizard({ email, profile, initial, profileOnly = fal
             {field("Event title", "title", { maxLength: 120 })}
             {field("Hosting organization", "organizer")}
             <label>Category<select value={draft.category} onChange={event => change("category", event.target.value)}><option value="Community">Community</option><option value="Fitness">Fitness</option></select></label>
-            <LocalDateTimeField label="Event start (local date & time)" name="localStart" defaultValue={draft.localStart} onChange={value => change("localStart", value)} />
             {field("Event time zone", "timeZone", { placeholder: "America/New_York" })}
+            <LocalDateTimeField label="Event start (local date & time)" name="localStart" defaultValue={draft.localStart} onChange={value => change("localStart", value)} />
+            <LocalDateTimeField label="Event finish (local date & time)" name="localEnd" defaultValue={draft.localEnd} onChange={value => change("localEnd", value)} />
             {field("Host / original event website (optional)", "hostUrl", { type: "url", required: false, maxLength: 500, placeholder: "https://…" })}
           </div>
-          <p className={styles.finePrint}>This pilot supports one admission day in the selected time zone. Changes require another review. No tickets have been sold.</p>
+          <p className={styles.finePrint}>Start and finish use the selected event time zone. For an overnight event, set the finish date to the following day. Changes require another review. No tickets have been sold.</p>
           <label>Event details<textarea value={draft.description} onChange={event => change("description", event.target.value)} required minLength={20} maxLength={5000} placeholder="What attendees should know, schedule, requirements, and organizer policies." /></label>
         </> : step === 2 ? <>
           <h3>Location</h3><div className={styles.wizardGrid}>
@@ -146,7 +148,7 @@ export default function EventWizard({ email, profile, initial, profileOnly = fal
           <p className={styles.notice}>Ticket sales are disabled during this pilot. Final fees, taxes and refund terms will be confirmed before checkout opens.</p>
         </> : <>
           <h3>{draft.title}</h3><dl className={styles.reviewDetails}>
-            <dt>Hosted by</dt><dd>{draft.organizer}</dd><dt>When</dt><dd>{draft.localStart.replace("T", " · ")} ({draft.timeZone})</dd><dt>Where</dt><dd>{draft.venue}<br />{[draft.address, draft.city, draft.region, draft.postalCode, draft.country].filter(Boolean).join(", ")}</dd>
+            <dt>Hosted by</dt><dd>{draft.organizer}</dd><dt>Starts</dt><dd>{displayLocalDateTime(draft.localStart)}</dd><dt>Finishes</dt><dd>{displayLocalDateTime(draft.localEnd)}</dd><dt>Time zone</dt><dd>{draft.timeZone}</dd><dt>Where</dt><dd>{draft.venue}<br />{[draft.address, draft.city, draft.region, draft.postalCode, draft.country].filter(Boolean).join(", ")}</dd>
             <dt>Public contact</dt><dd>{draft.contactName}<br />{draft.contactPhone}<br />{draft.contactEmail}</dd><dt>Host website</dt><dd>{draft.hostUrl || "Not supplied"}</dd><dt>Admission</dt><dd>{ticketMoney(totals.baseCents)} · {draft.capacity} tickets available</dd><dt>Details</dt><dd className={styles.preserveText}>{draft.description}</dd>
           </dl>
           {draft.flyerUrl ? <div className={styles.wizardFlyer}><Image src={draft.flyerUrl} alt="Event flyer to submit" width={450} height={600} unoptimized /></div> : null}

@@ -160,7 +160,7 @@ export async function ticketingWorkspace(actor: TicketingActor) {
   const result = await query; checkTicketingDb(result.error);
   const events = (result.data ?? []).map(event => {
     const manage = actor.admin || assignedAccess(actor.assignments, actor.user.id, event.id);
-    return manage ? { ...event, can_manage: true } : { id: event.id, event: event.event ? { title: event.event.title, startsAt: event.event.startsAt, timeZone: event.event.timeZone, location: event.event.location } : { title: event.draft.title || "Unsubmitted event" }, can_manage: false };
+    return manage ? { ...event, can_manage: true } : { id: event.id, event: event.event ? { title: event.event.title, startsAt: event.event.startsAt, endsAt: event.event.endsAt, timeZone: event.event.timeZone, location: event.event.location } : { title: event.draft.title || "Unsubmitted event" }, can_manage: false };
   });
   const managedIds = events.filter(event => event.can_manage).map(event => event.id);
   let staff: Array<Record<string, unknown>> = [], audit: Array<Record<string, unknown>> = [], invitations: Array<Record<string, unknown>> = [];

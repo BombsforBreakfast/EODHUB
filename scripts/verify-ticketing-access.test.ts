@@ -59,7 +59,7 @@ test("event-day policy remains timezone aware across daylight saving", () => {
   assert(!checkInOpen({ startsAt, timeZone: "America/New_York" }, Date.parse("2026-11-02T05:00:00Z")));
 });
 test("submitted flyer must use the new protected upload endpoint", () => {
-  const draft = { ...emptyEventDraft(), title: "Pilot event", organizer: "Pilot organizer", localStart: "2026-12-05T09:00", venue: "Test venue", address: "123 Test Street", city: "Test City", region: "NC", description: "An example event for the shared pilot.", contactName: "Test Organizer", contactPhone: "555-555-1234", contactEmail: "test@example.invalid", flyerUrl: "/api/ticketing/flyer?id=12345678-1234-4234-8234-123456789abc" };
+  const draft = { ...emptyEventDraft(), title: "Pilot event", organizer: "Pilot organizer", localStart: "2026-12-05T09:00", localEnd: "2026-12-05T17:00", venue: "Test venue", address: "123 Test Street", city: "Test City", region: "NC", description: "An example event for the shared pilot.", contactName: "Test Organizer", contactPhone: "555-555-1234", contactEmail: "test@example.invalid", flyerUrl: "/api/ticketing/flyer?id=12345678-1234-4234-8234-123456789abc" };
   assert.equal(parseEventDraft(draft).draft.flyerUrl, draft.flyerUrl);
   assert.throws(() => parseEventDraft({ ...draft, flyerUrl: "https://evil.example/private.svg" }), /Upload a flyer/);
 });

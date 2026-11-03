@@ -10,6 +10,7 @@ export type PilotEvent = {
   organizer: string;
   location: string;
   startsAt: string;
+  endsAt?: string;
   timeZone: string;
   scheduleRevision: number;
   description: string;
