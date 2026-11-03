@@ -9,6 +9,7 @@ import { ticketMoney } from "@/app/lib/ticketing/model";
 import { displayLocalDateTime } from "@/app/lib/ticketing/local-time";
 import LocalDateTimeField from "./LocalDateTimeField";
 import TicketTypesEditor from "./TicketTypesEditor";
+import TicketRevenuePreview from "./TicketRevenuePreview";
 import styles from "./ticketing.module.css";
 
 type Props = {
@@ -176,6 +177,7 @@ export default function EventWizard({ email, userId, draftId, profile, profileDr
             <dt>Hosted by</dt><dd>{draft.organizer}</dd><dt>Starts</dt><dd>{displayLocalDateTime(draft.localStart)}</dd><dt>Finishes</dt><dd>{displayLocalDateTime(draft.localEnd)}</dd><dt>Time zone</dt><dd>{draft.timeZone}</dd><dt>Where</dt><dd>{draft.venue}<br />{[draft.address, draft.city, draft.region, draft.postalCode, draft.country].filter(Boolean).join(", ")}</dd>
             <dt>Public contact</dt><dd>{draft.contactName}<br />{draft.contactPhone}<br />{draft.contactEmail}</dd><dt>Host website</dt><dd>{draft.hostUrl || "Not supplied"}</dd><dt>Ticket types</dt><dd>{ticketRows.map(row => <p key={row.id}><strong>{row.name || "Unnamed ticket type"}</strong> · {ticketAmount(row.price)} · {row.capacity || "Quantity not set"} tickets</p>)}</dd><dt>Details</dt><dd className={styles.preserveText}>{draft.description}</dd>
           </dl>
+          <TicketRevenuePreview value={ticketRows} />
           {draft.flyerUrl ? <div className={styles.wizardFlyer}><Image src={draft.flyerUrl} alt="Event flyer to submit" width={450} height={600} unoptimized /></div> : null}
           <p className={styles.notice}>{!allReady ? "Complete the sections marked ! before submitting. " : ""}Your submission goes to the Hub owner for review. Approval does not publish this pilot event or open ticket sales.</p>
           <label className={styles.acknowledgment}><input type="checkbox" checked={confirmContact} onChange={event => setConfirmContact(event.target.checked)} required /><span>The event POC details are appropriate to display publicly. My coordinator profile remains private.</span></label>

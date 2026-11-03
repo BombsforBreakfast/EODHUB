@@ -219,6 +219,27 @@
 .ticketTypeEditor legend { font-size:14px; font-weight:650; padding:0 6px; }
 .ticketTypeFields { display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1fr); gap:14px; }
 .ticketTypeFooter { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.revenuePanel { padding:18px; border:1px solid var(--ticket-line); border-radius:var(--ticket-radius-sm); background:var(--ticket-bg); margin:16px 0; min-width:0; }
+.revenuePanel > .sectionHeading { margin-bottom:10px; }
+.revenuePanel h3 { margin:0; }
+.revenueMetrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:16px 0; }
+.revenueMetrics > div { padding:14px; border:1px solid var(--ticket-line); border-radius:var(--ticket-radius-sm); background:var(--ticket-surface); }
+.revenueMetrics span,.revenueMetrics small { display:block; font-size:11px; line-height:1.5; color:var(--ticket-muted); }
+.revenueMetrics strong { display:block; font-size:21px; font-weight:750; margin:8px 0; overflow-wrap:anywhere; }
+.revenueMetrics .revenueNet { border-color:var(--ticket-blue); }
+.revenueTotals { display:flex; flex-wrap:wrap; gap:14px 30px; font-size:13px; margin:12px 0; }
+.revenueTotals > div { display:flex; gap:10px; }
+.revenueTotals dt { color:var(--ticket-muted); }
+.revenueTotals dd { margin:0; font-weight:650; }
+.revenueDetails { border-top:1px solid var(--ticket-line); padding-top:14px; margin-top:16px; }
+.revenueDetails summary { cursor:pointer; font-weight:650; font-size:13px; }
+.revenueDetails > .field { margin:16px 0; max-width:260px; }
+.revenueSource { text-decoration:underline!important; text-underline-offset:3px; }
+.revenueTableWrap { overflow-x:auto; margin-top:14px; }
+.revenueTable { border-collapse:collapse; width:100%; font-size:12px; }
+.revenueTable caption { text-align:left; color:var(--ticket-muted); margin-bottom:10px; }
+.revenueTable :is(th,td) { padding:10px 8px; text-align:right; border-bottom:1px solid var(--ticket-line); white-space:nowrap; }
+.revenueTable tr > :first-child { text-align:left; white-space:normal; min-width:110px; }
 .wizardGrid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
 .dateTimeField { border:0; padding:0; margin:0; min-width:0; }
 .dateTimeField legend { color:var(--ticket-muted); font-size:13px; font-weight:600; margin-bottom:8px; }
@@ -311,6 +332,7 @@
   .eventRows article > div:nth-child(2) { min-width:180px; }
 }
 @media (max-width:800px) {
+  .revenueMetrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .ticketTypeFields { grid-template-columns:1fr 1fr; }
   .ticketTypeFields > label:first-child { grid-column:1 / -1; }
   .typeEditorRow { grid-template-columns:1fr 1fr; }
@@ -326,6 +348,8 @@
   .roleCard button { width:auto; }
 }
 @media (max-width:520px) {
+  .revenueMetrics { grid-template-columns:1fr; }
+  .revenuePanel { padding:14px; }
   .dateTimeRow { grid-template-columns:1fr; }
   .wizard,.intakePanel { padding:18px; }
   .reviewDetails { grid-template-columns:1fr; gap:6px; }

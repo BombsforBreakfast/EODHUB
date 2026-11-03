@@ -48,10 +48,12 @@ export function canTicketing(role: TicketingRole, action: TicketingAction, assig
   return action === "redeem" || role === "coordinator";
 }
 
+export const TICKETING_HUB_FEE = { fixedCents: 100, basisPoints: 200 } as const;
+
 export function ticketPrice(priceCents: number, quantity: number) {
   if (!Number.isInteger(priceCents) || priceCents < 0 || priceCents > 1000000 || !Number.isInteger(quantity) || quantity < 1 || quantity > 8) throw new Error("Choose between 1 and 8 tickets.");
   const baseCents = priceCents * quantity;
-  const feeCents = priceCents === 0 ? 0 : (100 + Math.round(priceCents * 0.02)) * quantity;
+  const feeCents = priceCents === 0 ? 0 : (TICKETING_HUB_FEE.fixedCents + Math.round(priceCents * TICKETING_HUB_FEE.basisPoints / 10000)) * quantity;
   return { baseCents, feeCents, totalCents: baseCents + feeCents };
 }
 

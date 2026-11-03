@@ -3,12 +3,14 @@ import { Plus, Trash2 } from "lucide-react";
 import { MAX_TICKET_TYPES, parseTicketPrice, type TicketTypeDraft } from "@/app/lib/ticketing/event-intake";
 import { ticketMoney, ticketPrice } from "@/app/lib/ticketing/model";
 import styles from "./ticketing.module.css";
+import TicketRevenuePreview from "./TicketRevenuePreview";
 
 export default function TicketTypesEditor({ value, onChange }: { value: TicketTypeDraft[]; onChange: (value: TicketTypeDraft[]) => void }) {
   const change = (id: string, field: "name" | "price" | "capacity", next: string) => onChange(value.map(row => row.id === id ? { ...row, [field]: next } : row));
   return <>
     <h3>Ticket types</h3>
     <p className={styles.finePrint}>Name tickets for your audience: Attendee, Competitor, Spectator, Adult, Child, or Military / Veteran. Each type has its own price and number available. Enter $0 for a free ticket.</p>
+    <TicketRevenuePreview value={value} />
     {value.map((row, index) => {
       let example: ReturnType<typeof ticketPrice> | null = null;
       try { example = ticketPrice(parseTicketPrice(row.price), 1); } catch { /* Unfinished prices remain editable. */ }
