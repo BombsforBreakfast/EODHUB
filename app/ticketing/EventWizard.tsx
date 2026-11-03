@@ -5,6 +5,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { ArrowLeft, ArrowRight, Check, Upload, X } from "lucide-react";
 import { emptyEventDraft, parseEventDraft, parseTicketPrice, type CoordinatorProfile, type EventDraft, type SubmissionView } from "@/app/lib/ticketing/event-intake";
 import { eventStartFromLocal, ticketMoney, ticketPrice } from "@/app/lib/ticketing/model";
+import LocalDateTimeField from "./LocalDateTimeField";
 import styles from "./ticketing.module.css";
 
 type Props = {
@@ -116,7 +117,7 @@ export default function EventWizard({ email, profile, initial, profileOnly = fal
             {field("Event title", "title", { maxLength: 120 })}
             {field("Hosting organization", "organizer")}
             <label>Category<select value={draft.category} onChange={event => change("category", event.target.value)}><option value="Community">Community</option><option value="Fitness">Fitness</option></select></label>
-            {field("Event start (local date & time)", "localStart", { type: "datetime-local" })}
+            <LocalDateTimeField label="Event start (local date & time)" name="localStart" defaultValue={draft.localStart} onChange={value => change("localStart", value)} />
             {field("Event time zone", "timeZone", { placeholder: "America/New_York" })}
             {field("Host / original event website (optional)", "hostUrl", { type: "url", required: false, maxLength: 500, placeholder: "https://…" })}
           </div>

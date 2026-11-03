@@ -30,7 +30,7 @@ The three ticketing migrations are applied to the existing project. Actual GoTru
 The forward migrations keep the server role away from internal Auth tables and use `PT409` for stale-revision conflicts. Do not use transaction error `40001` for an ordinary business conflict: PostgREST may retry it. Invitation email attestation is supplied from the server-verified actor, never caller JSON. Apply the complete migration chain when setting up another environment.
 
 ```powershell
-node --import tsx --require ./scripts/register-server-tests.cjs --test scripts/verify-ticketing-entry.test.ts scripts/verify-ticketing-access.test.ts scripts/verify-owner-admin-access.test.ts scripts/verify-rental-passwordless.test.ts scripts/verify-rental-billing.test.ts scripts/verify-rental-billing-lifecycle.test.ts scripts/verify-rental-delisting.test.ts
+node --import tsx --require ./scripts/register-server-tests.cjs --test scripts/verify-ticketing-local-time.test.ts scripts/verify-ticketing-entry.test.ts scripts/verify-ticketing-access.test.ts scripts/verify-owner-admin-access.test.ts scripts/verify-rental-passwordless.test.ts scripts/verify-rental-billing.test.ts scripts/verify-rental-billing-lifecycle.test.ts scripts/verify-rental-delisting.test.ts
 node node_modules/typescript/bin/tsc --noEmit --incremental false
 node node_modules/next/dist/bin/next build --webpack
 ```
