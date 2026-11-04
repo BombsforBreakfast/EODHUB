@@ -54,10 +54,17 @@ understand neutral identities; do not roll back to incompatible login code.
 
 ## Verification
 
-102 focused account, ticketing, owner and Rentals billing tests pass. A local
+106 focused account, ticketing, owner and Rentals billing tests pass. A local
 PostgreSQL harness checks triggers/RLS/count preservation and stale JWT denial.
 Disposable real GoTrue accounts verified one-use links, password proof,
 verified-only buyer access, provider approval, property/event isolation,
 organizer suspension, Hub counting/role refresh and immediate sign-out denial.
 No real charge or test email was sent. Browser QA covers direct email entry,
 shared portal cards, rental application fields and light/dark themes.
+
+Activation verification also covers GoTrue's blank initial role before it sets
+the configured default. The forward `shared_identity_initial_role` migration
+handles that initial insert without changing any established identity.
+`scripts/verify-shared-database.sql` reproduces it in a rolled-back local test.
+Administrator failed-login recovery explicitly initializes a Hub request before
+approving a newly created neutral identity, preserving the recovery workflow.

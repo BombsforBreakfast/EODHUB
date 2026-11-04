@@ -17,6 +17,7 @@ import {
 } from "@/app/lib/email/temporaryPasswordEmail";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import { createAuthAccessOverride } from "@/app/lib/server/authAccessOverrides";
+import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 
 const TEMP_PASSWORD_BYTES = 12;
 
@@ -343,6 +344,11 @@ export async function provisionUserAccessFromFailedAuth(
       normalizedEmail,
       tempPassword,
     );
+
+    // An explicit administrator recovery grants Hub access. New neutral Auth
+    // identities need their Hub request/profile before the approval upsert.
+    const stub = await ensureProfileStubForUser(adminClient, authResult.userId, normalizedEmail);
+    if (!stub.ok) throw new Error("Could not initialize the Hub access request: " + stub.error);
 
     devAuthLog("failed-auth-resolve", {
       step: authResult.createdAuthUser ? "auth_created" : "auth_updated",
