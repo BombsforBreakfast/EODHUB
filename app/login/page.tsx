@@ -1035,14 +1035,7 @@ export default function LoginPage() {
           )}
 
           {mode === "login" && (
-            <div style={{ display: "grid", gap: 8 }}>
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                style={{ justifySelf: "end", background: "none", border: "none", fontSize: 14, color: t.textMuted, cursor: "pointer", padding: "4px 0", textDecoration: "underline" }}
-              >
-                Forgot password?
-              </button>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", userSelect: "none" }}>
                 <input
                   type="checkbox"
@@ -1052,6 +1045,13 @@ export default function LoginPage() {
                 />
                 Stay signed in
               </label>
+              <button
+                type="button"
+                onClick={() => setMode("forgot")}
+                style={{ background: "none", border: "none", fontSize: 14, color: t.textMuted, cursor: "pointer", padding: "4px 0", textDecoration: "underline", whiteSpace: "nowrap" }}
+              >
+                Forgot password?
+              </button>
             </div>
           )}
 
