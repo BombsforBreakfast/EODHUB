@@ -37,7 +37,7 @@ async function getSessionWithRetry(): Promise<boolean> {
 export default function SessionGuard() {
   const { isLoading } = useAuth();
   const pathname = usePathname();
-  const isPublicIntakePage = pathname === "/promote" || pathname.startsWith("/promote/") || pathname === "/support-the-hub" || pathname.startsWith("/support-the-hub/") || pathname === "/ticketing" || pathname.startsWith("/ticketing/");
+  const isPublicIntakePage = pathname === "/promote" || pathname.startsWith("/promote/") || pathname === "/support-the-hub" || pathname.startsWith("/support-the-hub/") || pathname === "/ticketing" || pathname.startsWith("/ticketing/") || pathname === "/account" || pathname.startsWith("/account/");
 
   useEffect(() => {
     if (typeof window === "undefined") return;

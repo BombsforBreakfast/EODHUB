@@ -7,7 +7,7 @@ import { useChatroomSheet } from "./ChatroomSheetContext";
 
 export default function ChatroomPeekSheetHost() {
   const pathname = usePathname();
-  const isRentalPage = pathname === "/promote/rentals" || pathname.startsWith("/promote/rentals/") || pathname === "/ticketing" || pathname.startsWith("/ticketing/");
+  const isRentalPage = pathname === "/promote/rentals" || pathname.startsWith("/promote/rentals/") || pathname === "/ticketing" || pathname.startsWith("/ticketing/") || pathname === "/account" || pathname.startsWith("/account/");
   const { collapse } = useChatroomSheet();
   useEffect(() => { if (isRentalPage) collapse(); }, [isRentalPage, collapse]);
   if (isRentalPage) return null;
