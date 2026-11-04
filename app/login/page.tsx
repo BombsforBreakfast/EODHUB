@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, House } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -141,15 +141,13 @@ export default function LoginPage() {
   const [oauthSetupSent, setOauthSetupSent] = useState(false);
   const [oauthSetupSubmitting, setOauthSetupSubmitting] = useState(false);
   const [emailNotFoundGuidance, setEmailNotFoundGuidance] = useState(false);
-  const [highlightSignupCta, setHighlightSignupCta] = useState(false);
-  const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
   const [businessOrgPromptOpen, setBusinessOrgPromptOpen] = useState(false);
   const [businessOrgEmailGateOpen, setBusinessOrgEmailGateOpen] = useState(false);
   const [businessOrgEmail, setBusinessOrgEmail] = useState("");
   const [businessOrgEmailStatus, setBusinessOrgEmailStatus] = useState<"idle" | "checking" | "found" | "authenticating" | "not_found" | "not_approved" | "invalid_email" | "error">("idle");
   const [businessOrgEmailMessage, setBusinessOrgEmailMessage] = useState<string | null>(null);
   const [businessOrgOwnerPassword, setBusinessOrgOwnerPassword] = useState("");
-  const signupCtaRef = useRef<HTMLButtonElement>(null);
+  const confirmPasswordRef = useRef<HTMLInputElement>(null);
 
   async function redirectForSessionUser(user: User) {
     const { profile } = await loadActiveProfile<OnboardingGateProfile & { email?: string | null }>(supabase, user, {
@@ -192,7 +190,6 @@ export default function LoginPage() {
 
   function clearEmailNotFoundGuidance() {
     setEmailNotFoundGuidance(false);
-    setHighlightSignupCta(false);
   }
 
   function guideToSignupAfterEmailNotFound() {
@@ -413,44 +410,8 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
-    if (!emailNotFoundGuidance || mode !== "signup") return;
-
-    let cancelled = false;
-    const reducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    setSignupCtaReducedMotion(reducedMotion);
-
-    const run = async () => {
-      await new Promise((resolve) => window.setTimeout(resolve, 80));
-      if (cancelled) return;
-
-      const el = signupCtaRef.current;
-      if (el) {
-        el.scrollIntoView({
-          behavior: reducedMotion ? "auto" : "smooth",
-          block: "center",
-          inline: "nearest",
-        });
-      }
-
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, reducedMotion ? 0 : 480),
-      );
-      if (cancelled) return;
-
-      setHighlightSignupCta(true);
-      await new Promise((resolve) =>
-        window.setTimeout(resolve, reducedMotion ? 5000 : 4700),
-      );
-      if (!cancelled) setHighlightSignupCta(false);
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [emailNotFoundGuidance, mode]);
+    if (mode === "signup") confirmPasswordRef.current?.focus();
+  }, [mode]);
 
   function onboardingOAuthNextPath() {
     const storedRef = readStoredReferral();
@@ -822,7 +783,7 @@ export default function LoginPage() {
     >
       <div style={{ textAlign: "center", marginBottom: 18 }}>
         <div style={{ fontSize: 50, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
-        <div style={{ marginTop: 8, display: "flex", justifyContent: "center" }}>
+        <div style={{ margin: "8px auto 0", width: "85%", maxWidth: 255, display: "flex", justifyContent: "center" }}>
           <EodCrabLogo variant="login" priority />
         </div>
         <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
@@ -984,7 +945,7 @@ export default function LoginPage() {
                 Create your account
               </div>
               <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.55, color: t.text }}>
-                Confirm your password below to get started.
+                New here? Confirm your password to create your account.
               </div>
             </div>
           )}
@@ -1046,6 +1007,7 @@ export default function LoginPage() {
           {mode === "signup" && (
             <PasswordInput
               placeholder="Confirm Password"
+              inputRef={confirmPasswordRef}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               showPassword={showConfirmPassword}
@@ -1073,7 +1035,14 @@ export default function LoginPage() {
           )}
 
           {mode === "login" && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <button
+                type="button"
+                onClick={() => setMode("forgot")}
+                style={{ justifySelf: "end", background: "none", border: "none", fontSize: 14, color: t.textMuted, cursor: "pointer", padding: "4px 0", textDecoration: "underline" }}
+              >
+                Forgot password?
+              </button>
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", userSelect: "none" }}>
                 <input
                   type="checkbox"
@@ -1081,15 +1050,8 @@ export default function LoginPage() {
                   onChange={(e) => setRememberMe(e.target.checked)}
                   style={{ width: 16, height: 16, cursor: "pointer" }}
                 />
-                Remember me on this device
+                Stay signed in
               </label>
-              <button
-                type="button"
-                onClick={() => setMode("forgot")}
-                style={{ background: "none", border: "none", fontSize: 14, color: t.textMuted, cursor: "pointer", padding: 0, textDecoration: "underline" }}
-              >
-                Forgot password?
-              </button>
             </div>
           )}
 
@@ -1124,9 +1086,9 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => setBusinessOrgPromptOpen(true)}
                 disabled={submitting}
-                style={buttonSecondary}
+                style={{ background: "none", border: "none", color: t.textMuted, fontSize: 14, padding: "10px 4px", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: 3 }}
               >
-                Create Business / Organization Profile
+                For businesses & organizations — create a profile
               </button>
             </>
           ) : (
@@ -1222,38 +1184,13 @@ export default function LoginPage() {
                   </div>
                 </div>
               )}
-              {highlightSignupCta && (
-                <div
-                  style={{
-                    textAlign: "center",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: t.textMuted,
-                    letterSpacing: 0.2,
-                  }}
-                  aria-hidden
-                >
-                  ↓ Create your account here
-                </div>
-              )}
               <button
-                ref={signupCtaRef}
                 type="submit"
                 disabled={submitting}
-                className={[
-                  "login-signup-cta-target",
-                  highlightSignupCta
-                    ? signupCtaReducedMotion
-                      ? "login-signup-cta-highlight-static"
-                      : "login-signup-cta-highlight"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
                 style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
-                Continue
+                Create account
               </button>
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("login"); }} disabled={submitting} style={buttonSecondary}>
                 Back to Login
@@ -1266,7 +1203,7 @@ export default function LoginPage() {
       )}
 
       <WebSupportOnly><div style={{ display: "grid", gap: 12, width: "100%", margin: "12px 0 24px" }}>
-        <a href="/promote/rentals" style={{ ...buttonSecondary, display: "block", textAlign: "center", textDecoration: "none" }}>Sponsored Rentals</a>
+        <a href="/promote/rentals" style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", textDecoration: "none" }}><House size={16} strokeWidth={1.8} aria-hidden />Rentals</a>
         <HubSupportProgress />
         <HubSupportButton login />
       </div></WebSupportOnly>
@@ -1491,15 +1428,14 @@ function OAuthProviderButtons({
   appleLabel: string;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ fontSize: 15, fontWeight: 700, marginRight: 2 }}>Login</span>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
       <button
         type="button"
         onClick={onGoogle}
         disabled={disabled}
         aria-label={googleLabel}
         title={googleLabel}
-        style={{ ...buttonSecondary, width: 44, height: 44, minWidth: 44, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+        style={{ ...buttonSecondary, width: 48, height: 48, minWidth: 48, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
       >
         <GoogleIcon />
       </button>
@@ -1509,7 +1445,7 @@ function OAuthProviderButtons({
         disabled={disabled}
         aria-label={appleLabel}
         title={appleLabel}
-        style={{ ...buttonSecondary, width: 44, height: 44, minWidth: 44, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+        style={{ ...buttonSecondary, width: 48, height: 48, minWidth: 48, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
       >
         <AppleIcon />
       </button>
@@ -1541,6 +1477,7 @@ function AppleIcon() {
 
 function PasswordInput({
   placeholder,
+  inputRef,
   value,
   onChange,
   showPassword,
@@ -1551,6 +1488,7 @@ function PasswordInput({
   autoComplete,
 }: {
   placeholder: string;
+  inputRef?: React.Ref<HTMLInputElement>;
   value: string;
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   showPassword: boolean;
@@ -1566,6 +1504,7 @@ function PasswordInput({
     <div style={{ position: "relative" }}>
       <input
         key={inputType}
+        ref={inputRef}
         placeholder={placeholder}
         type={inputType}
         value={value}
