@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -143,7 +143,6 @@ export default function LoginPage() {
   const [emailNotFoundGuidance, setEmailNotFoundGuidance] = useState(false);
   const [highlightSignupCta, setHighlightSignupCta] = useState(false);
   const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
-  const [appleHideEmailInfoOpen, setAppleHideEmailInfoOpen] = useState(false);
   const [businessOrgPromptOpen, setBusinessOrgPromptOpen] = useState(false);
   const [businessOrgEmailGateOpen, setBusinessOrgEmailGateOpen] = useState(false);
   const [businessOrgEmail, setBusinessOrgEmail] = useState("");
@@ -1010,13 +1009,6 @@ export default function LoginPage() {
                 googleLabel="Sign in with Google"
                 appleLabel="Sign in with Apple"
               />
-              <AppleAuthHelperNote
-                open={appleHideEmailInfoOpen}
-                onToggle={() => setAppleHideEmailInfoOpen((prev) => !prev)}
-                textColor={t.text}
-                mutedColor={t.textMuted}
-                borderColor={t.border}
-              />
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
                 <div style={{ flex: 1, height: 1, background: t.border }} />
                 <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
@@ -1499,14 +1491,15 @@ function OAuthProviderButtons({
   appleLabel: string;
 }) {
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 15, fontWeight: 700, marginRight: 2 }}>Login</span>
       <button
         type="button"
         onClick={onGoogle}
         disabled={disabled}
         aria-label={googleLabel}
         title={googleLabel}
-        style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+        style={{ ...buttonSecondary, width: 44, height: 44, minWidth: 44, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
       >
         <GoogleIcon />
       </button>
@@ -1516,99 +1509,10 @@ function OAuthProviderButtons({
         disabled={disabled}
         aria-label={appleLabel}
         title={appleLabel}
-        style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+        style={{ ...buttonSecondary, width: 44, height: 44, minWidth: 44, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
       >
         <AppleIcon />
       </button>
-    </div>
-  );
-}
-
-/**
- * Non-blocking Apple sign-in guidance shown directly beneath the OAuth buttons.
- *
- * Replaces the old two-button helper modal: a single "Sign in with Apple" button
- * fires OAuth immediately (the server decides new vs. existing), while this note
- * warns the small set of users at duplicate-account risk — those who already have
- * an account on a different email, or who pick Apple's Hide My Email.
- */
-function AppleAuthHelperNote({
-  open,
-  onToggle,
-  textColor,
-  mutedColor,
-  borderColor,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  textColor: string;
-  mutedColor: string;
-  borderColor: string;
-}) {
-  return (
-    <div style={{ marginTop: 2 }}>
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls="apple-hide-email-info"
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          width: "100%",
-          background: "none",
-          border: "none",
-          padding: "4px 0",
-          cursor: "pointer",
-          color: mutedColor,
-          fontSize: 12,
-          fontWeight: 700,
-          textAlign: "left",
-        }}
-      >
-        <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>ℹ️</span>
-        <span style={{ flex: 1 }}>Already have an account, or using Hide My Email?</span>
-        <ChevronDown
-          size={15}
-          strokeWidth={2.5}
-          aria-hidden
-          style={{
-            flexShrink: 0,
-            transition: "transform 0.2s ease",
-            transform: open ? "rotate(180deg)" : "rotate(0deg)",
-          }}
-        />
-      </button>
-      {open && (
-        <div
-          id="apple-hide-email-info"
-          role="region"
-          aria-label="About Apple sign-in and existing accounts"
-          style={{
-            marginTop: 8,
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: `1px solid ${borderColor}`,
-            display: "grid",
-            gap: 8,
-            fontSize: 12.5,
-            lineHeight: 1.5,
-            color: mutedColor,
-          }}
-        >
-          <p style={{ margin: 0 }}>
-            New here? Just continue with Apple — we&apos;ll walk you through setup.
-          </p>
-          <p style={{ margin: 0 }}>
-            Already have an EOD-HUB account on a <strong style={{ color: textColor }}>different email</strong>, or
-            planning to use Apple&apos;s <strong style={{ color: textColor }}>Hide My Email</strong>? Sign in with
-            your existing method first, then link Apple under{" "}
-            <strong style={{ color: textColor }}>Settings → Sign-In Methods → Apple Auth</strong>. Otherwise Apple
-            may hand us a different address and create a duplicate account.
-          </p>
-        </div>
-      )}
     </div>
   );
 }
