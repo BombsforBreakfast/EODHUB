@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isPortalOnlyIdentity,PORTAL_ROLE } from "../account/access";
+import { sharedAuthEnabled } from "../account/server";
 import { devAuthLog } from "@/app/lib/auth/signupErrors";
 import {
   authMetadataDisplayName,
@@ -31,6 +33,10 @@ export async function ensureProfileStubForUser(
   }
 
   const { data: authData } = await admin.auth.admin.getUserById(userId);
+  if(authData.user?.role===PORTAL_ROLE || (sharedAuthEnabled() && isPortalOnlyIdentity(authData?.user))) {
+    const request=await admin.rpc("portal_request_hub",{p_actor:userId});
+    return {ok:!request.error,error:request.error?.message??null};
+  }
   const authName = authMetadataDisplayName(authData?.user?.user_metadata ?? null);
   const parsedName = authName ? parseSignupFullName(authName) : null;
 

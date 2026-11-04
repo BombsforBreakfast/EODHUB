@@ -155,6 +155,7 @@ export default function MyAccountPage() {
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "12px 20px 24px", boxSizing: "border-box" as const, background: t.bg, minHeight: "100vh", color: t.text }}>
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 6, color: t.text }}>My Account</h1>
+      {process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED === "1" ? <p><a href="/account" style={{color:t.text,textDecoration:"underline"}}>Portal access & shared sign-in settings</a></p> : null}
       <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55, marginTop: 10, marginBottom: 0 }}>
         Account settings and sign-in tools. Your profile, photo, saved events, saved jobs, and groups are on your profile page and the jobs page.
       </p>

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getRequestCountryCode, isDeniedGeoCountry } from "@/app/lib/geoAccess";
 import { RENTAL_ROLE, RENTAL_PORTAL, bearerClaimsRental, rentalApiAllowed } from "@/app/lib/rentals/provider";
 import { TICKETING_ROLE, TICKETING_ROOT, bearerClaimsTicketing, ticketingApiAllowed } from "@/app/lib/ticketing/access";
+import { accountApiAllowed,isPortalOnlyIdentity,PORTAL_ROLE } from "@/app/lib/account/access";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -19,6 +20,7 @@ function isPublicPolicyPath(pathname: string) {
  * Everything else redirects to /login when the user is not authenticated.
  */
 function isPublicPath(pathname: string) {
+  if(pathname==="/account" || pathname.startsWith("/account/"))return true;
   if (pathname === TICKETING_ROOT || pathname.startsWith(`${TICKETING_ROOT}/`)) return true;
   // Public promotion intake and voluntary contributions need no member session.
   if (pathname === "/promote" || pathname.startsWith("/promote/")) return true;
@@ -85,7 +87,19 @@ export async function proxy(request: NextRequest) {
 
   // API routes handle their own auth; after geo check, pass through.
   if (path.startsWith("/api/")) {
-    if (!ticketingApiAllowed(path)) {
+    const shared=process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED==="1" || process.env.SHARED_PORTAL_AUTH_ENABLED==="1";
+    if(!accountApiAllowed(path) && !rentalApiAllowed(path,request.method) && !ticketingApiAllowed(path)){
+      let role:string|undefined;
+      const header=request.headers.get("authorization");
+      try{if(header?.startsWith("Bearer "))role=JSON.parse(Buffer.from(header.slice(7).split(".")[1],"base64url").toString()).role;}catch{/* Deny-only hint. */}
+      if(isPortalOnlyIdentity({role})&&(shared||role===PORTAL_ROLE))return NextResponse.json({error:"Hub access is required for this action."},{status:403});
+      if(supabaseUrl && supabaseKey && hasSupabaseAuthCookies(request)){
+        const client=createServerClient(supabaseUrl,supabaseKey,{cookies:{getAll:()=>request.cookies.getAll(),setAll:()=>{}}});
+        const candidate=(await client.auth.getSession()).data.session?.user;
+        if(isPortalOnlyIdentity(candidate)&&(shared||candidate?.role===PORTAL_ROLE))return NextResponse.json({error:"Hub access is required for this action."},{status:403});
+      }
+    }
+    if (!shared && !ticketingApiAllowed(path)) {
       if (bearerClaimsTicketing(request.headers.get("authorization"))) return NextResponse.json({ error: "This account has access to ticketing only." }, { status: 403 });
       if (supabaseUrl && supabaseKey && hasSupabaseAuthCookies(request)) {
         const client = createServerClient(supabaseUrl, supabaseKey, { cookies: { getAll: () => request.cookies.getAll(), setAll: () => {} } });
@@ -93,7 +107,7 @@ export async function proxy(request: NextRequest) {
         if (data.session?.user.role === TICKETING_ROLE) return NextResponse.json({ error: "This account has access to ticketing only." }, { status: 403 });
       }
     }
-    if (!rentalApiAllowed(path, request.method) && !ticketingApiAllowed(path)) {
+    if (!shared && !rentalApiAllowed(path, request.method) && !ticketingApiAllowed(path)) {
       // Deny-only inspection. Modified/forged tokens still fail each API's
       // real authentication; this shortcut never authorizes a request.
       if (bearerClaimsRental(request.headers.get("authorization"))) {
@@ -148,6 +162,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  if(isPortalOnlyIdentity(user)&&(user.role===PORTAL_ROLE || process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED==="1" || process.env.SHARED_PORTAL_AUTH_ENABLED==="1")) {
+    if(["/onboarding","/pending","/verify-email"].includes(path))return supabaseResponse;
+    return NextResponse.redirect(new URL(process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED==="1"||process.env.SHARED_PORTAL_AUTH_ENABLED==="1"?"/account":"/pending",request.url));
+  }
   if (user.role === RENTAL_ROLE) return NextResponse.redirect(new URL(RENTAL_PORTAL, request.url));
   if (user.role === TICKETING_ROLE) return NextResponse.redirect(new URL(TICKETING_ROOT, request.url));
 

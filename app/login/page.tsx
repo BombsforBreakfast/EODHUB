@@ -7,6 +7,8 @@ import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { isPortalOnlyIdentity } from "../lib/account/access";
+import { hasFullPlatformAccess } from "../lib/verificationAccess";
 import { useAuthOptional } from "../lib/auth/AuthProvider";
 import {
   clearAppAuthState,
@@ -165,6 +167,7 @@ export default function LoginPage() {
       admin_verified: profile?.admin_verified ?? null,
     });
 
+    if(profile&&hasFullPlatformAccess(profile)&&isPortalOnlyIdentity(user))await supabase.auth.refreshSession();
     window.location.href = resolveLoginRedirectPath(profile);
   }
 
@@ -894,6 +897,7 @@ export default function LoginPage() {
         </h1>
       )}
 
+      {process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED === "1" ? <p style={{fontSize:13,color:t.textMuted,margin:"14px 0"}}><a href="/account/sign-in?portal=hub" style={{color:"inherit",textDecoration:"underline"}}>Shared sign-in for Hub, Rentals & Events · email links available</a></p> : null}
       {/* ── Forgot password flow ── */}
       {mode === "forgot" && (
         <div style={{ marginTop: 20 }}>

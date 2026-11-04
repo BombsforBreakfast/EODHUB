@@ -2,6 +2,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { queryKeys } from "../queryKeys";
 import type { OnboardingGateProfile } from "../onboardingGate";
+import { isPortalOnlyIdentity } from "../account/access";
+import { accountFetch } from "../account/client";
 
 /**
  * Superset of every column read from `profiles` for the *viewer's own* profile
@@ -80,7 +82,7 @@ export async function fetchViewerProfileCached(
   try {
     return await queryClient.fetchQuery({
       queryKey: queryKeys.viewerProfile(user.id),
-      queryFn: () => rawFetchViewerProfile(supabase, user.id),
+      queryFn: async () => isPortalOnlyIdentity(user) ? (await accountFetch(supabase,"/api/account/hub-profile")).profile as ViewerProfile|null : rawFetchViewerProfile(supabase, user.id),
       staleTime: VIEWER_PROFILE_STALE_MS,
     });
   } catch (err) {

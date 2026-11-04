@@ -7,6 +7,7 @@ import { findAuthUsersByEmail } from "@/app/lib/auth/adminAuthLookup";
 import { isOwnerAdmin, OWNER_ADMIN_EMAIL } from "@/app/lib/ownerAdminAccess";
 import { activeAssignment, assignedAccess, isTicketingIdentity, ticketingEmail, ticketingOrigin, TICKETING_COOKIE, TICKETING_ROLE, uuidPattern, type Assignment } from "./access";
 import { cleanCoordinatorDraft, cleanTicketTypeDrafts, coordinatorProfileState, emptyEventDraft, eventFields, parseCoordinatorProfile, parseEventDraft, type CoordinatorProfile, type EventDraft } from "./event-intake";
+import { accountActor,sharedAuthEnabled,requireSharedSchema } from "../account/server";
 
 export class TicketingError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export const ticketingHeaders = { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" };
@@ -62,21 +63,35 @@ export type TicketingActor = { db: SupabaseClient; user: User; account: { can_su
 export async function ticketingActor(request: NextRequest): Promise<TicketingActor> {
   const origin = ticketingRequest(request), db = ticketingDatabase();
   const token = request.cookies.get(TICKETING_COOKIE)?.value;
-  if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new TicketingError("Sign in to your event workspace.", 401);
-  const session = await db.from("ticketing_sessions").select("user_id,expires_at,revoked_at,origin").eq("digest", hashTicketingSecret(token)).maybeSingle();
-  checkTicketingDb(session.error);
-  if (!session.data || session.data.revoked_at || Date.parse(session.data.expires_at) <= Date.now() || session.data.origin !== origin) throw new TicketingError("Your ticketing session expired. Request a new email link.", 401);
+  let actorId:string,sharedUser:User|null=null;
+  if(sharedAuthEnabled()){
+    try{await requireSharedSchema(db);const actor=await accountActor(request);if(!actor.emailVerified)throw new TicketingError("Verify your sign-in email first.",403);actorId=actor.user.id;sharedUser=actor.user;
+      checkTicketingDb((await db.from("ticketing_accounts").upsert({user_id:actorId},{onConflict:"user_id",ignoreDuplicates:true})).error);
+    }catch(error){throw new TicketingError(error instanceof Error?error.message:"Sign in to your account.",typeof (error as {status?:unknown}).status==="number"?(error as {status:number}).status:401);}
+  }else{
+    if (!token || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new TicketingError("Sign in to your event workspace.", 401);
+    const session = await db.from("ticketing_sessions").select("user_id,expires_at,revoked_at,origin").eq("digest", hashTicketingSecret(token)).maybeSingle();
+    checkTicketingDb(session.error);
+    if (!session.data || session.data.revoked_at || Date.parse(session.data.expires_at) <= Date.now() || session.data.origin !== origin) throw new TicketingError("Your ticketing session expired. Request a new email link.", 401);
+    actorId=session.data.user_id;
+  }
   const [{ data: auth, error: authError }, account, assignments] = await Promise.all([
-    db.auth.admin.getUserById(session.data.user_id),
-    db.from("ticketing_accounts").select("active,can_submit_events,profile").eq("user_id", session.data.user_id).maybeSingle(),
-    db.from("ticketing_assignments").select("id,event_id,user_id,role,expires_at,revoked_at").eq("user_id", session.data.user_id),
+    sharedUser?Promise.resolve({data:{user:sharedUser},error:null}):db.auth.admin.getUserById(actorId),
+    db.from("ticketing_accounts").select("active,can_submit_events,profile").eq("user_id", actorId).maybeSingle(),
+    db.from("ticketing_assignments").select("id,event_id,user_id,role,expires_at,revoked_at").eq("user_id", actorId),
   ]);
   checkTicketingDb(account.error); checkTicketingDb(assignments.error);
+  let organizerSuspended=false;
+  if(sharedAuthEnabled()){
+    const request=await db.from("portal_access_requests").select("status").eq("user_id",actorId).eq("portal","event_organizer").maybeSingle();checkTicketingDb(request.error);
+    organizerSuspended=request.data?.status==="suspended";
+    if(organizerSuspended && account.data)account.data.can_submit_events=false;
+  }
   const banned = (auth.user as (User & { banned_until?: string }) | null)?.banned_until;
   if (authError || !auth.user?.email_confirmed_at || !account.data?.active || (banned && Date.parse(banned) > Date.now())) throw new TicketingError("This ticketing account is unavailable.", 403);
   const profile = await db.from("profiles").select("is_admin").eq("user_id", auth.user.id).maybeSingle();
   checkTicketingDb(profile.error);
-  return { db, user: auth.user, account: account.data, admin: isOwnerAdmin({ userId: auth.user.id, email: auth.user.email, isAdmin: profile.data?.is_admin }), assignments: (assignments.data ?? []) as Assignment[] };
+  return { db, user: auth.user, account: account.data, admin: isOwnerAdmin({ userId: auth.user.id, email: auth.user.email, isAdmin: profile.data?.is_admin }), assignments: ((assignments.data ?? []) as Assignment[]).filter(row=>!organizerSuspended || row.role!=="coordinator") };
 }
 export function requireTicketingEvent(actor: TicketingActor, eventId: string, scan = false) {
   if (!uuidPattern.test(eventId) || (!actor.admin && !assignedAccess(actor.assignments, actor.user.id, eventId, scan))) throw new TicketingError("You are not assigned to this event.", 403);
@@ -253,6 +268,7 @@ export async function ticketingCommand(actor: TicketingActor, body: Record<strin
     let email; try { email = ticketingEmail(body.email); } catch (error) { throw new TicketingError((error as Error).message); }
     const role = String(body.role), eventId = body.eventId ? String(body.eventId) : null;
     if (!["customer", "coordinator", "checkin_staff"].includes(role) || (eventId && !uuidPattern.test(eventId))) throw new TicketingError("Choose a valid invitation.");
+    if(sharedAuthEnabled()&&!actor.admin){if(!eventId)throw new TicketingError("Choose an assigned event.",403);requireTicketingEvent(actor,eventId);}
     const secret = randomBytes(32).toString("base64url");
     let expiry = null;
     if (role === "checkin_staff") {
@@ -272,6 +288,7 @@ export async function ticketingCommand(actor: TicketingActor, body: Record<strin
   }
   if (body.action === "revoke") {
     if (!uuidPattern.test(String(body.assignmentId))) throw new TicketingError("Invalid assignment.");
+    if(sharedAuthEnabled()&&!actor.admin){const assignment=await db.from("ticketing_assignments").select("event_id").eq("id",String(body.assignmentId)).maybeSingle();checkTicketingDb(assignment.error);if(!assignment.data)throw new TicketingError("Assignment not found.",404);requireTicketingEvent(actor,assignment.data.event_id);}
     const result = await db.rpc("ticketing_revoke_assignment", { p_actor: user.id, p_id: String(body.assignmentId) });
     checkTicketingDb(result.error); return { ok: !!result.data };
   }

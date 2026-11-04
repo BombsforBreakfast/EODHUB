@@ -12,6 +12,8 @@ import { useOnboardingGate } from "../hooks/useOnboardingGate";
 import { useOnboardingStepTracking } from "../hooks/useOnboardingStepTracking";
 import { recordPlankHolderInvite } from "../lib/plankHolderChallengeClient";
 import { writeClipboardText } from "../lib/native/nativeClipboard";
+import { isPortalOnlyIdentity } from "../lib/account/access";
+import { accountFetch } from "../lib/account/client";
 
 const VOUCHES_NEEDED = 3;
 
@@ -82,6 +84,7 @@ export default function PendingPage() {
       // Admin-verified users keep access even with sparse profiles / a stale
       // must_complete_onboarding flag — never dump them back into onboarding.
       if (hasFullPlatformAccess(profileRow)) {
+        if(isPortalOnlyIdentity(user))await supabase.auth.refreshSession();
         window.location.href = "/";
         return;
       }
@@ -102,7 +105,7 @@ export default function PendingPage() {
 
       // Sync Google OAuth name to profile if missing
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
-      if (profile && !profile.first_name && googleName) {
+      if (profile && !profile.first_name && googleName && !isPortalOnlyIdentity(user)) {
         const parts = (googleName as string).trim().split(/\s+/);
         await supabase.from("profiles").update({
           first_name: parts[0] || "",
@@ -121,6 +124,9 @@ export default function PendingPage() {
       }
 
       // Fetch vouch count
+      if(isPortalOnlyIdentity(user)){
+        const value=await accountFetch(supabase,"/api/account/hub-profile");setVouchCount(value.vouchCount??0);setPageReady(true);return;
+      }
       const { count } = await supabase
         .from("profile_vouches")
         .select("*", { count: "exact", head: true })
@@ -135,6 +141,10 @@ export default function PendingPage() {
   useEffect(() => {
     if (!userId) return;
     const interval = setInterval(async () => {
+      const current=(await supabase.auth.getSession()).data.session?.user;
+      if(isPortalOnlyIdentity(current)){
+        try{const value=await accountFetch(supabase,"/api/account/hub-profile");if(value.profile&&hasFullPlatformAccess(value.profile)){await supabase.auth.refreshSession();window.location.href="/";}}catch{/* Keep the existing pending screen on a transient error. */}return;
+      }
       const { data: profile } = await supabase
         .from("profiles")
         .select("verification_status, email_verified, admin_verified, is_pure_admin")

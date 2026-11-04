@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { primaryEmailProof } from "@/app/lib/account/email-proof";
 import { isOAuthOnlyTrustedProvider } from "@/app/lib/verificationAccess";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
@@ -162,7 +163,7 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = authData.user.id;
-  const isTrustedOAuth = isOAuthOnlyTrustedProvider(authData.user);
+  const isTrustedOAuth = isOAuthOnlyTrustedProvider(authData.user) || primaryEmailProof(authData.user,null,{}).verified;
   const authEmail = authData.user.email?.trim().toLowerCase() ?? "";
   const eodCertPath = normalizeOwnStoragePath(body.eodCertPath, userId);
 

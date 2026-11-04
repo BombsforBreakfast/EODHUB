@@ -3,6 +3,7 @@ import { signupSchema, rentalSignupAttributes } from "@/app/lib/rentals/provider
 import { rentalBody, rentalDatabase, rentalFailure, rentalJson, rentalLimit, RentalError, ensureSameOrigin, checkDb } from "@/app/lib/rentals/portal.server";
 import { sendRentalSignInLink } from "@/app/lib/rentals/passwordless.server";
 import { validateEmailForRegistration } from "@/app/lib/email-validation";
+import { sharedAuthEnabled } from "@/app/lib/account/server";
 export const dynamic = "force-dynamic";
 
 export async function POST(request: NextRequest) {
@@ -11,6 +12,7 @@ export async function POST(request: NextRequest) {
     const body = await rentalBody(request, 12000), db = rentalDatabase();
     await rentalLimit(db, request, `rental-auth:${String(body.action).slice(0,30)}`, body.action === "signup" ? 3 : 12);
     if (body.action === "signup") {
+      if(sharedAuthEnabled())return rentalJson({error:"Sign in to your EOD-HUB account, then request Rentals provider access.",destination:"/account/sign-in?portal=rentals"},409);
       const input = signupSchema.parse(body);
       const email = validateEmailForRegistration(input.email);
       if (!email.ok) throw new RentalError("Use a valid, permanent email address.");

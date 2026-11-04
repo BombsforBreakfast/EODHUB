@@ -13,6 +13,8 @@ import EventWizard from "./EventWizard";
 import LocalDateTimeField from "./LocalDateTimeField";
 import TicketRevenuePreview from "./TicketRevenuePreview";
 import styles from "./ticketing.module.css";
+import { supabase } from "@/app/lib/lib/supabaseClient";
+import { sharedAuthEnabledClient } from "@/app/lib/account/client";
 
 type SavedEvent = { id: string; draft?: EventDraft; event: Partial<PilotEvent> | null; revision: number; review_status: SubmissionView["approval"]; review_note: string; can_manage: boolean; created_at: string };
 type Staff = { id: string; event_id: string; user_id: string; email: string; role: string; expires_at: string | null; revoked_at: string | null };
@@ -20,7 +22,10 @@ type Invitation = { id: string; email: string; role: string; event_id: string | 
 type Workspace = { actor: { id: string; email: string; admin: boolean; can_create: boolean }; profile: CoordinatorProfile | null; profileDraft: CoordinatorDraft | null; events: SavedEvent[]; staff: Staff[]; invitations: Invitation[]; audit: { id: number; event_id: string | null; action: string; created_at: string }[] };
 
 async function request<T = unknown>(url: string, body?: Record<string, unknown>): Promise<T> {
-  const response = await fetch(url, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), keepalive: body.action === "save-draft" || body.action === "save-profile-draft" } : { cache: "no-store" });
+  if(sharedAuthEnabledClient() && url==="/api/ticketing/auth" && body?.action==="signout")await supabase.auth.signOut({scope:"local"});
+  const token=sharedAuthEnabledClient()?(await supabase.auth.getSession()).data.session?.access_token:null;
+  const auth:Record<string,string>=token?{Authorization:`Bearer ${token}`} : {};
+  const response = await fetch(url, body ? { method: "POST", headers: { "Content-Type": "application/json",...auth }, body: JSON.stringify(body), keepalive: body.action === "save-draft" || body.action === "save-profile-draft" } : { cache: "no-store",headers:auth });
   const data = await response.json();
   if (!response.ok) throw Object.assign(new Error(data.error ?? "This action could not be completed."), { status: response.status });
   return data as T;
@@ -28,7 +33,9 @@ async function request<T = unknown>(url: string, body?: Record<string, unknown>)
 const post = <T,>(body: Record<string, unknown>) => request<T>("/api/ticketing/workspace", body);
 const title = (event: SavedEvent) => event.draft?.title || event.event?.title || "Untitled draft";
 async function loadWorkspace(): Promise<Workspace | null> {
-  const response = await fetch("/api/ticketing/workspace", { cache: "no-store" });
+  const token=sharedAuthEnabledClient()?(await supabase.auth.getSession()).data.session?.access_token:null;
+  if(sharedAuthEnabledClient()&&!token)return null;
+  const response = await fetch("/api/ticketing/workspace", { cache: "no-store",headers:token?{Authorization:`Bearer ${token}`} : {} });
   const value = await response.json();
   if (response.status === 401) return null;
   if (!response.ok) throw new Error(value.error ?? "Could not load your workspace.");
@@ -72,7 +79,10 @@ export default function TicketingWorkspace() {
   const refresh = useCallback(async () => { applyWorkspace(await loadWorkspace()); setLoaded(true); }, [applyWorkspace]);
   useEffect(() => {
     let active = true;
-    if (!entryLoader.current) entryLoader.current = createTicketingEntryLoader(token => request("/api/ticketing/auth", { action: "verify", token }), loadWorkspace);
+    if (!entryLoader.current) entryLoader.current = createTicketingEntryLoader(async token => {
+      if(sharedAuthEnabledClient()){const result=await supabase.auth.verifyOtp({type:"email",token_hash:token});if(result.error)throw new Error("This sign-in link expired. Request a new one.");}
+      else await request("/api/ticketing/auth", { action: "verify", token });
+    }, loadWorkspace);
     const open = () => {
       const fragment = new URLSearchParams(window.location.hash.slice(1));
       const login = fragment.get("token_hash"), invite = fragment.get("invitation");
@@ -125,9 +135,10 @@ export default function TicketingWorkspace() {
     <p className={styles.previewBanner}><span>CONTROLLED PILOT</span>Saved event workspaces · ticket checkout is disabled</p>
     <header className={styles.header}><Link className={styles.brand} href="/ticketing"><Image src="/branding/eod-crab-logo.png" width={40} height={40} alt="" /><span>EOD-HUB<small>Events & tickets</small></span></Link><nav aria-label="Ticketing navigation"><button className={styles.iconButton} onClick={toggleDark} aria-label={isDark ? "Use light theme" : "Use dark theme"}>{isDark ? <Sun size={18} /> : <Moon size={18} />}</button>{workspace ? <button type="button" disabled={busy} className={styles.textButton} onClick={() => void run(async () => { await request("/api/ticketing/auth", { action: "signout" }); releaseEventEditors(workspace.actor.id); setWorkspace(null); setWizard(null); restoredUser.current = ""; })}><LogOut size={16} />Sign out</button> : null}</nav></header>
     <main className={styles.section}>
+      {sharedAuthEnabledClient()?<p><Link href="/account">Account settings & portal access</Link></p>:null}
       {error ? <p className={styles.error} role="alert">{error}</p> : null}
       {notice ? <p className={styles.notice} role="status">{notice}</p> : null}
-      {!loaded ? <p role="status">Opening your event workspace…</p> : !workspace ? <section className={styles.accessCard}><h1>Event sign-in</h1><p>Use your invited email. Existing Hub members can use their regular email; no password is needed.</p>{invitation ? <p className={styles.notice}>Sign in with the email this invitation was sent to. You’ll then accept its event access.</p> : null}<form className={styles.form} onSubmit={signIn}><label>Email address<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required maxLength={254} /></label><button className={styles.primary} disabled={busy}>{busy ? "Sending…" : "Email me a sign-in link"}<ArrowRight size={17} /></button></form><p className={styles.finePrint}>Pilot access is invitation-only. This portal does not grant access to the EOD-HUB community.</p></section> : <>
+      {!loaded ? <p role="status">Opening your event workspace…</p> : !workspace && sharedAuthEnabledClient() ? <section className={styles.accessCard}><h1>Events & tickets</h1><p>Sign in with your EOD-HUB account. Organizer and operator access stays scoped to approved events.</p><Link className={styles.primary} href="/account/sign-in?portal=events">Sign in or create account <ArrowRight size={17}/></Link><p className={styles.finePrint}>Google, Apple, email/password and email sign-in links are available. Ticket buyers do not need organizer approval.</p></section> : !workspace ? <section className={styles.accessCard}><h1>Event sign-in</h1><p>Use your invited email. Existing Hub members can use their regular email; no password is needed.</p>{invitation ? <p className={styles.notice}>Sign in with the email this invitation was sent to. You’ll then accept its event access.</p> : null}<form className={styles.form} onSubmit={signIn}><label>Email address<input type="email" value={email} onChange={event => setEmail(event.target.value)} autoComplete="email" required maxLength={254} /></label><button className={styles.primary} disabled={busy}>{busy ? "Sending…" : "Email me a sign-in link"}<ArrowRight size={17} /></button></form><p className={styles.finePrint}>Pilot access is invitation-only. This portal does not grant access to the EOD-HUB community.</p></section> : <>
         <div className={styles.sectionHeading}><div><h1>{workspace.actor.admin ? "Ticketing administration" : "Your event workspace"}</h1><p className={styles.muted}>{workspace.actor.email}{workspace.actor.admin ? " · Hub owner" : ""}</p></div><div className={styles.buttonRow}><button className={styles.secondary} disabled={busy} onClick={() => void run(refresh)}><RefreshCw size={16} />Refresh</button>{workspace.actor.can_create && !wizard ? <button className={styles.primary} onClick={() => openEditor()}><Plus size={16} />Create event</button> : null}</div></div>
         {invitation ? <aside className={styles.notice}><p>An invitation is ready to accept for this signed-in email.</p><button className={styles.primary} disabled={busy} onClick={() => void run(async () => { await post({ action: "accept-invite", token: invitation }); sessionStorage.removeItem("ticketing-pending-invite"); setInvitation(""); await refresh(); setNotice("Invitation accepted. Your event access is ready."); })}>Accept invitation</button><button className={styles.textButton} onClick={() => { setInvitation(""); sessionStorage.removeItem("ticketing-pending-invite"); }}>Dismiss</button></aside> : null}
         {!wizard && (workspace.actor.admin || workspace.actor.can_create || managed.length > 0) ? <div className={styles.buttonRow}><button className={styles.secondary} onClick={() => openEditor(undefined, true)}>Your private coordinator profile</button><button className={styles.secondary} onClick={() => { setInviteOpen(!inviteOpen); setInviteEvent(current?.can_manage ? current.id : ""); setInviteRole(workspace.actor.admin ? "coordinator" : "checkin_staff"); setPreparedLink(""); }}>Invite {workspace.actor.admin ? "a tester or event staff" : "a door operator"}</button></div> : null}

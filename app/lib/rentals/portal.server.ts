@@ -7,6 +7,7 @@ import { isRentalIdentity, type Provider } from "./provider";
 import { ZodError } from "zod";
 import { createHash } from "node:crypto";
 import { rentalAdminEmail } from "./notifications.server";
+import { AccountError,accountActor,sharedAuthEnabled,requireSharedSchema } from "../account/server";
 
 export class RentalError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export const rentalJson = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
@@ -19,12 +20,14 @@ export async function rentalProvider(request: NextRequest, approved = true): Pro
   const token = request.headers.get("authorization")?.replace(/^Bearer /, "");
   if (!token) throw new RentalError("Sign in to your property portal.", 401);
   const db = rentalDatabase();
-  const { data, error } = await db.auth.getUser(token);
-  if (error || !isRentalIdentity(data.user)) throw new RentalError("A separate EOD-HUB Rentals account is required.", 403);
+  const shared=sharedAuthEnabled();
+  const actor=shared?(await requireSharedSchema(db),await accountActor(request)):null;
+  const {data,error}=actor?{data:{user:actor.user},error:null}:await db.auth.getUser(token);
+  if (error || !data.user || (!sharedAuthEnabled() && !isRentalIdentity(data.user))) throw new RentalError("Sign in with the account used for your Rentals application.", 403);
   const user = data.user!;
   const { data: provider, error: lookupError } = await db.from("rental_providers").select("user_id,full_name,phone,email,company,status,review_note,email_verified_at,created_at,stripe_customer_id,delisted_at").eq("user_id", user.id).maybeSingle();
   if (lookupError) throw new RentalError("Could not load your provider account.", 503);
-  if (!provider || !user.email_confirmed_at) throw new RentalError("Confirm your rental account email first.", 403);
+  if (!provider || !user.email_confirmed_at || (actor && !actor.emailVerified)) throw new RentalError("Confirm your rental account email first.", 403);
   if (!provider.email_verified_at) {
     const confirmed = await db.from("rental_providers").update({email_verified_at:user.email_confirmed_at}).eq("user_id",user.id).is("email_verified_at",null).select("user_id");
     checkDb(confirmed.error);
@@ -47,6 +50,7 @@ export async function rentalBody(request: Request, max = 150000) {
 }
 export function rentalFailure(error: unknown) {
   if (error instanceof RentalError) return rentalJson({ error: error.message }, error.status);
+  if (error instanceof AccountError) return rentalJson({ error: error.message }, error.status);
   if (error instanceof ZodError) return rentalJson({ error: error.issues[0]?.message ?? "Check the property details." }, 400);
   console.error("[rentals]", error instanceof Error ? error.message : "Request failed");
   return rentalJson({ error: "Could not complete that action. Please retry." }, 503);

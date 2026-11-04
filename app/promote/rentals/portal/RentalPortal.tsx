@@ -13,9 +13,12 @@ import s from "./portal.module.css";
 import RentalAnalytics from "@/app/components/rentals/RentalAnalytics";
 import type { AnalyticsReport } from "@/app/lib/rentals/analytics";
 import { rentalWizardGaps } from "@/app/lib/rentals/propertyCompletion";
+import { supabase } from "@/app/lib/lib/supabaseClient";
+import { accountFetch,sharedAuthEnabledClient } from "@/app/lib/account/client";
 
 // A distinct storage key deliberately keeps provider and Hub member sessions apart.
-const rentalAuth=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL??"https://placeholder.supabase.co",process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY??"placeholder-anon-key",{auth:{storageKey:"eodhub-rentals-auth-v1",persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+const legacyRentalAuth=createClient(process.env.NEXT_PUBLIC_SUPABASE_URL??"https://placeholder.supabase.co",process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY??"placeholder-anon-key",{auth:{storageKey:"eodhub-rentals-auth-v1",persistSession:true,autoRefreshToken:true,detectSessionInUrl:false}});
+const rentalAuth=sharedAuthEnabledClient()?supabase:legacyRentalAuth;
 async function loadAnalytics(query:string,signal?:AbortSignal):Promise<AnalyticsReport>{
   const{data}=await rentalAuth.auth.getSession();if(!data.session)throw new Error("Sign in to your rental account.");
   const response=await fetch(`/api/rentals/portal/analytics?${query}`,{signal,headers:{Authorization:`Bearer ${data.session.access_token}`},cache:"no-store"});
@@ -45,8 +48,13 @@ export default function RentalPortal(){
   const load=useCallback(async()=>{setDashboard(await api());},[]);
   useEffect(()=>{let active=true;void(async()=>{try{
     const hash=new URLSearchParams(window.location.hash.slice(1));
-    if(hash.has("token_hash")){setMode("confirm");setToken(hash.get("token_hash")??"");history.replaceState(null,"",window.location.pathname);return;}
-    const {data}=await rentalAuth.auth.getSession();if(data.session){if(!isRentalIdentity(data.session.user)){await rentalAuth.auth.signOut({scope:"local"});return;}
+    if(hash.has("token_hash")){if(sharedAuthEnabledClient()){location.replace(`/account/sign-in?portal=rentals&next=${encodeURIComponent("/account?portal=rentals")}#token_hash=${encodeURIComponent(hash.get("token_hash")??"")}`);return;}setMode("confirm");setToken(hash.get("token_hash")??"");history.replaceState(null,"",window.location.pathname);return;}
+    const {data}=await rentalAuth.auth.getSession();
+    if(sharedAuthEnabledClient()){
+      if(!data.session){location.replace("/account/sign-in?portal=rentals");return;}
+      const account=await accountFetch(supabase);if(!account.rental){location.replace("/account?portal=rentals");return;}
+    }
+    if(data.session){if(!sharedAuthEnabledClient()&&!isRentalIdentity(data.session.user)){await rentalAuth.auth.signOut({scope:"local"});return;}
       const query=new URLSearchParams(window.location.search);if(query.has("checkout")){await api({action:"confirm_checkout",sessionId:query.get("checkout")});setNotice("Your properties are submitted. No charges are made until approval.");history.replaceState(null,"",window.location.pathname);}
       if(active)await load();
     }
@@ -73,8 +81,10 @@ export default function RentalPortal(){
   function startProperty(row?:PropertyRow){setEditing({id:row?.id??null,revision:row?.revision??1,draft:row?.draft??{state:"FL",installation:"Eglin AFB / EOD school",propertyType:"House",rentPeriod:"month",priceBasis:"property",bedrooms:1,bathrooms:1,minimumLeaseMonths:9,deposit:0,company:dashboard?.provider.company??"",contactName:dashboard?.provider.full_name??"",contactPhone:dashboard?.provider.phone??"",contactEmail:dashboard?.provider.email??"",amenities:[],photos:[],militaryLeaseAccepted:false,photoRightsAccepted:false}});setError("");setNotice("");}
   async function saveDraft(draft:PropertyDraft,exit=false,cart=false){if(!editing)return false;setBusy(true);setError("");try{const result=await api({action:"save",id:editing.id,revision:editing.revision,draft});const existing=properties.find(p=>p.id===result.id);const editSubmission=cart&&existing?.published&&listingHasPaidAccess(existing)&&!rentalNeedsNewTerm(existing);if(editSubmission)await api({action:"submit_edit",id:result.id});setEditing(exit?null:{id:result.id,revision:editing.id?editing.revision+1:1,draft});await load();if(cart)setTab(editSubmission?"properties":"cart");setNotice(editSubmission?"Changes submitted for review. Your approved listing stays live.":exit?"Property saved.":"Draft saved.");return true;}catch(e){setError(e instanceof Error?e.message:"Could not save draft.");return false;}finally{setBusy(false);}}
   const pageStyle={"--portal-bg":t.bg,"--portal-surface":t.surface,"--portal-text":t.text,"--portal-muted":t.textMuted,"--portal-border":t.border,"--portal-input":t.input} as CSSProperties;
+  if(sharedAuthEnabledClient()&&!loading&&!dashboard)return <div className={s.page} style={pageStyle}><main className={s.main}><section className={s.authCard}><h1>Your property portal</h1><p>Use your EOD-HUB account to sign in or apply as a rental provider.</p>{error?<p role="alert" className={s.error}>{error}</p>:null}<Link className={s.primary} href="/account/sign-in?portal=rentals">Sign in or create account <ArrowRight size={17}/></Link><Link href="/promote/rentals">Browse rentals</Link></section></main></div>;
   return <div className={s.page} style={pageStyle}>
     <header className={s.header}><Link href="/promote/rentals" className={s.brand}><Home size={29}/><span>EOD-HUB<small>RENTALS / PROPERTY PORTAL</small></span></Link><div><Link href="/promote/rentals">Browse rentals <ArrowRight size={15}/></Link>{dashboard?<button onClick={async()=>{await rentalAuth.auth.signOut({scope:"local"});setDashboard(null);setEditing(null);}}><LogOut size={16}/> Sign out</button>:null}</div></header>
+    {sharedAuthEnabledClient()?<nav className={s.main} aria-label="Shared account"><Link href="/account">Account settings & portal access</Link></nav>:null}
     {loading?<p className={s.loading} role="status">Opening your property portal…</p>:<main className={s.main}>
       {error?<div className={s.error} role="alert">{error}</div>:null}{notice?<div className={s.notice} role="status">{notice}</div>:null}
       {!dashboard?<div className={s.authGrid}><section className={s.intro}><p className={s.eyebrow}>HOMES FOR THE NEXT ASSIGNMENT</p><h1>Your property.<br/><em>Our community.</em></h1><p>Reach EOD personnel and students through a rental listing built around their next chapter.</p><div className={s.introFact}><ShieldCheck/><span>A dedicated property account.<br/>A simple approval process.</span></div><div className={s.pricing}><div><strong>$10<small>/ month</small></strong><span>per property</span></div><div><strong>$100<small>/ year</small></strong><span>per property · save $20</span></div></div><p className={s.muted}>One address covers all roommate openings. Optional $50 social campaign. Rental inquiries go directly to you.</p></section>

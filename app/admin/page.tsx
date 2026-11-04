@@ -31,6 +31,7 @@ import {goldCardStyle} from "../lib/jobHighlights";
 import JobReviewPreferencesPanel from "../components/admin/JobReviewPreferencesPanel";
 import { parseFacetOverrides, type JobFacetOverrides } from "../lib/jobFacets";
 import AdminRentalsPanel from "../components/admin/AdminRentalsPanel";
+import PortalAccessAdmin from "../components/admin/PortalAccessAdmin";
 import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
 import AdminCircuitPanel from "../components/admin/AdminCircuitPanel";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
@@ -487,7 +488,8 @@ type Tab =
   | "waitlist"
   | "lemon_lot"
   | "failed_auth"
-  | "rentals";
+  | "rentals"
+  | "portal_access";
 
 type NewsIntakeDebugPayload = {
   provider: string;
@@ -4125,6 +4127,7 @@ export default function AdminPage() {
                 ["failed_auth", "Failed Auth", pendingCounts.failedAuth],
               ] as const).map(([value, label, count]) => <option key={value} value={value}>{label}{count > 0 ? ` (${formatNavBadgeCount(count)})` : ""}</option>)}
               {isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized }) ? <option value="rentals">Rentals</option> : null}
+              {process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED === "1" && isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized }) ? <option value="portal_access">Portal access</option> : null}
             </select>
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: t.textMuted }}>
@@ -4187,6 +4190,7 @@ export default function AdminPage() {
             Lemon Lot
           </button>
           {isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized }) ? <button type="button" style={tabStyle("rentals")} onClick={() => setActiveTab("rentals")}>Rentals</button> : null}
+          {process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED === "1" && isOwnerAdmin({ userId: currentAuthUser?.id, email: currentAuthUser?.email, isAdmin: authorized }) ? <button type="button" style={tabStyle("portal_access")} onClick={() => setActiveTab("portal_access")}>Portal access</button> : null}
           <button type="button" style={tabStyle("failed_auth")} onClick={() => setActiveTab("failed_auth")}>
             Failed Auth
             {tabNotifyBadge(pendingCounts.failedAuth)}
@@ -4199,6 +4203,7 @@ export default function AdminPage() {
         </div>
 
         {activeTab === "rentals" && <AdminRentalsPanel />}
+        {activeTab === "portal_access" && process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED === "1" && <PortalAccessAdmin />}
 
         {/* ── BUSINESSES TAB ── */}
         {activeTab === "businesses" && (

@@ -116,7 +116,7 @@ export async function linkOAuthIdentity(
     return { data, error };
   }
 
-  const redirectTo = `${window.location.origin}${nextPath}`;
+  const redirectTo = buildOAuthCallbackRedirect(nextPath);
   oauthDebugLog("web_link_start", { provider, redirectTo, nextPath });
   return supabase.auth.linkIdentity({
     provider,

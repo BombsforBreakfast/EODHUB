@@ -189,7 +189,14 @@ export default function OnboardingPage() {
     });
   }
 
+  async function sharedOnboardingUpload(file:File,kind:"photo"|"certificate"){
+    const form=new FormData();form.set("file",file);form.set("kind",kind);
+    const {data}=await supabase.auth.getSession();
+    const response=await fetch("/api/account/onboarding-upload",{method:"POST",headers:{Authorization:`Bearer ${data.session?.access_token??""}`},body:form});
+    const value=await response.json();if(!response.ok)throw new Error(value.error||"Could not upload this file.");return value;
+  }
   async function uploadOnboardingProfilePhoto(file: File, ownerUserId: string): Promise<string> {
+    if(authUser?.role && authUser.role!=="authenticated")return (await sharedOnboardingUpload(file,"photo")).url;
     const prepared = await prepareAvatarUploadFile(file);
     if (!prepared.ok) throw new Error(prepared.error);
     const uploadFile = prepared.file;
@@ -225,6 +232,7 @@ export default function OnboardingPage() {
     file: File,
     ownerUserId: string,
   ): Promise<{ path: string; fileName: string }> {
+    if(authUser?.role && authUser.role!=="authenticated")return sharedOnboardingUpload(file,"certificate");
     const prepared = await prepareEmployerDocumentUpload(file);
     if (!prepared.ok) throw new Error(prepared.error);
     const uploadFile = prepared.file;
@@ -378,6 +386,7 @@ export default function OnboardingPage() {
       // Admin verification overrides incomplete signup — send them into the app
       // even if service/company is missing or must_complete_onboarding is stale.
       if (profile && hasFullPlatformAccess(profile)) {
+        if(user.role!=="authenticated")await supabase.auth.refreshSession();
         window.location.href = "/";
         return;
       }

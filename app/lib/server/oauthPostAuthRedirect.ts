@@ -9,6 +9,8 @@ import {
 } from "@/app/lib/onboardingGate";
 import { resolveAuthUserEmail } from "@/app/lib/auth/oauthProviders";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
+import { sharedAuthEnabled } from "../account/server";
+import { safeAccountReturn } from "../account/access";
 
 /**
  * Shared post-OAuth routing after the session exists (client or server exchange).
@@ -19,6 +21,9 @@ export async function resolveOAuthPostAuthDestination(
   next: string,
   origin: string,
 ): Promise<{ destination: string; oauthEmail: string | null; profileError: string | null }> {
+  if(sharedAuthEnabled() && (next==="/account" || next.startsWith("/account/") || next.startsWith("/account?"))) {
+    return {destination:safeAccountReturn(next),oauthEmail:resolveAuthUserEmail(user),profileError:null};
+  }
   let destination = next;
   let oauthEmail = resolveAuthUserEmail(user);
 
