@@ -7,7 +7,8 @@ import { feedImageDisplayUrl } from "../lib/storageImageUrl";
 import { attachmentRenderKindFromUrl, isVideoUrl } from "../lib/uploadLimits";
 import type { PostAttachment, PostAttachmentKind } from "../lib/postAttachments";
 import { getAccessToken } from "../lib/lib/supabaseClient";
-import { muxPosterUrl, type FeedVideoStatus } from "../lib/feedVideoUrl";
+import { muxFeedVideoUrl, muxPosterUrl, type FeedVideoStatus } from "../lib/feedVideoUrl";
+import FeedImageGalleryModal from "./FeedImageGalleryModal";
 import { FEED_SINGLE_IMAGE_MAX_HEIGHT, feedVideoShellContainStyle } from "../lib/feedLayout";
 import { captureVideoFramePreviewUrl, videoPreviewSourceUrl } from "../lib/videoFramePreview";
 
@@ -61,6 +62,7 @@ export function FeedMediaAttachment({
   loading = "lazy",
   fetchPriority = "auto",
 }: Props) {
+  const [expandedVideoUrl, setExpandedVideoUrl] = useState<string | null>(null);
   const detectedKind = attachmentRenderKindFromUrl(attachment.url);
   const kind: PostAttachmentKind =
     attachment.kind && attachment.kind !== "other"
@@ -76,7 +78,24 @@ export function FeedMediaAttachment({
               : "other";
 
   if (kind === "video" || isVideoUrl(attachment.url)) {
-    return <FeedVideoAttachment attachment={attachment} style={style} deferLoad={deferVideoLoad} />;
+    return (
+      <>
+        <FeedVideoAttachment
+          attachment={attachment}
+          style={style}
+          deferLoad={deferVideoLoad}
+          onOpenVideo={setExpandedVideoUrl}
+        />
+        <FeedImageGalleryModal
+          open={expandedVideoUrl !== null}
+          images={expandedVideoUrl ? [expandedVideoUrl] : []}
+          index={0}
+          onClose={() => setExpandedVideoUrl(null)}
+          onPrev={() => {}}
+          onNext={() => {}}
+        />
+      </>
+    );
   }
 
   if (kind === "image" || (kind === "cad3d" && attachment.renderUrl !== attachment.url)) {
@@ -189,10 +208,12 @@ function FeedVideoAttachment({
   attachment,
   style,
   deferLoad,
+  onOpenVideo,
 }: {
   attachment: Props["attachment"];
   style?: CSSProperties;
   deferLoad: boolean;
+  onOpenVideo: (url: string) => void;
 }) {
   const [active, setActive] = useState(!deferLoad);
   const [aspectRatio, setAspectRatio] = useState("16 / 9");
@@ -270,7 +291,11 @@ function FeedVideoAttachment({
   function handlePlayClick(e: MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
-    setActive(true);
+    // Use the latest polled playback ID, including videos that finished processing
+    // after this feed card mounted. Keep the thumbnail unloaded beneath the viewer.
+    onOpenVideo(muxState.playbackId && attachment.muxVideoId
+      ? muxFeedVideoUrl(attachment.muxVideoId, "ready", muxState.playbackId)
+      : attachment.url);
   }
 
   if (!active) {

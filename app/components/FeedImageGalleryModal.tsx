@@ -94,6 +94,9 @@ export default function FeedImageGalleryModal({
     <div
       role="presentation"
       onClick={(e) => {
+        // Portal events still bubble through the thumbnail's React ancestors.
+        // Closing the viewer must not activate the underlying feed card again.
+        e.stopPropagation();
         if (e.target === e.currentTarget) onClose();
       }}
       style={{
@@ -109,7 +112,7 @@ export default function FeedImageGalleryModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Image gallery"
+        aria-label={isVideoUrl(currentUrl) ? "Video player" : "Image gallery"}
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
         style={{
@@ -141,6 +144,7 @@ export default function FeedImageGalleryModal({
                   display: "block",
                   background: "#000",
                   boxSizing: "border-box",
+                  "--media-object-fit": "contain",
                 }}
               />
             ) : muxVideo ? (
