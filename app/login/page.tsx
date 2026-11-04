@@ -1435,7 +1435,7 @@ function OAuthProviderButtons({
         disabled={disabled}
         aria-label={googleLabel}
         title={googleLabel}
-        style={{ ...buttonSecondary, width: 48, height: 48, minWidth: 48, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+        style={{ ...buttonSecondary, width: 53, height: 53, minWidth: 53, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
       >
         <GoogleIcon />
       </button>
@@ -1445,7 +1445,7 @@ function OAuthProviderButtons({
         disabled={disabled}
         aria-label={appleLabel}
         title={appleLabel}
-        style={{ ...buttonSecondary, width: 48, height: 48, minWidth: 48, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+        style={{ ...buttonSecondary, width: 53, height: 53, minWidth: 53, padding: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
       >
         <AppleIcon />
       </button>
