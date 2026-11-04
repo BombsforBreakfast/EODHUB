@@ -33,8 +33,6 @@ import {
   loginFailureMessage,
   isLoginEmailNotFoundError,
   isLoginCredentialMismatchError,
-  LOGIN_EMAIL_NOT_FOUND_BODY,
-  LOGIN_EMAIL_NOT_FOUND_TITLE,
   mapSupabaseAuthError,
   oauthAccountExistsMessage,
   SIGNUP_USER_MESSAGES,
@@ -897,7 +895,6 @@ export default function LoginPage() {
         </h1>
       )}
 
-      {process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED === "1" ? <p style={{fontSize:13,color:t.textMuted,margin:"14px 0"}}><a href="/account/sign-in?portal=hub" style={{color:"inherit",textDecoration:"underline"}}>Shared sign-in for Hub, Rentals & Events · email links available</a></p> : null}
       {/* ── Forgot password flow ── */}
       {mode === "forgot" && (
         <div style={{ marginTop: 20 }}>
@@ -985,10 +982,10 @@ export default function LoginPage() {
               }}
             >
               <div style={{ fontSize: 16, fontWeight: 800, color: t.text, lineHeight: 1.35 }}>
-                {LOGIN_EMAIL_NOT_FOUND_TITLE}
+                Create your account
               </div>
               <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.55, color: t.text }}>
-                {LOGIN_EMAIL_NOT_FOUND_BODY}
+                Confirm your password below to get started.
               </div>
             </div>
           )}
@@ -1004,8 +1001,7 @@ export default function LoginPage() {
           }}
           style={{ display: "grid", gap: mode === "login" ? 9 : 12, marginTop: mode === "login" ? 0 : 8 }}
         >
-          {mode === "login" && (
-            <>
+          <>
               <OAuthProviderButtons
                 disabled={submitting}
                 buttonSecondary={buttonSecondary}
@@ -1027,7 +1023,6 @@ export default function LoginPage() {
                 <div style={{ flex: 1, height: 1, background: t.border }} />
               </div>
             </>
-          )}
 
           <input
             type="email"
@@ -1035,6 +1030,8 @@ export default function LoginPage() {
             value={email}
             onChange={(e) => {
               setEmail(e.target.value);
+              setMode("login");
+              setConfirmPassword("");
               setSignupError(null);
               setOauthExistsProviders(null);
               setOauthSetupSent(false);
@@ -1129,10 +1126,7 @@ export default function LoginPage() {
                 style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
-                Login
-              </button>
-              <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("signup"); }} disabled={submitting} style={buttonSecondary}>
-                Need an account? Sign Up
+                Continue
               </button>
               <button
                 type="button"
@@ -1267,28 +1261,8 @@ export default function LoginPage() {
                 style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
-                Complete Signup
+                Continue
               </button>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-                <div style={{ flex: 1, height: 1, background: t.border }} />
-                <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
-                <div style={{ flex: 1, height: 1, background: t.border }} />
-              </div>
-              <OAuthProviderButtons
-                disabled={submitting}
-                buttonSecondary={buttonSecondary}
-                onGoogle={() => signInWithGoogleOAuth()}
-                onApple={() => signInWithAppleOAuth()}
-                googleLabel="Sign up with Google"
-                appleLabel="Sign up with Apple"
-              />
-              <AppleAuthHelperNote
-                open={appleHideEmailInfoOpen}
-                onToggle={() => setAppleHideEmailInfoOpen((prev) => !prev)}
-                textColor={t.text}
-                mutedColor={t.textMuted}
-                borderColor={t.border}
-              />
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("login"); }} disabled={submitting} style={buttonSecondary}>
                 Back to Login
               </button>
@@ -1525,24 +1499,26 @@ function OAuthProviderButtons({
   appleLabel: string;
 }) {
   return (
-    <div style={{ display: "grid", gap: 8 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
       <button
         type="button"
         onClick={onGoogle}
         disabled={disabled}
+        aria-label={googleLabel}
+        title={googleLabel}
         style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
       >
         <GoogleIcon />
-        {googleLabel}
       </button>
       <button
         type="button"
         onClick={onApple}
         disabled={disabled}
+        aria-label={appleLabel}
+        title={appleLabel}
         style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
       >
         <AppleIcon />
-        {appleLabel}
       </button>
     </div>
   );
