@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { jobListingCutoffIso } from "../jobRetention";
 import { chunkArray, JOB_IMPORT_WRITE_CHUNK } from "../jobImportBatch";
-import { excludedJobType, type JobTypeExclusion } from "../jobReviewPreferences";
+import { type JobTypeExclusion } from "../jobReviewPreferences";
 import { loadJobTypeExclusions } from "./jobReviewPreferences";
 
 export type JobMemoryIdentity = {
@@ -123,7 +123,7 @@ export async function filterRememberedJobs<T>(
   let skipped = 0;
   for (const candidate of candidates) {
     const candidateIdentity = identity(candidate);
-    if (excludedJobType(candidateIdentity.title, state.exclusions)) { skipped++; continue; }
+
     const match = state.match(candidateIdentity);
     if (!match) retained.push(candidate);
     else {

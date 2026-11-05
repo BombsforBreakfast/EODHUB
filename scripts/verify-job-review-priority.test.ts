@@ -1,33 +1,30 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { scoreJobReview, jobReviewPage } from "../app/lib/jobReviewPriority";
-const job = (title: string, description = "") => ({ id: title, title, description, company_name: "Example employer", created_at: "2026-10-30T00:00:00Z" });
-test("direct technician titles receive top priority and other specialty titles remain strong", () => {
-  for (const title of ["EOD Technician", "Explosive Ordnance Disposal Advisor", "Explosives Handler", "IED Trainer", "CIED Specialist", "C-IED Specialist", "CBRN Instructor", "CBRNE Advisor", "CWMD Manager", "WMD Specialist", "Ordnance Coordinator", "UXO Technician", "UAS Operator", "Drone Operator", "Mine Action Manager", "Humanitarian Mine Action Advisor", "Demining Supervisor"]) {
-    assert.equal(scoreJobReview(job(title)).score, ["EOD Technician","UXO Technician"].includes(title)?100:70, title);
-    assert.equal(scoreJobReview(job(title)).band, "high", title);
+const job = (title: string, description = "") => ({ id: title, title, description });
+test("explicit phrases in titles and descriptions score 100 without role or degree vetoes", () => {
+  for (const phrase of ["Explosive Ordnance Disposal", "Explosive Ordnance", "Countering Weapons of Mass Destruction", "Counter Weapons of Mass Destruction"]) {
+    for (const row of [job(`${phrase} Analyst`), job("Police Scientist Intern", `Requires ${phrase}. Bachelor's degree in chemistry required.`)]) assert.equal(scoreJobReview(row).score,100,JSON.stringify(row));
   }
+  for (const title of ["UXO Analyst", "Bomb Tech", "Bomb Technician", "CWMD Scientist", "C-WMD Advisor"]) assert.equal(scoreJobReview(job(title)).score,100,title);
 });
-test("description-only evidence is capped below strong matches and repetitions do not inflate scores", () => {
-  assert.equal(scoreJobReview(job("Program Manager", "EOD UXO CBRN WMD UAS mine action explosives")).score, 60);
-  assert.equal(scoreJobReview(job("Program Manager", "EOD UXO CBRN WMD UAS mine action explosives")).band, "possible");
-  assert.equal(scoreJobReview(job("CBRN CBRNE CBRN Instructor")).score, scoreJobReview(job("CBRN Instructor")).score);
-  assert.equal(scoreJobReview(job("Explosive Ordnance Disposal Advisor")).score, scoreJobReview(job("EOD Advisor")).score);
-  assert.equal(scoreJobReview(job("EOD Technician", "EOD ".repeat(100))).score, 100);
+test("weighted signals remain below explicit matches and keyword repetition does not stack", () => {
+  assert.equal(scoreJobReview(job("Supervisor", "UXO experience")).score,85);
+  assert.equal(scoreJobReview(job("Explosive Safety Analyst")).score,75);
+  assert.equal(scoreJobReview(job("Supervisor", "Explosives experience")).score,60);
+  assert.equal(scoreJobReview(job("Supervisor", "UXO ".repeat(30))).score,85);
 });
-test("incidental words, employer names, HTML code and hard exclusions do not become priority jobs", () => {
-  for (const title of ["Security Clearance Coordinator", "Property Disposal Manager", "Classified Systems Engineer", "Direct Action Coordinator"]) assert.equal(scoreJobReview(job(title)).score, 0, title);
-  assert.equal(scoreJobReview({ ...job("Accounts Assistant"), company_name: "EOD employer" }).score, 0);
-  assert.equal(scoreJobReview(job("Assistant", "<script>EOD</script><style>UXO</style>")).score, 0);
-  assert.equal(scoreJobReview(job("EOD Analyst", "EOD UXO WMD")).score, 0);
-  assert.equal(scoreJobReview(job("IT Specialist - UAS", "EOD")).score, 0);
+test("word boundaries and visible content prevent accidental matches", () => {
+  for (const title of ["UXOLOGY", "Bomb Technical Writer", "Countering Weapons of Mass Destructionology", "Unexplosive product"]) assert.equal(scoreJobReview(job(title)).score,0,title);
+  assert.equal(scoreJobReview(job("Coordinator", "<script>UXO</script><style>explosive ordnance</style>")).score,0);
+  assert.equal(scoreJobReview(job("Coordinator", "<p>Explosive <b>Ordnance</b> Disposal</p>")).score,100);
 });
-test("filtering and global ranking happen before pagination, with counts for every tier", () => {
-  const rows = [job("Accounts Assistant"), job("UAS Operator", "UAS work"), job("EOD Technician"), job("Program Manager", "CWMD mission")];
-  const page = jobReviewPage(rows, "high", 0, 1);
-  assert.equal(page.jobs[0].title, "EOD Technician");
-  assert.equal(page.totalCount, 2);
-  assert.deepEqual(page.priorityCounts, { high: 2, possible: 1, low: 1, all: 4, gold:0 });
-  assert.equal(jobReviewPage(rows, "high", 1, 1).jobs[0].title, "UAS Operator");
-  assert.equal(jobReviewPage(rows, "all", 0, 25).totalCount, 4);
+test("all jobs remain in globally ranked review across pagination and explicit priorities survive", () => {
+  const rows=[job("Office Manager"),job("UXO Analyst"),job("Supervisor","UXO"),job("Explosive Safety")];
+  const page=jobReviewPage(rows,"all",0,2);
+  assert.equal(page.totalCount,4);assert.equal(page.jobs[0].title,"UXO Analyst");assert.equal(page.jobs[1].review_priority.score,85);
+  assert.equal(jobReviewPage(rows,"all",2,2).jobs[1].title,"Office Manager");
+  const priorities={exclusions:[],signals:[],priorities:[{id:"yes",phrase:"office manager",mission_required:false,target_score:100 as const}]};
+  assert.equal(scoreJobReview(rows[0],priorities).score,100);
+  assert.equal(scoreJobReview({...rows[0],gold_highlight:true}).score,100);
 });

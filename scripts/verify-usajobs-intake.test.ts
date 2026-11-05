@@ -18,13 +18,13 @@ test("single-string duties and the old qualification-only response are retained"
   delete item.MatchedObjectDescriptor.UserArea;
   assert.equal(extractUSAJobsSummary(item),"Explosive ordnance disposal expertise.");
 });
-test("new matching is additive and preserves explicit title categories and exclusions", () => {
+test("positive intake preserves explicit title categories without role exclusions", () => {
   for (const title of ["MUNITIONS DISPOSAL SPECIALIST", "EXPLOSIVE SAFETY SPECIALIST", "EXPLOSIVES SAFETY SPECIALIST"]) {
     assert.equal(scoreUSAJobsJob({title,description:"",organizationName:"Defense"}).relevant,true);
     assert.equal(detectUSAJobsCategory(title,"CWMD mission"),"EOD");
   }
-  assert.equal(scoreUSAJobsJob({title:"ACCOUNTANT",description:"Financial statements and reporting.",organizationName:"Agency"}).relevant,false);
-  assert.equal(scoreUSAJobsJob({title:"NATIONAL GUARD RECRUITER",description:"CWMD programs",organizationName:"Army"}).relevant,false);
+  assert.equal(scoreUSAJobsJob({title:"ACCOUNTANT",description:"Financial statements and reporting.",organizationName:"Agency"}).relevant,true);
+  assert.equal(scoreUSAJobsJob({title:"NATIONAL GUARD RECRUITER",description:"CWMD programs",organizationName:"Army"}).relevant,true);
   assert.equal(detectUSAJobsCategory("Emergency Management Specialist","CWMD doctrine"),"EM");
   assert.equal(detectUSAJobsCategory("UXO TECHNICIAN","CWMD doctrine"),"UXO");
   assert.equal(detectUSAJobsCategory("CBRN SPECIALIST","CWMD doctrine"),"CBRN");

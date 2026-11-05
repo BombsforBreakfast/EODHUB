@@ -7,9 +7,8 @@ export function isReliefWebJobSuppressed(
   sourceType: string | null | undefined,
   importMetadata: ReliefWebImportMeta
 ): boolean {
-  if (sourceType?.toLowerCase() !== "reliefweb") return false;
-  if (importMetadata?.suppressed === true) return true;
-  return importMetadata?.relevance_confidence === "low";
+  void sourceType; void importMetadata;
+  return false;
 }
 
 export function reliefWebConfidenceBadge(confidence: string | undefined): {

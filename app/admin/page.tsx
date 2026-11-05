@@ -884,7 +884,7 @@ export default function AdminPage() {
   const [excludeJobType, setExcludeJobType] = useState<Job | null>(null);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsTotal, setJobsTotal] = useState(0);
-  const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all" | "gold">("high");
+  const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all" | "gold">("all");
   const [jobsPriorityCounts, setJobsPriorityCounts] = useState({ high: 0, possible: 0, low: 0, all: 0, gold:0 });
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
@@ -5049,7 +5049,6 @@ export default function AdminPage() {
                         Delete
                       </button>
                       {!job.is_approved && <button style={actionBtn("#b45309")} disabled={!!actionLoading || batchActing} onClick={() => rejectJob(job.id, true)}>Not relevant</button>}
-                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobType(job)}>Exclude exact title</button>
                     </div>
                   </div>
                   {editingJob?.id === job.id && (

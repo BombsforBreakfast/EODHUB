@@ -1,48 +1,24 @@
+import { positiveJobSignals } from "./jobPositiveSignals";
+import type { JobReviewPreferences } from "./jobReviewPreferences";
 import {jobMissionPriority} from "./jobMissionPriority";
 import type {JobGold} from "./jobHighlights";
-import { jobImportExclusionReason } from "./jobImportExclusions";
-import { jobDegreePenalty } from "./jobDegreeRequirements";
-import { excludedJobType, learnedJobAdjustment, type JobReviewPreferences } from "./jobReviewPreferences";
 
 export type JobReviewBand = "high" | "possible" | "low";
 export type JobReviewFilter = JobReviewBand | "all" | "gold";
 export type ReviewableJob = JobGold & { id: string; title?: string | null; company_name?: string | null; description?: string | null; og_description?: string | null; created_at?: string | null };
-const families: Array<{ label: string; pattern: RegExp }> = [
-  { label: "EOD", pattern: /\b(?:eod|explosive ordnance disposal|bomb tech(?:nician)?s?)\b/i },
-  { label: "UXO", pattern: /\b(?:uxo|unexploded ordnance)\b/i },
-  { label: "IED / C-IED", pattern: /\b(?:ieds?|iedd|cied|c ied|counter ied|improvised explosive devices?)\b/i },
-  { label: "CBRN / CBRNE", pattern: /\bcbrne?\b/i },
-  { label: "CWMD / WMD", pattern: /\b(?:cwmd|c wmd|wmd|counter weapons of mass destruction|weapons of mass destruction)\b/i },
-  { label: "UAS / drone", pattern: /\b(?:uas|uav|cuas|c uas|counter uas|drones?|unmanned aerial(?: systems?| vehicles?)?)\b/i },
-  { label: "Mine action", pattern: /\b(?:mine action|humanitarian mine action|hma|demining|deminers?|mine clearance|explosive ordnance risk education|eore)\b/i },
-  { label: "Explosives / ordnance", pattern: /\b(?:explosives?|ordnance)\b/i },
-];
 function clean(text: string): string {
   return text.normalize("NFKC").replace(/<script\b[^>]*>[\s\S]*?<\/script>|<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]*>/g, " ").replace(/&(?:nbsp|amp);/gi, " ")
     .replace(/[\u2010-\u2015-]/g, " ").replace(/\s+/g, " ").trim();
 }
-function hits(text: string): string[] {
-  const found = families.filter(family => family.pattern.test(text)).map(family => family.label);
-  // Do not award the same explosive/ordnance phrase twice under its generic wording.
-  return found.some(label => ["EOD", "UXO", "IED / C-IED", "Mine action"].includes(label))
-    ? found.filter(label => label !== "Explosives / ordnance") : found;
-}
 export function scoreJobReview(job: ReviewableJob, preferences?: JobReviewPreferences) {
-  const excluded = jobImportExclusionReason(job.title ?? "", job.company_name ?? "") || excludedJobType(job.title ?? "", preferences?.exclusions ?? [])?.phrase;
-  if (excluded) return { score: 0, band: "low" as JobReviewBand, reasons: [`Excluded: ${excluded}`], matchedKeywords: [] as string[] };
-  const title = hits(clean(job.title ?? ""));
-  const body = hits(clean(job.description || job.og_description || ""));
-  const baseScore = title.length ? Math.min(100, 70 + Math.min(10, (title.length - 1) * 5) + (body.length ? 15 : 0))
-    : body.length ? Math.min(60, 40 + (body.length - 1) * 5) : 0;
-  const degree = jobDegreePenalty([job.description, job.og_description].filter(Boolean).join("\n"));
-  const learning = learnedJobAdjustment(job.title ?? "", preferences?.signals ?? []);
-  const mission=jobMissionPriority(clean(job.title??""),clean(job.description||job.og_description||""),preferences?.priorities??[],job.id);
-  const score = Math.max(job.gold_highlight?100:0,mission.score,0, Math.min(title.length ? 100 : 69, baseScore - degree.points + learning.points));
+  const result = positiveJobSignals(job.title ?? "", job.description || job.og_description || "");
+  const mission = jobMissionPriority(clean(job.title ?? ""), clean(job.description || job.og_description || ""), preferences?.priorities ?? [], job.id);
+  const score = Math.max(job.gold_highlight ? 100 : 0, mission.score, result.score);
   return {
     score, band: (score >= 70 ? "high" : score >= 40 ? "possible" : "low") as JobReviewBand,
-    reasons: [...(job.gold_highlight?["100: Manually selected as an EOD-HUB gold highlight"]:[]),...(mission.reason?[mission.reason]:[]),...(degree.reason ? [mission.score||job.gold_highlight?`Education note: ${degree.reason.replace(/^[+\-\u2212]?\d+:\s*/,"")} (priority takes precedence)`:degree.reason] : []), ...(learning.reason ? [learning.reason] : []), ...title.map(term => `${term} in title`), ...body.map(term => `${term} in description`), ...(!title.length && body.length && !mission.score ? ["Description-only match; confirm the actual duties"] : []), ...(!title.length && !body.length && !mission.score && !job.gold_highlight ? ["No priority keyword in the returned title or description"] : [])],
-    matchedKeywords: [...new Set([...title, ...body])],
+    reasons: [...(job.gold_highlight ? ["100: Manually selected Gold highlight"] : []), ...(mission.reason ? [mission.reason] : []), ...result.reasons, ...(score ? [] : ["No positive signal; retained for manual review"])],
+    matchedKeywords: result.matchedKeywords,
   };
 }
 export function jobReviewPage<T extends ReviewableJob>(rows: T[], filter: JobReviewFilter, offset: number, limit: number, preferences?: JobReviewPreferences) {

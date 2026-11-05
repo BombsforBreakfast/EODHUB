@@ -12,20 +12,20 @@ test("requested management/policy roles require body mission evidence and rank s
     assert.equal(scoreJobReview({id:"x",title,description:"Commercial office work."}).score,0);
   }
 });
-test("Chemical Security and Elimination SME variants are 100 despite specialist degree requirements",()=>{
+test("Chemical Security and Elimination SME positive priorities remain 100 without degree penalties",()=>{
   for(const title of ["Chemical Security and Elimination Subject Matter Expert (SME)","A&AS Chemical Security and Elimination SME Jobs","A&AS Chemical Security and Elimination SME with Security Clearance","Chemical Security & Elimination Subject Matter Expert with Security Clearance"]){
-    const result=scoreJobReview({id:"x",title,description:"Technical expertise in CWMD/CBRN operations and chemical detection. Master's degree in chemistry required."});assert.equal(result.score,100);assert.equal(result.band,"high");assert.match(result.reasons[0],/Chemical Security/);assert.ok(result.reasons.some(s=>s.includes("Education note")));
+    const result=scoreJobReview({id:"x",title,description:"Technical expertise in CWMD/CBRN operations and chemical detection. Master's degree in chemistry required."});assert.equal(result.score,100);assert.equal(result.band,"high");assert.match(result.reasons[0],/Chemical Security/);assert.ok(!result.reasons.some(s=>s.includes("Education note")));
   }
 });
 test("explicit EOD credentials beat the description-only cap without rewarding boilerplate or repetition",()=>{
   for(const text of ["Prior experience as an EOD technician required.","Qualifications: graduate of NAVSCOLEOD.","Graduate of Naval School EOD (NAVSCOLEOD)","Graduate of Naval School, Explosive Ordnance Disposal.","Demonstrate advanced understanding of chemistry fundamentals (Civil Support Team, Master EOD Technician, Hazmat Specialist)."]){assert.equal(scoreJobReview({id:"x",title:"Mission Specialist",description:text}).score,100,text);}
-  for(const text of ["EOD ".repeat(100),"Prior EOD technician experience is not required.","Experience working with EOD technicians.","Our company was founded by a Master EOD Technician."]){assert.ok(scoreJobReview({id:"x",title:"Mission Specialist",description:text}).score<70,text);}
+  for(const text of ["EOD ".repeat(100),"Prior EOD technician experience is not required.","Experience working with EOD technicians.","Our company was founded by a Master EOD Technician."]){assert.ok(scoreJobReview({id:"x",title:"Mission Specialist",description:text}).score<100,text);}
 });
-test("explicit learned priority rules are conditional, nonstacking and subordinate to exclusions",()=>{
+test("explicit positive priorities survive legacy exclusions and do not stack",()=>{
   const rule={id:"rule",phrase:"mission advisor",mission_required:true,target_score:90 as const},preferences={exclusions:[],signals:[],priorities:[rule]};
   assert.equal(scoreJobReview({id:"x",title:"Senior Mission Advisor",description:"CWMD support"},preferences).score,90);
   assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"Office support"},preferences).score,0);
-  assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"CWMD"},{...preferences,exclusions:[{id:"no",phrase:"mission advisor"}]}).score,0);
+  assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"CWMD"},{...preferences,exclusions:[{id:"no",phrase:"mission advisor"}]}).score,90);
   assert.equal(scoreJobReview({id:"x",title:"Senior Mission Advisor",description:"CWMD"},{...preferences,exclusions:[{id:"no",phrase:"mission advisor"}]}).score,90);
   assert.equal(scoreJobReview({id:"x",title:"Mission Advisor",description:"CWMD"},{...preferences,priorities:[rule,{...rule,id:"another"}]}).score,90);
 });
@@ -40,7 +40,7 @@ test("SOAE qualification wording scores 100 when present, including desired qual
     assert.equal(scoreJobReview({id:"soae",title,description}).score,100,description);
   }
   for(const description of ["EOD qualification is not required.","Experience working with EOD-qualified personnel.","Our company was founded by an Explosive Ordnance Disposal qualified veteran."]){
-    assert.ok(scoreJobReview({id:"soae",title,description}).score<70,description);
+    assert.equal(scoreJobReview({id:"soae",title,description}).score,description.includes("Explosive Ordnance Disposal")?100:70,description);
   }
   assert.ok(scoreJobReview({id:"soae",title,description:"Project analyst supporting threat reduction."}).score<70,"A title alone does not claim an omitted qualification");
 });

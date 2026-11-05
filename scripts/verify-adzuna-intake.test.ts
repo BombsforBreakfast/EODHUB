@@ -10,22 +10,22 @@ const generic = (title:string, description="Company introduction and general job
 
 test("generic EOD support roles survive a truncated API snippet when exact indexed search matches",()=>{
   for(const title of ["Configuration Management Specialist","Operations Coordinator","Associate Product Manager","Systems Safety Engineer III","Force Development Specialist","Combat Skills Instructor","Digital Forensics Examiner"]){
-    assert.equal(scoreAdzunaJob(generic(title)).relevant,false);
+    assert.equal(scoreAdzunaJob(generic(title)).relevant,true);
     const result=scoreAdzunaJob(generic(title),{intakeChannel:"body:eod@us"});
-    assert.equal(result.relevant,true,title);assert.ok(result.reasons.some(r=>r.includes("Indexed announcement")));
+    assert.equal(result.relevant,true,title);assert.equal(result.score,0,"A truncated excerpt remains available without claiming positive evidence");
   }
 });
 test("EOD in the returned text still works through all legacy channels",()=>{
   assert.equal(scoreAdzunaJob(generic("Associate Product Manager","Develop digital imaging systems for explosive ordnance disposal environments.")).relevant,true);
   assert.equal(scoreAdzunaJob(generic("EMF EOD Technician")).relevant,true);
 });
-test("unknown, broad, and forged country channel keys cannot bypass relevance",()=>{
+test("query channel keys do not add invented evidence or exclude review candidates",()=>{
   for(const intakeChannel of ["kw:random@us","co:unknown","body:not-registered@us","body:ctr@gb","body:eod","body:EOD@us","body:eod@us@untrusted"])
-    assert.equal(scoreAdzunaJob(generic("Accountant"),{intakeChannel}).relevant,false);
+    assert.equal(scoreAdzunaJob(generic("Accountant"),{intakeChannel}).relevant,true);
   assert.equal(adzunaIndexedPhrase("body:eod@gb"),"explosive ordnance disposal");
 });
-test("recruitment exclusions remain in force, and SOAE/CTR and safety specialties are recognized",()=>{
-  assert.equal(scoreAdzunaJob(generic("National Guard Recruiter"),{intakeChannel:"body:eod@us"}).relevant,false);
+test("recruitment titles stay reviewable, and SOAE/CTR and safety categories remain recognized",()=>{
+  assert.equal(scoreAdzunaJob(generic("National Guard Recruiter"),{intakeChannel:"body:eod@us"}).relevant,true);
   assert.equal(detectAdzunaCategory("Strategic Offensive Arms Elimination (SOAE) Expert"),"CWMD");
   assert.equal(detectAdzunaCategory("Ordnance Safety Technician III"),"Explosive Safety");
   assert.equal(detectAdzunaCategory("Program Analyst","","body:ctr@us"),"CWMD");
@@ -35,7 +35,7 @@ test("every existing market, channel and exclusion remains unchanged",()=>{
   const original=JSON.parse(fs.readFileSync("scripts/fixtures/adzuna-intake-baseline.json","utf8"));
   assert.deepEqual(ADZUNA_KEYWORD_CHANNELS,original.keyword);assert.deepEqual(ADZUNA_INTL_KEYWORD_CHANNELS,original.intl);
   assert.deepEqual(ADZUNA_COMPANY_CHANNELS,original.company);assert.deepEqual(ADZUNA_CATEGORY_CHANNELS,original.category);
-  assert.deepEqual(ADZUNA_COUNTRIES,original.countries);assert.equal(ADZUNA_WHAT_EXCLUDE,original.exclude);
+  assert.deepEqual(ADZUNA_COUNTRIES,original.countries);assert.equal(ADZUNA_WHAT_EXCLUDE,"");
   assert.ok(ADZUNA_DISCOVERY_CHANNELS.some(c=>c.phrase==="cooperative threat reduction"));
 });
 test("exact phrase requests are full-index searches with no title, category, or age restriction",async()=>{
@@ -46,7 +46,7 @@ test("exact phrase requests are full-index searches with no title, category, or 
   try{const result=await fetchAdzunaJobs({whatPhrase:"explosive ordnance disposal",country:"us",page:1});assert.equal(result.count,1);assert.equal(observed?.searchParams.get("what_phrase"),"explosive ordnance disposal");for(const name of ["title_only","category","max_days_old","what_exclude"])assert.equal(observed?.searchParams.has(name),false);}
   finally{globalThis.fetch=oldFetch;if(oldId===undefined)delete process.env.ADZUNA_APP_ID;else process.env.ADZUNA_APP_ID=oldId;if(oldKey===undefined)delete process.env.ADZUNA_APP_KEY;else process.env.ADZUNA_APP_KEY=oldKey;}
 });
-test("a rejected snippet is reconsidered once with normal moderation while analysts and scientists stay excluded",async()=>{
+test("search candidates, analysts and scientists all enter manual review without automatic approval",async()=>{
   const names=["ADZUNA_APP_ID","ADZUNA_APP_KEY","NEXT_PUBLIC_SUPABASE_URL","SUPABASE_SERVICE_ROLE_KEY","CRON_SECRET"];
   const saved=names.map(n=>process.env[n]),oldFetch=globalThis.fetch;
   ["test","test","https://db.example","test","secret"].forEach((v,i)=>process.env[names[i]]=v);
@@ -67,7 +67,8 @@ test("a rejected snippet is reconsidered once with normal moderation while analy
   };
   try{
     const response=await GET({headers:new Headers({Authorization:"Bearer secret"}),nextUrl:new URL("https://example.test/api/import-adzuna")} as unknown as NextRequest);
-    const body=await response.json();assert.equal(body.imported,1);assert.equal(writes.length,1);assert.equal(writes[0].is_approved,false);assert.equal(writes[0].adzuna_ad_id,"12345");
-    assert.equal((writes[0].import_metadata as Record<string,unknown>).indexed_phrase,"explosive ordnance disposal");
+    const body=await response.json();assert.equal(body.imported,3);assert.equal(writes.length,3);assert.equal(body.autoApproved,0);
+    assert.ok(writes.every(row=>row.is_approved===false));
+    assert.deepEqual(writes.map(row=>row.adzuna_ad_id),["12345","12346","12347"]);
   }finally{globalThis.fetch=oldFetch;names.forEach((n,i)=>{if(saved[i]===undefined)delete process.env[n];else process.env[n]=saved[i]});}
 });

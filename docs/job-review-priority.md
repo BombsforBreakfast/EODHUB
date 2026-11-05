@@ -1,17 +1,23 @@
-# Job review priority
+# Positive job review scoring
 
-The admin Jobs review queue opens in Strong matches and sorts highest score first across all sources. Possible matches, Low confidence and All jobs remain available with their own counts. Filtering and ranking happen before the existing 25-item pagination. No job is automatically approved or deleted because of its score. Public Jobs and intake recall are unchanged.
+Imported jobs require manual approval. Scores are review hints, never publication decisions. The admin queue defaults to **All**, globally sorted by score before pagination. High, possible, low and Gold filters remain optional; low-scoring jobs stay available.
 
-Scores are deterministic review points, not hiring probabilities. They are recomputed from current title and description, independently of provider-specific intake scores:
+| Positive evidence | Title | Description |
+| --- | ---: | ---: |
+| Explosive Ordnance Disposal (complete phrase) | 100 | 100 |
+| Explosive Ordnance (complete phrase) | 100 | 100 |
+| UXO / Unexploded Ordnance | 100 | 85 |
+| Bomb Tech / Bomb Technician | 100 | 85 |
+| CWMD / C-WMD | 100 | 75 |
+| Countering / Counter Weapons of Mass Destruction | 100 | 100 |
+| Explosive / explosives | 75 | 60 |
+| EOD acronym | 90 | 70 |
+| Other related mission evidence | 70 | 45 |
 
-- A title match starts at 70 points (Strong). Additional distinct specialty families add up to 10 points; description evidence adds 15.
-- Description-only matches start at 40 and cap at 60 (Possible), even with repeated keywords or many specialty families.
-- No priority keyword scores zero (Low). Generic clearance, disposal, direct action and employer names do not increase priority.
-- Existing hard exclusions always score zero and explain the exclusion.
+The strongest evidence wins; repetition does not multiply scores. Matching ignores case, normalizes punctuation and spacing, uses word boundaries, and strips markup/script/style content. Existing explicit mission priorities and manually selected Gold highlights may raise the score; they never lower it.
 
-High-priority specialties include EOD, UXO, IED/C-IED, CBRN/CBRNE, CWMD/WMD, explosives/ordnance, UAS/UAV/drone and humanitarian mine action/demining. Whole-word matches prevent incidental substrings, and repeated terms, synonyms and overlapping ordnance phrases do not inflate the score. Cards show the matching terms and their title/description locations.
+Degree requirements, learned feedback, saved exclusions, employer/role blacklists, and source-specific negative gates do not reduce scores or prevent intake. Adzuna negative query terms and LinkedIn's title-only requirement are disabled. ReliefWeb confidence is informational and cannot veto manual approval.
 
-The opt-in admin API query parameter `priority=high|possible|low|all` enables global ranking and tier counts. Callers omitting it keep the existing source-group ordering. The ranking path reads every eligible row in ordered batches, applies no data mutations, and returns only the requested page. Authorization and moderation-memory protections remain in place.
+Source queries, coverage, request limits, validation, duplicate handling and stale-listing retention remain in place. Approved current listings refresh rather than requeue. An individual manual deletion still removes that exact listing and its duplicate identity; it does not teach a title-wide exclusion or negative pattern.
 
-
-Gold highlights and explicit mission-role priorities add documented 90/100-point floors. See [Gold job highlights](job-gold-highlights.md) for the Chemical Security/Elimination SME, EOD credential and management/policy exceptions, custom tags and Admin teaching rules. Other description-only jobs retain the existing cap. Scores remain review aids; gold does not approve a listing.
+Automatic approval is disabled in importer hooks and the database RPC. The RPC returns null without changing data; application roles have no execution grant. Previously published jobs are preserved.

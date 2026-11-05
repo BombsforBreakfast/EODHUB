@@ -112,9 +112,8 @@ export const ADZUNA_CATEGORY_CHANNELS: AdzunaCategoryChannel[] = [
   },
 ];
 
-/** Excluded at API layer on keyword/category searches to reduce enlistment noise. */
-export const ADZUNA_WHAT_EXCLUDE =
-  "recruiter OR rotc OR enlistment OR \"basic training\" OR \"officer candidate\"";
+/** Source queries use positive search terms only. */
+export const ADZUNA_WHAT_EXCLUDE = "";
 
 export function adzunaKeywordChannelsForCountry(
   country: AdzunaCountryCode,

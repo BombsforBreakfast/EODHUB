@@ -33,12 +33,12 @@ test("priority API ranks across sources before paging and retains access to lowe
     assert.equal(response.status, 200);
     assert.equal(body.jobs[0].id, "c");
     assert.equal(body.jobs[0].review_priority.score, 100);
-    assert.equal(body.totalCount, 2);
-    assert.deepEqual(body.priorityCounts, { high: 2, possible: 1, low: 1, all: 4, gold:0 });
+    assert.equal(body.totalCount, 3);
+    assert.deepEqual(body.priorityCounts, { high: 3, possible: 0, low: 1, all: 4, gold:0 });
     body = await (await GET(request("priority=high&limit=1&offset=1"))).json();
-    assert.equal(body.jobs[0].id, "d");
+    assert.equal(body.jobs[0].id, "b");
     body = await (await GET(request("priority=all"))).json();
-    assert.deepEqual(body.jobs.map((job: { id: string }) => job.id), ["c", "d", "b", "a"]);
+    assert.deepEqual(body.jobs.map((job: { id: string }) => job.id), ["c", "b", "d", "a"]);
     response = await GET(request("priority=invalid"));
     assert.equal(response.status, 400);
   } finally {
