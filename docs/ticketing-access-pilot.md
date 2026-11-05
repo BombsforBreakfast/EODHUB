@@ -1,6 +1,18 @@
 # Ticketing access and saved-event pilot
 
-This checkpoint replaces demo role selection with server-verified email sign-in, scoped invitations and durable event drafts. It is preview/local only. The separate original local concept demo remains on port 65463. Checkout, ticket issuance, customer order management and scanning are the next implementation pass; the new workspace must not claim they are ready.
+This checkpoint includes verified access, scoped invitations, durable event drafts and owner-controlled no-card pilot tickets. It is preview/local only. The separate original local concept demo remains on port 65463. Paid checkout, confirmation-email delivery, refunds, payouts and door scanning remain separate implementation passes.
+
+## Temporary no-card ticket mode
+
+The Hub owner can check **No-card pilot: issue tickets for $0** for an approved event. Coordinators, operators and customers cannot change this switch. It starts off, is saved per event, and is checked again inside the issuance transaction. Returning an event to review automatically switches it off. Normal ticket prices and the standard revenue forecast remain unchanged.
+
+An enabled event allows verified buyers to claim 1–8 tickets of a selected type. The entire pilot order is free: admission, Hub fees and card processing are all zero, with no Stripe request or card form. The original admission value and standard Hub fee are retained as reference fields; pilot orders are explicitly tagged `no_card_pilot` and cannot be counted as paid sales. This mode does not waive processing on a real card transaction.
+
+Every order and its individual QR/manual-code tickets are stored in private, API-only tables. Buyers can retrieve only their own tickets under My tickets, including paginated older orders. An event-level database lock enforces both type capacity and total capacity. A stable buyer/request ID returns the same order on retries, including after the owner switches the pilot off. Disabling the switch prevents new claims and preserves issued tickets. QR tickets are marked pilot-only; door scanning is not connected yet.
+
+`TICKETING_NO_CARD_PILOT_ENABLED=1` is an additional server-only local/Preview flag. It defaults off and cannot override the existing production prohibition. Turning it off hides the temporary UI and disables its API. Before paid launch, disable this server flag as well as removing the temporary control; hiding a checkbox alone must never be used to enforce payment. Keep pilot records separate from future paid orders and live inventory.
+
+Apply `20261105200516_ticketing_no_card_pilot_orders.sql` before enabling the additional flag. It adds private pilot order/ticket tables, the owner-only switch, atomic issuance and inventory RPCs, without changing shared Auth, Hub profiles, Rentals billing or existing event prices. No live Stripe configuration is required.
 
 ## Shared project boundary
 
@@ -14,7 +26,7 @@ Operator responses omit drafts, staff rosters, invitations, private profiles bel
 
 ## Configuration
 
-Event details require a start and finish date/time in the event's selected time zone. The finish must be strictly later; overnight events use the following finish date. Both endpoints are saved in the existing private JSON documents, shown on the review screen and coordinator/admin event card, and available when resuming a draft. Older drafts remain editable with an empty finish until completed. There is no schema migration for these fields. Ticket issuance/check-in remain in the next implementation pass.
+Event details require a start and finish date/time in the event's selected time zone. The finish must be strictly later; overnight events use the following finish date. Both endpoints are saved in the existing private JSON documents, shown on the review screen and coordinator/admin event card, and available when resuming a draft. Older drafts remain editable with an empty finish until completed. There is no schema migration for these fields. Door check-in remains in the next implementation pass.
 
 Events support one initial ticket type plus five additions. Each has a stable ID, custom audience name, USD price (including free) and inventory. Submission checks distinct names/IDs, 1–6 types and total capacity up to 100,000. Legacy single-price drafts still load as General admission. The submitted event includes all types, their combined capacity and minimum admission price.
 
@@ -29,6 +41,7 @@ The editor autosaves partial fields, ticket types and page position, and flushes
 All wizard sections are navigable. Completed sections show a check; missing required information shows a yellow exclamation mark and an accessible label. An empty optional flyer is complete. Review stays incomplete until required sections and fresh acknowledgments are complete, and submission remains blocked until then.
 
 - `TICKETING_PILOT_ENABLED=1`: server-only switch. `VERCEL_ENV=production` always disables the pilot.
+- `TICKETING_NO_CARD_PILOT_ENABLED=1`: enables the temporary owner switch and $0 ticket flow only within that controlled pilot.
 - In local development, `TICKETING_PILOT_ORIGIN=http://127.0.0.1:65464`; loopback origins only.
 - In Vercel Preview, the configured branch URL (falling back to deployment URL) is the canonical origin. Use that exact host for the portal, links and API requests.
 - `TICKETING_EMAIL_ENABLED=1` enables the existing Resend connection for sign-in delivery. Leave disabled until the migration and controlled Auth check pass.
@@ -47,6 +60,9 @@ The forward migrations keep the server role away from internal Auth tables and u
 node --import tsx --require ./scripts/register-server-tests.cjs --test scripts/verify-ticketing-revenue.test.ts scripts/verify-ticketing-autosave.test.ts scripts/verify-ticketing-schedule.test.ts scripts/verify-ticketing-local-time.test.ts scripts/verify-ticketing-entry.test.ts scripts/verify-ticketing-access.test.ts scripts/verify-owner-admin-access.test.ts scripts/verify-rental-passwordless.test.ts scripts/verify-rental-billing.test.ts scripts/verify-rental-billing-lifecycle.test.ts scripts/verify-rental-delisting.test.ts
 node node_modules/typescript/bin/tsc --noEmit --incremental false
 node node_modules/next/dist/bin/next build --webpack
+npm run test:ticketing-pilot
+# With PGLITE_MODULE pointing to an installed PGlite entrypoint:
+node scripts/verify-ticketing-pilot-db.mjs
 ```
 
 Run `scripts/verify-ticketing-database.sql` only inside a transaction that is explicitly rolled back. Workspace-local QA helpers (not application runtime dependencies) exercise local PostgreSQL, real HTTP boundaries and, after applying the migration, disposable real Auth identities and independent HTTP sessions. Email delivery and physical-device behavior still require an actual controlled walkthrough; independent HTTP sessions alone are not a physical phone test.
