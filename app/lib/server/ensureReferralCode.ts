@@ -2,10 +2,21 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+// Security Enhancement: Use cryptographically secure random numbers instead of Math.random()
 export function makeReferralCode(length = 8): string {
   let code = "";
-  for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+  const maxValid = 256 - (256 % CHARS.length);
+  const randomBytes = new Uint8Array(length);
+  let i = 0;
+
+  while (i < length) {
+    crypto.getRandomValues(randomBytes);
+    for (let j = 0; j < randomBytes.length && i < length; j++) {
+      if (randomBytes[j] < maxValid) {
+        code += CHARS[randomBytes[j] % CHARS.length];
+        i++;
+      }
+    }
   }
   return code;
 }
