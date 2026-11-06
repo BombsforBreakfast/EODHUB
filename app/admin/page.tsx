@@ -4904,7 +4904,7 @@ export default function AdminPage() {
                 <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => {if(value==="gold")setPendingOnly(false);setJobsPriority(value);}}>{label} ({jobsPriorityCounts[value]})</button>
               ))}
             </div>
-            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest positive scores first across every source. Every imported job requires manual approval. Titles containing paramedic or 74D are excluded from new imports; saved exclusions match complete job titles. Gold highlights and priority rules remain available.</p>
+            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest positive scores first across every source. Every imported job requires manual approval. Titles containing paramedic, 74D, EMT, firefighter or police are excluded from new imports; saved exclusions match complete job titles. Gold highlights and priority rules remain available.</p>
             <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
                 {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} matching ${pendingOnly ? "pending " : ""}jobs of ${jobsPriorityCounts.all.toLocaleString()} total · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}

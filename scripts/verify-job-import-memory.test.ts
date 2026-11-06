@@ -158,12 +158,15 @@ test("title terms block new imports without inspecting body or employer and pres
   const candidates=[
    {...identity,title:"Senior Paramedic",description:"Master EOD technician required"},
    {...identity,title:"Chemical Technicians (74D)",description:"CBRN"},
-   {...identity,title:"CWMD Policy SME",companyName:"Paramedic 74D employer",description:"74D or paramedic experience accepted"},
+   {...identity,title:"CWMD Policy SME",companyName:"Paramedic 74D Police employer",description:"74D, paramedic, EMT, firefighter or police experience accepted"},
+   {...identity,title:"EMT-Basic",description:"EOD experience"},
+   {...identity,title:"Firefighter",description:"EOD experience"},
+   {...identity,title:"Police Bomb Technician",description:"EOD experience"},
   ];
   const result=await filterRememberedJobs(client,candidates,x=>x,new JobImportMemory([]));
-  assert.deepEqual(result.candidates,[candidates[2]]);assert.equal(result.skipped,2);
+  assert.deepEqual(result.candidates,[candidates[2]]);assert.equal(result.skipped,5);
  });
- for(const title of ["Firefighter/Paramedic","Chemical Technicians (74D)"]){
+ for(const title of ["Firefighter/Paramedic","Chemical Technicians (74D)","EMT-Basic","Firefighter","Police Bomb Technician"]){
   await withDatabase([row({title,is_approved:true})],async(state,client)=>{
    const result=await filterRememberedJobs(client,[{...identity,title}],x=>x,new JobImportMemory(state.rows));
    assert.equal(result.refreshed,1);assert.equal(state.rows[0].is_approved,true);assert.equal(state.rows[0].is_rejected,false);

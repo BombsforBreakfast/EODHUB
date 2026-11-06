@@ -7,16 +7,16 @@ import { scoreLinkedInJob } from "../app/lib/linkedin/relevance";
 import { scoreReliefWebJob } from "../app/lib/reliefweb/scoreReliefWebJob";
 import { isReliefWebJobSuppressed } from "../app/lib/reliefweb/publicVisibility";
 import { ADZUNA_WHAT_EXCLUDE } from "../app/lib/adzuna/intakeConfig";
-test("only the two owner-authorized title terms are blocked", () => {
- for (const title of ["Paramedic", "Senior PARAMEDIC", "Firefighter/Paramedic", "Paramedics - overseas", "Chemical Technicians (74D)", "74d CBRN Specialist"]) {
+test("only the owner-authorized title terms are blocked", () => {
+ for (const title of ["Paramedic", "Senior PARAMEDIC", "Firefighter/Paramedic", "Paramedics - overseas", "Chemical Technicians (74D)", "74d CBRN Specialist", "EMT-Basic", "EMTs - overseas", "Senior Firefighter", "Firefighters", "Military POLICE Officer", "Police Bomb Technician"]) {
   assert.ok(jobImportExclusionReason(title),title);
  }
- for (const title of ["EOD Technician", "CWMD Policy SME", "Paramedical Researcher", "74Delta Analyst", "174D Analyst"]) {
-  assert.equal(jobImportExclusionReason(title,"Paramedic 74D employer"),null,title);
+ for (const title of ["EOD Technician", "CWMD Policy SME", "Paramedical Researcher", "74Delta Analyst", "174D Analyst", "EMTech Engineer", "Policy SME", "Policework Analyst"]) {
+  assert.equal(jobImportExclusionReason(title,"Paramedic 74D EMT Firefighter Police employer"),null,title);
  }
 });
 test("all sources retain formerly excluded titles, including description-only and zero-score search results", () => {
- for(const title of ["UXO Analyst","Police Officer","Intern","National Guard Recruiter","Medical Technician","Scientist","Accountant"]) {
+ for(const title of ["UXO Analyst","Intern","National Guard Recruiter","Medical Technician","Scientist","Accountant"]) {
   assert.equal(jobImportExclusionReason(title),null);
   for(const description of ["Explosive Ordnance Disposal support","General responsibilities"]) {
     const base={title,description,companyName:"Example"};
