@@ -24,7 +24,8 @@ test("priority API ranks across sources before paging and retains access to lowe
     assert.equal(url.searchParams.get("is_rejected"), "neq.true");
     assert.equal(url.searchParams.get("is_approved"), "neq.true");
     assert.equal(url.searchParams.has("source_type"), false);
-    return Response.json(rows);
+    const start=Number(url.searchParams.get("offset")??0),limit=Number(url.searchParams.get("limit")??500);
+    return Response.json(rows.slice(start,start+limit));
   };
   try {
     const request = (query: string) => new NextRequest(`https://example.test/api/admin/jobs?pendingOnly=true&${query}`, { headers: { Authorization: "Bearer test" } });
@@ -39,6 +40,14 @@ test("priority API ranks across sources before paging and retains access to lowe
     assert.equal(body.jobs[0].id, "b");
     body = await (await GET(request("priority=all"))).json();
     assert.deepEqual(body.jobs.map((job: { id: string }) => job.id), ["c", "b", "d", "a"]);
+    body=await(await GET(request("priority=all&q=example%20cwmd"))).json();
+    assert.deepEqual(body.jobs.map((job:{id:string})=>job.id),["b"]);assert.equal(body.priorityCounts.all,1);
+    body=await(await GET(request("q=work&offset=1&limit=1"))).json();
+    assert.equal(body.totalCount,2);assert.equal(body.jobs[0].id,"b");
+    assert.equal((await GET(request("q="+"x".repeat(201)))).status,400);
+    rows.splice(0,rows.length,...Array.from({length:601},(_,i)=>({id:`large-${i}`,title:"Program Manager",description:i===600?"CWMD rareword":"General work",source_type:"adzuna",company_name:"Example",created_at:"2026-10-30T00:00:00Z"})));
+    body=await(await GET(request("priority=all&q=rareword"))).json();
+    assert.equal(body.totalCount,1);assert.equal(body.jobs[0].id,"large-600");
     response = await GET(request("priority=invalid"));
     assert.equal(response.status, 400);
   } finally {

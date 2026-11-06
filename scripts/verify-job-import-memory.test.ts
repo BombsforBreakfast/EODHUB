@@ -145,6 +145,14 @@ test("approved current jobs refresh once without being requeued; other locations
   assert.equal(memory.match(identity), undefined);
 });
 
+test("an exact-title exclusion preserves refresh of an already approved listing",async()=>{
+ await withDatabase([row({is_approved:true})],async(state,client)=>{
+  const memory=new JobImportMemory(state.rows,Date.now(),[{id:"explicit",phrase:"eod technician"}]);
+  const result=await filterRememberedJobs(client,[identity],x=>x,memory);
+  assert.equal(result.refreshed,1);assert.equal(state.rows[0].is_approved,true);assert.equal(state.rows[0].is_rejected,false);
+ });
+});
+
 test("deleted memory wins, tracking parameters do not defeat it, and generic careers pages do not conflate jobs", () => {
   const memory = new JobImportMemory([row({ is_approved: true }), row({ id: "rejected", is_rejected: true, created_at: "2000-01-01T00:00:00.000Z" })]);
   assert.equal(memory.match(identity)?.rejected, true);

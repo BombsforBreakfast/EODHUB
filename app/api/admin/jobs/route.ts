@@ -1,3 +1,4 @@
+import { matchesJobReviewSearch } from "../../../lib/jobReviewSearch";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { jobReviewPage, type JobReviewFilter } from "../../../lib/jobReviewPriority";
@@ -49,7 +50,9 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const priority = req.nextUrl.searchParams.get("priority");
+  const search=(req.nextUrl.searchParams.get("q")??"").trim();
+  if(search.length>200)return NextResponse.json({error:"Search must be 200 characters or fewer."},{status:400});
+  const priority = req.nextUrl.searchParams.get("priority") ?? (search ? "all" : null);
   if (priority !== null) {
     if (!["high", "possible", "low", "all", "gold"].includes(priority)) return NextResponse.json({ error: "Invalid priority filter" }, { status: 400 });
     const rows = [];
@@ -63,7 +66,7 @@ export async function GET(req: NextRequest) {
     }
     try {
       const preferences = await loadJobReviewPreferences(adminClient);
-      return NextResponse.json(jobReviewPage(rows, priority as JobReviewFilter, offset, limit, preferences));
+      return NextResponse.json(jobReviewPage(rows.filter(row=>matchesJobReviewSearch(row,search)), priority as JobReviewFilter, offset, limit, preferences));
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Preferences unavailable" }, { status: 503 });
     }

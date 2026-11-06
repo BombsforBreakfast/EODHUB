@@ -16,7 +16,7 @@ Imported jobs require manual approval. Scores are review hints, never publicatio
 
 The strongest evidence wins; repetition does not multiply scores. Matching ignores case, normalizes punctuation and spacing, uses word boundaries, and strips markup/script/style content. Existing explicit mission priorities and manually selected Gold highlights may raise the score; they never lower it.
 
-Degree requirements, learned feedback, saved exclusions, employer/role blacklists, and source-specific negative gates do not reduce scores or prevent intake. Adzuna negative query terms and LinkedIn's title-only requirement are disabled. ReliefWeb confidence is informational and cannot veto manual approval.
+Degree requirements and learned feedback do not reduce scores. Employer/role blacklists and source-specific negative gates stay disabled. Explicit admin-saved complete-title exclusions can block new imports; they do not alter positive scores or unpublish approved listings. Adzuna negative query terms and LinkedIn's title-only requirement are disabled. ReliefWeb confidence is informational and cannot veto manual approval.
 
 Source queries, coverage, request limits, validation, duplicate handling and stale-listing retention remain in place. Approved current listings refresh rather than requeue. An individual manual deletion still removes that exact listing and its duplicate identity; it does not teach a title-wide exclusion or negative pattern.
 

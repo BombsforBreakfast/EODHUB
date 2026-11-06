@@ -882,6 +882,9 @@ export default function AdminPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobRulesRevision,setJobRulesRevision]=useState(0);
   const [excludeJobType, setExcludeJobType] = useState<Job | null>(null);
+  const [jobsSearch,setJobsSearch]=useState("");
+  const [jobsSearchDebounced,setJobsSearchDebounced]=useState({query:""});
+  useEffect(()=>{const timer=window.setTimeout(()=>setJobsSearchDebounced({query:jobsSearch.trim()}),300);return()=>window.clearTimeout(timer);},[jobsSearch]);
   const [jobsPage, setJobsPage] = useState(1);
   const [jobsTotal, setJobsTotal] = useState(0);
   const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all" | "gold">("all");
@@ -1858,7 +1861,7 @@ export default function AdminPage() {
     setJobsError("");
     try {
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}&priority=${jobsPriority}&offset=${(page - 1) * jobsPageSize}&limit=${jobsPageSize}`, {
+    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}&priority=${jobsPriority}&q=${encodeURIComponent(jobsSearchDebounced.query)}&offset=${(page - 1) * jobsPageSize}&limit=${jobsPageSize}`, {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
     if (!res.ok) throw new Error("Could not load jobs. Please retry.");
@@ -2267,7 +2270,7 @@ export default function AdminPage() {
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
-  }, [pendingOnly, jobsPriority, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
+  }, [pendingOnly, jobsPriority, jobsSearchDebounced, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => setUserSearchDebounced(userSearch), 350);
@@ -4892,12 +4895,16 @@ export default function AdminPage() {
             {jobsSubTab === "submissions" && (
               <>
             <JobReviewPreferencesPanel key={jobRulesRevision} target={excludeJobType} queueSize={jobsPriorityCounts.all} onClose={() => setExcludeJobType(null)} onChanged={async () => { await Promise.all([loadJobs(), loadPendingCounts()]); }} />
+            <label style={{display:"block",color:t.text,fontSize:14,marginBottom:12}}>Search approval listings
+              <div style={{display:"flex",gap:8,marginTop:6}}><input type="search" maxLength={200} value={jobsSearch} onChange={event=>{setJobsSearch(event.target.value);setSelectedJobs(new Set());jobsRequest.current++;setJobsLoading(true);}} placeholder="Title, employer, location or description…" style={{width:"100%",minWidth:0,padding:"10px 12px",borderRadius:8,border:"1px solid "+t.border,background:t.input,color:t.text}}/>{jobsSearch?<button type="button" style={actionBtn("#475569")} onClick={()=>{setJobsSearch("");setSelectedJobs(new Set());jobsRequest.current++;setJobsLoading(true);}}>Clear</button>:null}</div>
+              <small style={{color:t.textMuted}}>Searches the entire queue as you type. All entered words must match; your priority and pending filters still apply.</small>
+            </label>
             <div aria-label="Job priority filters" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
               {([['high', 'Strong matches'], ['possible', 'Possible matches'], ['low', 'Low confidence'], ['all', 'All jobs'], ['gold', 'Gold highlights']] as const).map(([value, label]) => (
                 <button key={value} aria-pressed={jobsPriority === value} disabled={jobsLoading || batchActing || !!actionLoading} style={{ ...actionBtn(jobsPriority === value ? "#4f46e5" : "#475569"), opacity: jobsLoading ? 0.65 : 1 }} onClick={() => {if(value==="gold")setPendingOnly(false);setJobsPriority(value);}}>{label} ({jobsPriorityCounts[value]})</button>
               ))}
             </div>
-            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest scores first across every source. Direct EOD / UXO / Bomb Tech titles, explicit EOD qualifications and Chemical Security and Elimination SME roles score 100. Gold highlights are your editorial picks; priority rules teach similar future jobs. Other engineering, chemistry and biology degrees carry a small score penalty. Explicit Explosive Ordnance Disposal and UXO titles pass straight to approval unless excluded. Other jobs remain available for review.</p>
+            <p style={{ color: t.textMuted, fontSize: 13, marginTop: 0 }}>Highest positive scores first across every source. Every imported job requires manual approval. Exclusions match complete job titles only; Gold highlights and priority rules remain available.</p>
             <nav aria-label="Job review pages" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               <span role="status" style={{ color: t.textMuted, fontSize: 14 }}>
                 {jobsLoading ? "Loading jobs…" : `${jobsTotal.toLocaleString()} matching ${pendingOnly ? "pending " : ""}jobs of ${jobsPriorityCounts.all.toLocaleString()} total · Page ${jobsPage} of ${Math.max(1, Math.ceil(jobsTotal / jobsPageSize))} · ${jobsPageSize} per page`}
@@ -4948,7 +4955,7 @@ export default function AdminPage() {
             )}
             {jobs.length === 0 && (
               <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
-                {jobsPriority !== "all" ? "No jobs in this priority tier. Choose another tier or All jobs." : pendingOnly ? "No pending job submissions." : "No jobs found."}
+                {jobsSearchDebounced.query ? "No jobs match this search and the selected filters. Try fewer words or clear the search." : jobsPriority !== "all" ? "No jobs in this priority tier. Choose another tier or All jobs." : pendingOnly ? "No pending job submissions." : "No jobs found."}
               </div>
             )}
             <div style={{ display: "grid", gap: 14 }}>
@@ -5049,6 +5056,7 @@ export default function AdminPage() {
                         Delete
                       </button>
                       {!job.is_approved && <button style={actionBtn("#b45309")} disabled={!!actionLoading || batchActing} onClick={() => rejectJob(job.id, true)}>Not relevant</button>}
+                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobType(job)}>Exclude exact title</button>
                     </div>
                   </div>
                   {editingJob?.id === job.id && (
