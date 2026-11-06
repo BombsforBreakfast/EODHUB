@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import type { JobTypeExclusion } from "../../lib/jobReviewPreferences";
+import { JOB_TITLE_TERM_EXCLUSIONS } from "../../lib/jobImportExclusions";
 
 type Target = { id: string; title: string | null };
 type Preview = { phrase: string; count: number; previewToken: string; examples: Array<{ id: string; title: string }> };
@@ -45,6 +46,7 @@ export default function JobReviewPreferencesPanel({ target, queueSize, onClose, 
   return <div style={{ marginBottom: 16, color: t.text, fontSize: 13 }}>
     <details>
       <summary style={{ cursor: "pointer" }}>Exact-title exclusions · {rules.length} rules · {priorities.length} priority rules</summary>
+      <p>Title-term import exclusions: <strong>{JOB_TITLE_TERM_EXCLUSIONS.join(" · ")}</strong>. These terms match anywhere in a title (including “paramedics”), ignoring case. Mentions only in descriptions or employer names do not block a job. Already approved listings stay live.</p>
       <p>All imports require manual approval. Explicit exclusions block only the complete title you enter; scoring stays positive and Not relevant does not teach a broader pattern.</p>
       <p>All saved exclusions match complete titles. “Program Manager” excludes only that title; “Senior Program Manager” remains available. Capitalization, punctuation and spacing are ignored.</p>
       {rules.map(rule => <div key={rule.id} style={{ marginBottom: 5 }}><strong>{rule.phrase}</strong> <button style={button} disabled={busy} onClick={() => void act({ action: "remove_exclusion", id: rule.id })}>Remove rule</button></div>)}

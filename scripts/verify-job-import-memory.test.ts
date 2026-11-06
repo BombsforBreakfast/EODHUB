@@ -153,6 +153,24 @@ test("an exact-title exclusion preserves refresh of an already approved listing"
  });
 });
 
+test("title terms block new imports without inspecting body or employer and preserve approved refresh",async()=>{
+ await withDatabase([],async(_state,client)=>{
+  const candidates=[
+   {...identity,title:"Senior Paramedic",description:"Master EOD technician required"},
+   {...identity,title:"Chemical Technicians (74D)",description:"CBRN"},
+   {...identity,title:"CWMD Policy SME",companyName:"Paramedic 74D employer",description:"74D or paramedic experience accepted"},
+  ];
+  const result=await filterRememberedJobs(client,candidates,x=>x,new JobImportMemory([]));
+  assert.deepEqual(result.candidates,[candidates[2]]);assert.equal(result.skipped,2);
+ });
+ for(const title of ["Firefighter/Paramedic","Chemical Technicians (74D)"]){
+  await withDatabase([row({title,is_approved:true})],async(state,client)=>{
+   const result=await filterRememberedJobs(client,[{...identity,title}],x=>x,new JobImportMemory(state.rows));
+   assert.equal(result.refreshed,1);assert.equal(state.rows[0].is_approved,true);assert.equal(state.rows[0].is_rejected,false);
+  });
+ }
+});
+
 test("deleted memory wins, tracking parameters do not defeat it, and generic careers pages do not conflate jobs", () => {
   const memory = new JobImportMemory([row({ is_approved: true }), row({ id: "rejected", is_rejected: true, created_at: "2000-01-01T00:00:00.000Z" })]);
   assert.equal(memory.match(identity)?.rejected, true);

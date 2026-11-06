@@ -2,7 +2,7 @@
 
 The job review system follows the [positive scoring policy](job-review-priority.md). All imported candidates require human approval.
 
-- Explicit saved exclusions match complete normalized job titles across all four importers. No built-in role/employer blacklist or learned penalty is enabled.
+- Explicit saved exclusions match complete normalized job titles across all four importers. Separately, the owner authorized two title-term import exclusions: paramedic (including paramedics) and 74D. They match case-insensitive whole terms anywhere in titles, never descriptions/employers. All four importers enforce them through import memory; already approved listings keep refreshing. No other role/employer blacklist or learned penalty is enabled.
 - “Exclude exact title” opens a preview of pending imported matches across the entire queue, independent of the current search. Saving requires a fresh preview token; if the queue changes, HTTP409 asks for another preview before any write.
 - A saved rule prevents new imports with that complete title and removes matching pending imported listings through existing rejection memory. Approved listings keep refreshing and remain live. Community-submitted listings are not removed by this action.
 - The exclusion list starts empty. Remove a saved rule in the preferences panel to allow future matching imports; already rejected listings retain their normal moderation memory.

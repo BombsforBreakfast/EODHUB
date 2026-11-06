@@ -1,2 +1,8 @@
-/** Intake is positive-only; job titles and employers are never blacklisted. */
-export function jobImportExclusionReason(_title: string, _employerContext = ""): string | null { return null; }
+/** Owner-authorized title terms only. Never inspect descriptions or employers. */
+export const JOB_TITLE_TERM_EXCLUSIONS = ["paramedic", "74D"] as const;
+export function jobImportExclusionReason(title: string, _employerContext = ""): string | null {
+  void _employerContext; // Retain the legacy signature without using employer text.
+  if (/(^|[^a-z0-9])paramedics?([^a-z0-9]|$)/i.test(title)) return "Title contains paramedic";
+  if (/(^|[^a-z0-9])74d([^a-z0-9]|$)/i.test(title)) return "Title contains 74D";
+  return null;
+}
