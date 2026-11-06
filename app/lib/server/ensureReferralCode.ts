@@ -2,10 +2,28 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
+// Security Enhancement: replace Math.random with crypto.getRandomValues and use rejection sampling to avoid modulo bias
 export function makeReferralCode(length = 8): string {
   let code = "";
+  const maxValid = 256 - (256 % CHARS.length);
+  const randomBytes = new Uint8Array(length * 2);
+  let bytesUsed = 0;
+
+  crypto.getRandomValues(randomBytes);
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    let charSelected = false;
+    while (!charSelected) {
+      if (bytesUsed >= randomBytes.length) {
+        crypto.getRandomValues(randomBytes);
+        bytesUsed = 0;
+      }
+      const byte = randomBytes[bytesUsed++];
+      if (byte < maxValid) {
+        code += CHARS[byte % CHARS.length];
+        charSelected = true;
+      }
+    }
   }
   return code;
 }
