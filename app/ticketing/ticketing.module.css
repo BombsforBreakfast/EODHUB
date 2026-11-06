@@ -1,4 +1,19 @@
 .page { background:var(--ticket-bg); color:var(--ticket-text); font-family:var(--font-geist-sans),Arial,sans-serif; font-size:14px; min-height:100vh; }
+.pilotSwitch { margin:18px 0; padding:16px; border:1px solid var(--ticket-line); border-radius:var(--ticket-radius-sm); background:var(--ticket-bg); }
+.pilotSwitch label { display:flex; align-items:center; gap:10px; min-height:44px; cursor:pointer; }
+.pilotSwitch input { width:20px; height:20px; accent-color:var(--ticket-blue); flex-shrink:0; }
+.pilotSwitch p { margin:6px 0 0; font-size:13px; color:var(--ticket-muted); }
+.pilotTickets { margin-top:32px; border-top:1px solid var(--ticket-line); padding-top:24px; }
+.pilotTotals { display:grid; gap:8px; margin:8px 0; }
+.pilotTotals div { display:flex; justify-content:space-between; gap:14px; }
+.pilotTotals dd { margin:0; font-weight:700; }
+.pilotTotals div:last-child { border-top:1px solid var(--ticket-line); padding-top:10px; }
+.myTicketsTitle { margin-top:28px !important; }
+.pilotTicketGrid { display:flex; flex-wrap:wrap; gap:16px; margin:18px 0; }
+.pilotTicket { display:flex; align-items:center; flex-direction:column; gap:10px; padding:16px; border:1px solid var(--ticket-line); border-radius:var(--ticket-radius-sm); }
+.pilotTicket svg { background:#fff; box-sizing:content-box; padding:12px; border-radius:4px; }
+.pilotTicket strong { font-size:19px; letter-spacing:2px; }
+.pilotTicket small { color:var(--ticket-muted); }
 .page * { box-sizing:border-box; }
 .page a { color:inherit; text-decoration:none; }
 .page button,.page input,.page select,.page textarea { font:inherit; }
