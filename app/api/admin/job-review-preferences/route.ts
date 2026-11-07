@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { matchesExcludedJobTitle, normalizeJobPhrase } from "@/app/lib/jobReviewPreferences";
+import { normalizeJobPhrase } from "@/app/lib/jobReviewPreferences";
 import { removeJobWithImportMemory } from "@/app/lib/server/removeJobWithImportMemory";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -50,22 +50,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
     if (["preview_exclusion", "add_exclusion"].includes(body.action)) {
-      const phrase=typeof body.phrase==="string"?normalizeJobPhrase(body.phrase):"";
-      if(phrase.length<3||phrase.length>100||!/[a-z]/.test(phrase))return NextResponse.json({error:"Enter a complete job title, 3–100 characters."},{status:400});
+      const bulk = Array.isArray(body.phrases);
+      const input: unknown[] = bulk ? body.phrases : [body.phrase];
+      if (!input.length || input.length > 100 || input.some(value => typeof value !== "string")) {
+        return NextResponse.json({ error: "Select between 1 and 100 complete job titles." }, { status: 400 });
+      }
+      const phrases = [...new Set(input.map(value => normalizeJobPhrase(value as string)))].sort();
+      if (phrases.some(phrase => phrase.length < 3 || phrase.length > 100 || !/[a-z]/.test(phrase))) {
+        return NextResponse.json({ error: "Each complete job title must be 3–100 characters." }, { status: 400 });
+      }
+      const titles = new Set(phrases);
       const matches:Array<{id:string;title:string}>=[];
       for(let start=0;;start+=500){
         const page=await client.from("jobs").select("id,title").neq("is_rejected",true).neq("is_approved",true).in("source_type",["adzuna","usajobs","linkedin","reliefweb"]).order("id").range(start,start+499);
         if(page.error)throw page.error;
-        matches.push(...(page.data??[]).filter(row=>matchesExcludedJobTitle(row.title??"",phrase)));
+        matches.push(...(page.data??[]).filter(row=>titles.has(normalizeJobPhrase(row.title??""))));
         if((page.data?.length??0)<500)break;
       }
-      const previewToken=createHash("sha256").update(JSON.stringify([phrase,matches.map(row=>[row.id,row.title])])).digest("hex");
-      if(body.action==="preview_exclusion")return NextResponse.json({phrase,count:matches.length,examples:matches.slice(0,12),previewToken});
+      const previewToken=createHash("sha256").update(JSON.stringify([bulk ? phrases : phrases[0],matches.map(row=>[row.id,row.title])])).digest("hex");
+      if(body.action==="preview_exclusion")return NextResponse.json({phrase:phrases[0],phrases,count:matches.length,examples:matches.slice(0,12),previewToken});
       if(body.previewToken!==previewToken)return NextResponse.json({error:"Preview the current matches before saving. The queue may have changed."},{status:409});
-      const saved=await client.from("job_type_exclusions").upsert({phrase},{onConflict:"phrase",ignoreDuplicates:true});if(saved.error)throw saved.error;
+      const saved=await client.from("job_type_exclusions").upsert(bulk ? phrases.map(phrase => ({phrase})) : {phrase:phrases[0]},{onConflict:"phrase",ignoreDuplicates:true});if(saved.error)throw saved.error;
       let removed=0,failed=0;
       for(const row of matches){const result=await removeJobWithImportMemory(client,row.id,{pendingOnly:true,expectedTitle:row.title});if(!result.ok)failed++;else if(!result.skipped)removed++;}
-      return NextResponse.json({success:true,removed,failed,message:failed?"Rule saved. Some pending matches could not be removed. Preview and retry to finish.":undefined});
+      return NextResponse.json({success:true,excluded:phrases.length,removed,failed,message:failed?"Rules saved. Some pending matches could not be removed. Preview and retry to finish.":undefined});
     }
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   } catch (error) { return failure(error); }

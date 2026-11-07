@@ -5,16 +5,17 @@ import { GET, POST } from "../app/api/admin/job-review-preferences/route";
 test("exclusions require admin and a fresh exact-title preview; approved/community jobs survive",async()=>{
  const oldFetch=globalThis.fetch,names=["NEXT_PUBLIC_SUPABASE_URL","NEXT_PUBLIC_SUPABASE_ANON_KEY","SUPABASE_SERVICE_ROLE_KEY"],old=names.map(n=>process.env[n]);
  process.env.NEXT_PUBLIC_SUPABASE_URL="https://db.example";process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY="test";process.env.SUPABASE_SERVICE_ROLE_KEY="test";
- let admin=false;const writes:string[]=[],rules:{id:string;phrase:string}[]=[];
+ let admin=false,failBulkRemoval=false;const writes:string[]=[],rules:{id:string;phrase:string}[]=[];
  const make=(id:string,title:string,extra={})=>({id,title,source_type:"adzuna",is_approved:false,is_rejected:false,...extra});
  const rows=[make("one","Program Manager"),make("two","PROGRAM-MANAGER"),make("senior","Senior Program Manager"),make("approved","Program Manager",{is_approved:true}),make("community","Program Manager",{source_type:"community"}),make("body","UXO Technician")];
  globalThis.fetch=async(input,init)=>{const u=new URL(String(input)),table=u.pathname.split("/").pop(),method=init?.method??"GET",body=init?.body?JSON.parse(String(init.body)):{};
   if(u.pathname.includes('/auth/'))return Response.json({id:"admin",aud:"authenticated",role:"authenticated"});if(table==="profiles")return Response.json([{is_admin:admin}]);
   if(method!=="GET")writes.push(method+":"+table);
   if(table==="job_priority_rules")return Response.json([]);
-  if(table==="job_type_exclusions"){if(method==="POST")rules.push({id:"12345678-1234-1234-1234-123456789012",...body});if(method==="DELETE")rules.length=0;return Response.json(rules);}
+  if(table==="job_type_exclusions"){if(method==="POST")for(const rule of Array.isArray(body)?body:[body]){if(!rules.some(saved=>saved.phrase===rule.phrase))rules.push({id:"12345678-1234-1234-1234-123456789012",...rule});}if(method==="DELETE")rules.length=0;return Response.json(rules);}
   if(["saved_jobs","job_stale_flags","job_applications"].includes(table!))return Response.json([]);
   assert.equal(table,"jobs");
+  if(method==="PATCH"&&failBulkRemoval&&u.searchParams.get("id")==="eq.bulk-two")return Response.json({message:"Temporary removal failure"},{status:500});
   let selected=rows.filter(r=>(!u.searchParams.has('id')||'eq.'+r.id===u.searchParams.get('id'))&&(u.searchParams.get('is_approved')!=="neq.true"||!r.is_approved)&&(u.searchParams.get('is_rejected')!=="neq.true"||!r.is_rejected)&&(!u.searchParams.has('title')||'eq.'+r.title===u.searchParams.get('title'))&&(!u.searchParams.has('source_type')||r.source_type!=="community"));
   if(method==="PATCH")for(const r of selected)Object.assign(r,body);
   selected=selected.slice(Number(u.searchParams.get('offset')??0),Number(u.searchParams.get('offset')??0)+Number(u.searchParams.get('limit')??100));return Response.json(selected);
@@ -30,5 +31,24 @@ test("exclusions require admin and a fresh exact-title preview; approved/communi
   assert.deepEqual(rows.filter(x=>x.is_rejected).map(x=>x.id),["one","two","new"]);assert.equal(rows.find(x=>x.id==="approved")?.is_approved,true);
   const settings=await(await GET(new NextRequest('https://example.test/api/admin/job-review-preferences',{headers:{Authorization:"Bearer test"}}))).json();assert.equal(settings.exclusions.length,1);assert.equal(settings.learnedPatterns,0);
   assert.equal((await POST(req({action:"remove_exclusion",id:rules[0].id}))).status,200);assert.equal(rules.length,0);assert(!writes.some(x=>x.includes("job_review_feedback")));
+  // One bulk preview covers the full queue, deduplicates complete titles and binds all titles to the confirmation.
+  rows.push(...Array.from({length:501},(_,index)=>make(`unrelated-${index}`,"Unrelated listing")),make("bulk-one","UXO Technician"),make("bulk-two","CBRN Analyst"),make("bulk-approved","CBRN Analyst",{is_approved:true}),make("bulk-community","CBRN Analyst",{source_type:"community"}),make("bulk-senior","Senior CBRN Analyst"));
+  const phrases=["UXO Technician","uxo-technician","CBRN Analyst"];
+  for(const invalid of [[],[""],["UXO Technician",null],Array(101).fill("UXO Technician")])assert.equal((await POST(req({action:"preview_exclusion",phrases:invalid}))).status,400);
+  const bulk=await(await POST(req({action:"preview_exclusion",phrases}))).json();
+  assert.equal(bulk.count,3);assert.deepEqual(bulk.phrases,["cbrn analyst","uxo technician"]);
+  const before=writes.length;
+  assert.equal((await POST(req({action:"add_exclusion",phrases:[...phrases,"Senior CBRN Analyst"],previewToken:bulk.previewToken}))).status,409);assert.equal(writes.length,before);
+  rows.push(make("bulk-new","UXO Technician"));
+  assert.equal((await POST(req({action:"add_exclusion",phrases,previewToken:bulk.previewToken}))).status,409);assert.equal(writes.length,before);
+  const freshBulk=await(await POST(req({action:"preview_exclusion",phrases}))).json();assert.equal(freshBulk.count,4);
+  failBulkRemoval=true;
+  const partial=await(await POST(req({action:"add_exclusion",phrases:freshBulk.phrases,previewToken:freshBulk.previewToken}))).json();
+  assert.equal(partial.excluded,2);assert.equal(partial.removed,3);assert.equal(partial.failed,1);assert.match(partial.message,/retry/);assert.equal(rules.length,2);
+  failBulkRemoval=false;
+  const retry=await(await POST(req({action:"preview_exclusion",phrases}))).json();assert.equal(retry.count,1);
+  const complete=await(await POST(req({action:"add_exclusion",phrases,previewToken:retry.previewToken}))).json();assert.equal(complete.removed,1);assert.equal(complete.failed,0);assert.equal(rules.length,2);
+  for(const id of ["bulk-approved","bulk-community","bulk-senior","senior"])assert.equal(rows.find(row=>row.id===id)?.is_rejected,false,id);
+  assert(!writes.some(x=>x.includes("job_review_feedback")));
  }finally{globalThis.fetch=oldFetch;names.forEach((n,i)=>{if(old[i]===undefined)delete process.env[n];else process.env[n]=old[i];});}
 });

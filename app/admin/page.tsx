@@ -881,7 +881,7 @@ export default function AdminPage() {
   const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobRulesRevision,setJobRulesRevision]=useState(0);
-  const [excludeJobType, setExcludeJobType] = useState<Job | null>(null);
+  const [excludeJobTypes, setExcludeJobTypes] = useState<Job[] | null>(null);
   const [jobsSearch,setJobsSearch]=useState("");
   const [jobsSearchDebounced,setJobsSearchDebounced]=useState({query:""});
   useEffect(()=>{const timer=window.setTimeout(()=>setJobsSearchDebounced({query:jobsSearch.trim()}),300);return()=>window.clearTimeout(timer);},[jobsSearch]);
@@ -4894,7 +4894,7 @@ export default function AdminPage() {
 
             {jobsSubTab === "submissions" && (
               <>
-            <JobReviewPreferencesPanel key={jobRulesRevision} target={excludeJobType} queueSize={jobsPriorityCounts.all} onClose={() => setExcludeJobType(null)} onChanged={async () => { await Promise.all([loadJobs(), loadPendingCounts()]); }} />
+            <JobReviewPreferencesPanel key={jobRulesRevision} targets={excludeJobTypes} queueSize={jobsPriorityCounts.all} onClose={() => setExcludeJobTypes(null)} onChanged={async () => { await Promise.all([loadJobs(), loadPendingCounts()]); }} />
             <label style={{display:"block",color:t.text,fontSize:14,marginBottom:12}}>Search approval listings
               <div style={{display:"flex",gap:8,marginTop:6}}><input type="search" maxLength={200} value={jobsSearch} onChange={event=>{setJobsSearch(event.target.value);setSelectedJobs(new Set());jobsRequest.current++;setJobsLoading(true);}} placeholder="Title, employer, location or description…" style={{width:"100%",minWidth:0,padding:"10px 12px",borderRadius:8,border:"1px solid "+t.border,background:t.input,color:t.text}}/>{jobsSearch?<button type="button" style={actionBtn("#475569")} onClick={()=>{setJobsSearch("");setSelectedJobs(new Set());jobsRequest.current++;setJobsLoading(true);}}>Clear</button>:null}</div>
               <small style={{color:t.textMuted}}>Searches the entire queue as you type. All entered words must match; your priority and pending filters still apply.</small>
@@ -4948,6 +4948,13 @@ export default function AdminPage() {
                       onClick={batchRejectJobs}
                     >
                       {batchActing ? "..." : `Delete ${selectedJobs.size}`}
+                    </button>
+                    <button
+                      style={actionBtn("#991b1b")}
+                      disabled={batchActing || !!actionLoading || jobsLoading}
+                      onClick={() => setExcludeJobTypes(jobs.filter(job => selectedJobs.has(job.id)))}
+                    >
+                      Exclude exact titles ({selectedJobs.size})
                     </button>
                   </>
                 )}
@@ -5056,7 +5063,7 @@ export default function AdminPage() {
                         Delete
                       </button>
                       {!job.is_approved && <button style={actionBtn("#b45309")} disabled={!!actionLoading || batchActing} onClick={() => rejectJob(job.id, true)}>Not relevant</button>}
-                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobType(job)}>Exclude exact title</button>
+                      <button style={actionBtn("#991b1b")} disabled={!!actionLoading || batchActing} onClick={() => setExcludeJobTypes([job])}>Exclude exact title</button>
                     </div>
                   </div>
                   {editingJob?.id === job.id && (
