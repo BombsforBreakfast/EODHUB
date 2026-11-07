@@ -117,7 +117,6 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
   const [availability, setAvailability] = useState("");
   const [ownerId, setOwnerId] = useState("");
   const [maxRent, setMaxRent] = useState("");
-  const [rentPeriod, setRentPeriod] = useState("");
   const [priceBasis, setPriceBasis] = useState("");
   const [availableBy, setAvailableBy] = useState("");
   const [view, setView] = useState<"list" | "map">("list");
@@ -125,8 +124,8 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
   const [modal, setModal] = useState<{ kind: "gallery" | "contact" | "flag"; listingId: string } | null>(null);
   const modalTrigger = useRef<HTMLButtonElement | null>(null);
   const filtered = useMemo(() => listings.filter(listing => rentalMatches(listing, { query, state, availability, ownerId }, owners) &&
-    (!rentPeriod || (listing.rentPeriod ?? "month") === rentPeriod) && (!priceBasis || (listing.priceBasis ?? "property") === priceBasis) &&
-    (!maxRent || listing.monthlyRent <= Number(maxRent)) && (!availableBy || listing.availability.status === "available-now" || (listing.projectedAvailabilityDate && listing.projectedAvailabilityDate <= availableBy))), [listings, owners, query, state, availability, ownerId, rentPeriod, priceBasis, maxRent, availableBy]);
+    (!priceBasis || (listing.priceBasis ?? "property") === priceBasis) &&
+    (!maxRent || listing.monthlyRent <= Number(maxRent)) && (!availableBy || listing.availability.status === "available-now" || (listing.projectedAvailabilityDate && listing.projectedAvailabilityDate <= availableBy))), [listings, owners, query, state, availability, ownerId, priceBasis, maxRent, availableBy]);
   const selectedMapIds = useMemo(() => mapSelection.filter(id => filtered.some(listing => listing.id === id)), [mapSelection, filtered]);
   const displayed = selectedMapIds.length ? filtered.filter(listing => selectedMapIds.includes(listing.id)) : filtered;
   const selectMapLocation = useCallback((ids: string[]) => setMapSelection(current => ids.every(id => current.includes(id)) ? [] : ids), []);
@@ -149,7 +148,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
     setModal(current => current?.kind === kind ? null : current);
     requestAnimationFrame(() => modalTrigger.current?.focus());
   }
-  function reset() { setQuery(""); setState(""); setAvailability(""); setOwnerId(""); setMaxRent(""); setRentPeriod(""); setPriceBasis(""); setAvailableBy(""); setMapSelection([]); }
+  function reset() { setQuery(""); setState(""); setAvailability(""); setOwnerId(""); setMaxRent(""); setPriceBasis(""); setAvailableBy(""); setMapSelection([]); }
 
   return <ServiceRatingProvider><div className={styles.page} data-rental-experience="public" style={{ "--ink": t.text, "--muted": t.textMuted, "--paper": t.bg, "--line": t.border, "--surface": t.surface, "--hover": t.surfaceHover, "--input": t.input, "--input-border": t.inputBorder, "--badge-bg": t.badgeBg, "--badge-text": t.badgeText, "--radius": `${t.radius}px`, "--radius-sm": `${t.radiusSm}px`, "--electric-green": isDark ? "#33ff66" : "#087e2a", "--green-surface": isDark ? "#020802" : "#effbf2", "--green-border": isDark ? "#33ff6670" : "#087e2a70", colorScheme: isDark ? "dark" : "light" } as CSSProperties}>
     <header className={styles.header}><Link href="/promote/rentals" className={styles.brand} aria-label="EOD-HUB Rentals home"><Image src="/branding/eod-crab-logo.png" width={40} height={40} alt="" /><span>EOD-HUB<span className={styles.brandSection}>RENTALS</span></span></Link>
@@ -159,7 +158,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
       <ServiceRatingSummary />
       <section className={styles.hero} aria-labelledby="rentals-title">
         <div className={styles.heroCopy}><p className={styles.eyebrow}><span className={styles.liveDot} /> HOUSING FOR THE EOD COMMUNITY</p><h1 id="rentals-title">Your next assignment.<br /><span>Your next place.</span></h1>
-          <p className={styles.heroDescription}>Less searching. More settling in. Find a place near your next chapter, and connect directly with the person who owns it.</p>
+          <p className={styles.heroDescription}>Long-term housing for EOD personnel and students, with leases of nine months or longer. Early termination may be needed due to a course drop or military relocation; confirm the lease terms directly with the owner.</p>
           <a href="#rentals" className={styles.primaryButton}>Explore the rentals <ArrowDown size={17} /></a>
           <div className={styles.heroDetails}><span><Mail size={17} /> Direct owner contact</span><span>No account needed</span></div>
         </div>
@@ -176,8 +175,8 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
           <label><span>Availability</span><select value={availability} onChange={event => setAvailability(event.target.value)}><option value="">All availability</option><option value="available-now">Available now</option><option value="available-from">Upcoming availability</option><option value="pending">Pending</option><option value="unavailable">Not currently available</option></select></label>
           <label><span>Owner</span><select value={ownerId} onChange={event => setOwnerId(event.target.value)}><option value="">All owners</option>{owners.map(owner => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select></label>
         </div> : null}
-        {showFilters ? <div className={styles.extraFilters}><label><span>Maximum rent ($)</span><input type="number" min="1" value={maxRent} onChange={e => { setMaxRent(e.target.value); if (!rentPeriod && e.target.value) setRentPeriod("month"); }} placeholder="Any price" /></label><label><span>Pricing period</span><select value={rentPeriod} onChange={e => setRentPeriod(e.target.value)}><option value="">Any period</option><option value="month">Per month</option><option value="week">Per week</option><option value="night">Per night</option></select></label><label><span>Price covers</span><select value={priceBasis} onChange={e => setPriceBasis(e.target.value)}><option value="">Room or whole property</option><option value="property">Whole property</option><option value="room">Per room</option></select></label><label><span>Available by (optional)</span><input type="date" value={availableBy} onChange={e => setAvailableBy(e.target.value)} /></label></div> : null}
-        <div className={styles.resultsLine}><p role="status" aria-live="polite">{displayed.length} {displayed.length === 1 ? "rental" : "rentals"}{selectedMapIds.length ? " at the selected map location" : state ? ` in ${rentalStates.find(([code]) => code === state)?.[1]}` : " to explore"}</p>{query || state || availability || ownerId || maxRent || rentPeriod || priceBasis || availableBy || selectedMapIds.length ? <button type="button" onClick={reset}>Clear filters <X size={13} /></button> : <span>Availability provided by the owner</span>}</div>
+        {showFilters ? <div className={styles.extraFilters}><label><span>Maximum monthly rent ($)</span><input type="number" min="1" value={maxRent} onChange={e => setMaxRent(e.target.value)} placeholder="Any price" /></label><label><span>Price covers</span><select value={priceBasis} onChange={e => setPriceBasis(e.target.value)}><option value="">Room or whole property</option><option value="property">Whole property</option><option value="room">Per room</option></select></label><label><span>Available by (optional)</span><input type="date" value={availableBy} onChange={e => setAvailableBy(e.target.value)} /></label></div> : null}
+        <div className={styles.resultsLine}><p role="status" aria-live="polite">{displayed.length} {displayed.length === 1 ? "rental" : "rentals"}{selectedMapIds.length ? " at the selected map location" : state ? ` in ${rentalStates.find(([code]) => code === state)?.[1]}` : " to explore"}</p>{query || state || availability || ownerId || maxRent || priceBasis || availableBy || selectedMapIds.length ? <button type="button" onClick={reset}>Clear filters <X size={13} /></button> : <span>Availability provided by the owner</span>}</div>
         {view === "list" && selectedMapIds.length ? <div className={styles.mapSelection}><span>A map location is selected.</span><button type="button" onClick={clearMapSelection}>Show all matching rentals</button></div> : null}
         {view === "map" ? <RentalMapView listings={filtered} selectedIds={selectedMapIds} onSelect={selectMapLocation} onClear={clearMapSelection} /> : null}
         <div className={styles.cardGrid}>{displayed.map(listing => {
@@ -193,7 +192,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
               <div className={styles.tags}>{listing.highlights.map(highlight => <span key={highlight}>{highlight === "Pool" ? <Waves size={13} /> : null}{highlight}</span>)}</div>
               {listing.sharedRenters ? <div className={styles.roommateNote}><Users size={18} /><p><strong>Open to {listing.sharedRenters} individual renters</strong><span>About {money(listing.monthlyRent / listing.sharedRenters)} each with an equal split. Total rent is {money(listing.monthlyRent)}/month; confirm lease terms with Terry.</span></p></div> : null}
               <p className={styles.description}>{listing.description}</p>
-              {listing.rentalTerms ? <details className={styles.rentalTerms}><summary>Lease, fees &amp; military flexibility</summary><p>Nine-month lease option. Owner acknowledges early termination for military-ordered relocation, including before nine months, with applicable notice requirements.</p><p>Minimum lease: {listing.rentalTerms.minimumLeaseMonths} months · Deposit: {money(listing.rentalTerms.deposit)}</p><p>Fees: {listing.rentalTerms.fees}</p><p>Included utilities: {listing.rentalTerms.utilities}</p><p>Pets: {listing.rentalTerms.petDetails}</p></details> : null}
+              {listing.rentalTerms ? <details className={styles.rentalTerms}><summary>Lease, fees &amp; military flexibility</summary><p>Long-term housing: leases of nine months or longer. Discuss early termination due to a course drop or military relocation directly with the owner and confirm the notice and documentation requirements in your lease.</p><p>Minimum lease: {listing.rentalTerms.minimumLeaseMonths} months · Deposit: {money(listing.rentalTerms.deposit)}</p><p>Fees: {listing.rentalTerms.fees}</p><p>Included utilities: {listing.rentalTerms.utilities}</p><p>Pets: {listing.rentalTerms.petDetails}</p></details> : null}
               {listing.sourceNote ? <p className={styles.sourceNote}>{listing.sourceNote}</p> : null}
               <div className={styles.cardActions}><button type="button" className={styles.primaryButton} onClick={event => openModal("contact", listing.id, event.currentTarget)}>Ask about this rental <ArrowRight size={17} /></button></div>
               <p className={styles.updated}>Availability updated <time dateTime={listing.availabilityUpdatedAt}>{new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(`${listing.availabilityUpdatedAt}T00:00:00Z`))}</time></p>

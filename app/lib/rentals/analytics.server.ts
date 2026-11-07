@@ -2,7 +2,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { rentalListings, rentalOwners } from "./listings.server";
-import { listingHasPaidAccess, propertySchema, type PropertyDraft } from "./provider";
+import { listingHasPaidAccess, storedPropertySchema, type PropertyDraft } from "./provider";
 import { analyticsDates, type AnalyticsProperty, type AnalyticsReport, type AnalyticsDay, type AnalyticsSubject } from "./analytics";
 import { checkDb, RentalError } from "./portal.server";
 import { rentalModerationHold } from "./moderation.server";
@@ -53,5 +53,5 @@ export async function engagementOwner(db: SupabaseClient, subject: AnalyticsSubj
   if (legacy) return legacy.ownerId;
   if (!z.uuid().safeParse(id).success) return null;
   const { data: p, error } = await db.from("rental_properties").select("*,provider:rental_providers!inner(status)").eq("id", id).maybeSingle(); checkDb(error);
-  return p && !p.hidden && p.provider.status === "approved" && listingHasPaidAccess(p) && propertySchema.safeParse(p.published).success ? p.provider_id : null;
+  return p && !p.hidden && p.provider.status === "approved" && listingHasPaidAccess(p) && storedPropertySchema.safeParse(p.published).success ? p.provider_id : null;
 }

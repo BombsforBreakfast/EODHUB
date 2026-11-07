@@ -3,27 +3,36 @@ import { z } from "zod";
 export const RENTAL_ROLE = "eod_rental";
 export const RENTAL_PORTAL = "/promote/rentals/portal";
 export const RENTAL_COMMITMENT_VERSION = "2026-10-29-v1.1";
+export const RENTAL_LEASE_VERSION = "2026-11-07-long-term-v1";
 export const providerCommitment = "If approved for EOD-HUB Rentals, I commit to providing EOD personnel and students with an honest, fair, and exceptional rental experience. I will represent my properties accurately, disclose pricing and fees clearly, keep availability current, communicate promptly and respectfully, and maintain safe, well-cared-for accommodations.";
-export const militaryLeaseCommitment = "I agree to offer a nine-month lease option for this property. I will permit early termination without an early-termination penalty when military orders require the renter to relocate, including PCS to a follow-on assignment or reassignment after leaving EOD school, even if fewer than nine months have elapsed. I will honor applicable military tenant protections and notice and documentation requirements.";
+export const militaryLeaseCommitment = "I offer this property for a lease of nine months or longer, with rent quoted per month. I acknowledge that a renter may need to terminate the lease early due to an EOD school course drop or military-ordered relocation, including PCS or reassignment. I will permit early termination without an early-termination penalty in these circumstances, even before nine months, subject to the lease's notice and documentation requirements. I will honor applicable military tenant protections and reflect this commitment in the lease.";
 export const photoCommitment = "I own this property or am authorized to advertise it. These photos belong to the property owner, and I have permission to use them in this listing and any promotion I purchase.";
 export const rentalAmenities = ["Furnished", "Garage", "Pool", "Large backyard", "Pet friendly", "Roommates accepted", "Utilities included", "Washer/dryer", "Parking", "Accessible features"] as const;
 
 const text = (max: number) => z.string().trim().max(max);
 const required = (max: number) => text(max).min(1, "Complete the required fields.");
-export const propertySchema = z.object({
+// Historical snapshots remain readable without retroactively changing an owner's consent or price.
+export const storedPropertySchema = z.object({
   title: required(140), address: required(220), city: required(100), state: z.string().regex(/^[A-Z]{2}$/), zip: z.string().regex(/^\d{5}(-\d{4})?$/),
   installation: required(160), propertyType: z.enum(["House", "Condo", "Apartment", "Room", "Shared home", "Short-term rental"]),
   rent: z.number().positive().max(100000), rentPeriod: z.enum(["month", "week", "night"]), priceBasis: z.enum(["property", "room"]),
-  bedrooms: z.number().int().min(0).max(1000), bathrooms: z.number().min(0.5).max(1000), minimumLeaseMonths: z.number().int().min(1).max(9),
+  bedrooms: z.number().int().min(0).max(1000), bathrooms: z.number().min(0.5).max(1000), minimumLeaseMonths: z.number().int().min(1).max(120),
   deposit: z.number().min(0).max(100000), fees: required(1500), utilities: required(1000), petDetails: required(1000),
   description: required(6000).min(40, "Add a description of at least 40 characters."),
   contactName: required(120), contactPhone: required(40).min(7), contactEmail: z.email().max(254), company: text(160),
   amenities: z.array(z.enum(rentalAmenities)).max(rentalAmenities.length),
   photos: z.array(z.string().regex(/^[0-9a-f-]{36}\/photos\/[0-9a-f-]{36}\.webp$/)).min(1, "Upload at least one owner-owned photo.").max(100),
   militaryLeaseAccepted: z.literal(true, { error: "Accept the military lease commitment." }),
+  militaryLeaseVersion: z.string().optional(),
   photoRightsAccepted: z.literal(true, { error: "Confirm ownership and photo permission." }),
 });
-export type PropertyInput = z.infer<typeof propertySchema>;
+export const propertySchema = storedPropertySchema.extend({
+  propertyType: z.enum(["House", "Condo", "Apartment", "Room", "Shared home"]),
+  rentPeriod: z.literal("month", { error: "Quote the monthly rent; nightly and weekly rentals are not offered." }),
+  minimumLeaseMonths: z.number().int().min(9, "The minimum lease is nine months.").max(120),
+  militaryLeaseVersion: z.literal(RENTAL_LEASE_VERSION, { error: "Acknowledge the current long-term lease and course-drop terms." }),
+});
+export type PropertyInput = z.infer<typeof storedPropertySchema>;
 export type PropertyDraft = Partial<Omit<PropertyInput,"militaryLeaseAccepted"|"photoRightsAccepted">> & {militaryLeaseAccepted?:boolean;photoRightsAccepted?:boolean};
 export type Provider = { user_id: string; full_name: string; phone: string; email: string; company: string; status: "pending" | "approved" | "rejected" | "suspended"; review_note: string | null; email_verified_at: string | null; created_at: string; stripe_customer_id?: string | null; delisted_at?: string | null };
 export type PropertyRow = { delisted_at?: string | null; id: string; provider_id: string; draft: PropertyDraft; submitted: PropertyInput | null; published: PropertyInput | null; revision: number; submission_id: string | null; review_status: string; review_note: string | null; status: "available-now" | "pending" | "unavailable"; available_date: string | null; plan: "monthly" | "annual"; auto_renew: boolean; campaign_requested: boolean; stripe_subscription_id: string | null; payment_method_id: string | null; setup_order_id:string|null; payment_status: string; payment_url: string | null; paid_until: string | null; grace_until: string | null; billing_hold_until?: string | null; hidden: boolean; created_at: string; updated_at: string };

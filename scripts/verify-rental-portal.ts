@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { bearerClaimsRental,isRentalIdentity,rentalApiAllowed,listingHasPaidAccess,propertySchema,planAmount } from "../app/lib/rentals/provider";
+import { RENTAL_LEASE_VERSION, militaryLeaseCommitment, storedPropertySchema, bearerClaimsRental,isRentalIdentity,rentalApiAllowed,listingHasPaidAccess,propertySchema,planAmount } from "../app/lib/rentals/provider";
 const provider="11111111-1111-4111-8111-111111111111";
 const valid={title:"Home near EOD school",address:"1 Test Street",city:"Niceville",state:"FL",zip:"32578",installation:"Eglin AFB",propertyType:"House",rent:1800,rentPeriod:"month",priceBasis:"property",bedrooms:3,bathrooms:2,minimumLeaseMonths:9,deposit:1800,fees:"None",utilities:"Water",petDetails:"Pets considered; disclose fees directly",description:"A furnished property with clear terms and direct contact with the property owner.",contactName:"Test Owner",contactPhone:"8505550100",contactEmail:"owner@example.com",company:"",amenities:["Furnished"],photos:[`${provider}/photos/22222222-2222-4222-8222-222222222222.webp`],militaryLeaseAccepted:true,photoRightsAccepted:true};
 test("rental identity requires the server-owned Auth role and app metadata",()=>{
@@ -24,8 +24,20 @@ test("paid access keeps a canceled paid term, limits grace to renewals, and expi
   assert.equal(listingHasPaidAccess({paid_until:past,payment_status:"past_due",grace_until:past},now),false);
 });
 test("every submitted property requires military flexibility, photo rights and price basis",()=>{
-  assert.equal(propertySchema.safeParse(valid).success,true);
-  for(const mutation of [{militaryLeaseAccepted:false},{photoRightsAccepted:false},{minimumLeaseMonths:12},{photos:[]},{priceBasis:"unknown"},{fees:""},{rent:0}])assert.equal(propertySchema.safeParse({...valid,...mutation}).success,false,JSON.stringify(mutation));
-  assert.equal(propertySchema.safeParse({...valid,minimumLeaseMonths:1,priceBasis:"room",bedrooms:100}).success,true,"Room count never multiplies listing charges");
+  const current={...valid,militaryLeaseVersion:RENTAL_LEASE_VERSION};
+  assert.equal(propertySchema.safeParse(current).success,true);
+  for(const mutation of [{militaryLeaseAccepted:false},{militaryLeaseVersion:undefined},{militaryLeaseVersion:"old"},{photoRightsAccepted:false},{minimumLeaseMonths:1},{minimumLeaseMonths:8},{minimumLeaseMonths:8.5},{rentPeriod:"night"},{rentPeriod:"week"},{propertyType:"Short-term rental"},{photos:[]},{priceBasis:"unknown"},{fees:""},{rent:0}])assert.equal(propertySchema.safeParse({...current,...mutation}).success,false,JSON.stringify(mutation));
+  assert.equal(propertySchema.safeParse({...current,minimumLeaseMonths:12,priceBasis:"room",bedrooms:100}).success,true,"Longer leases and room pricing remain available");
   assert.equal(planAmount("monthly"),1000);assert.equal(planAmount("annual"),10000);
+});
+
+test("historical paid snapshots remain readable without claiming new consent",()=>{
+  assert.equal(storedPropertySchema.safeParse(valid).success,true);
+  assert.equal(propertySchema.safeParse(valid).success,false);
+  const historical={...valid,rentPeriod:"week",minimumLeaseMonths:1,propertyType:"Short-term rental"};
+  const parsed=storedPropertySchema.parse(historical);
+  assert.equal(parsed.rentPeriod,"week");assert.equal(parsed.rent,1800);
+  assert.equal(parsed.militaryLeaseVersion,undefined);
+  assert.equal(propertySchema.safeParse(historical).success,false);
+  assert.match(militaryLeaseCommitment,/course drop/);assert.match(militaryLeaseCommitment,/nine months or longer/);
 });

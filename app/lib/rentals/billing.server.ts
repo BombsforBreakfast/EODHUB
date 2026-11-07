@@ -2,7 +2,7 @@ import "server-only";
 import Stripe from "stripe";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
-import { RENTAL_COMMITMENT_VERSION, RENTAL_PORTAL, propertySchema, planAmount, listingHasPaidAccess, type PropertyRow, type Provider } from "./provider";
+import { RENTAL_COMMITMENT_VERSION, RENTAL_PORTAL, propertySchema, storedPropertySchema, planAmount, listingHasPaidAccess, type PropertyRow, type Provider } from "./provider";
 import { checkDb, RentalError } from "./portal.server";
 import { rentalAdminEmail, rentalEmail } from "./notifications.server";
 import { rentalNeedsNewTerm, billingMoney } from "./billing-lifecycle";
@@ -126,7 +126,7 @@ export async function finishRentalOrder(db: SupabaseClient, session: Stripe.Chec
 export async function approveRentalProperty(db: SupabaseClient, row: PropertyRow, provider: Provider, stripeOverride?: Stripe) {
   if (row.delisted_at || provider.delisted_at) throw new RentalError("This property or provider has been delisted.",403);
   if (!row.submitted || !row.submission_id || provider.status !== "approved") throw new RentalError("This property is not ready for approval.");
-  propertySchema.parse(row.submitted);
+  storedPropertySchema.parse(row.submitted);
   if (row.published && listingHasPaidAccess(row) && !rentalNeedsNewTerm(row)) {
     checkDb((await db.from("rental_properties").update({ published: row.submitted, review_status: "approved", review_note: null, updated_at: new Date().toISOString() }).eq("id", row.id).eq("submission_id", row.submission_id)).error);
     await rentalEmail(provider.email, "Listing changes approved", "Your approved property changes are now visible. Your existing listing plan continues without an additional listing charge.");
