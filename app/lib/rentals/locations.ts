@@ -14,7 +14,7 @@ export type RentalMapLocation = NonNullable<RentalListing["mapLocation"]>;
 
 /** Unit labels share a building location. Preserve the original display address. */
 export function rentalStreet(address: string) {
-  return address.split(/[·#]/)[0].replace(/,\s*(?:apt|apartment|unit|suite|ste)\b.*$/i, "").replace(/\s+(?:apt|apartment|unit|suite|ste)\.?\s+\d[\w-]*$/i, "").trim();
+  return address.split(/[·#]/)[0].replace(/,\s*(?:apt|apartment|unit|suite|ste)\b.*$/i, "").replace(/\s+(?:apt|apartment|unit|suite|ste)\.?\s+\d[\w-]*$/i, "").replace(/[,\s]+$/g, "").trim();
 }
 
 function normalizedStreet(address: string) {
@@ -28,7 +28,9 @@ function addressKey(listing: RentalAddress) {
 
 // Census Public_AR_Current results, verified 2026-10-30. These are calculated
 // street-range coordinates, not surveyed building entrances or unit locations.
+// Furling Lane additionally verified against Census on 2026-11-08.
 const knownLocations: Record<string, RentalMapLocation> = {
+  "4507 FURLING LN|DESTIN|FL|32541": { latitude: 30.387355387902, longitude: -86.404877488249, source: "census", matchedAddress: "4507 FURLING LN, DESTIN, FL, 32541" },
   "1186 MUIRFIELD WAY|NICEVILLE|FL|32578": { latitude: 30.47523590059, longitude: -86.429158644205, source: "census", matchedAddress: "1186 MUIRFIELD WAY, NICEVILLE, FL, 32578" },
   "4276 CALINDA LN|NICEVILLE|FL|32578": { latitude: 30.496597281447, longitude: -86.434713527578, source: "census", matchedAddress: "4276 CALINDA LN, NICEVILLE, FL, 32578" },
 };
@@ -73,8 +75,15 @@ export function isEglinRental(listing: RentalListing) {
 }
 
 export function navscoleodMiles(listing: RentalListing) {
-  const point = rentalLocation(listing);
-  return isEglinRental(listing) && point ? Math.round(distanceMiles(point, NAVSCOLEOD) * 10) / 10 : undefined;
+  return isEglinRental(listing) ? listing.schoolDrivingMiles : undefined;
+}
+
+export function parseDrivingMiles(payload: unknown): number | undefined {
+  const data = object(payload);
+  const route = Array.isArray(data?.routes) ? object(data.routes[0]) : undefined;
+  const meters = route?.distance;
+  return data?.code === "Ok" && typeof meters === "number" && Number.isFinite(meters) && meters > 0
+    ? Math.round(meters / 1609.344 * 10) / 10 : undefined;
 }
 
 export function rentalDirections(listing?: RentalAddress) {

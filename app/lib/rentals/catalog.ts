@@ -48,6 +48,7 @@ export type RentalListing = {
   rentPeriod?: "month" | "week" | "night";
   priceBasis?: "property" | "room";
   portalListing?: boolean;
+  schoolDrivingMiles?: number;
   mapLocation?: { latitude: number; longitude: number; source: "census"; matchedAddress: string };
   providerContact?: {name:string;phone:string;email:string;company:string};
   rentalTerms?: {minimumLeaseMonths:number;deposit:number;fees:string;utilities:string;petDetails:string};

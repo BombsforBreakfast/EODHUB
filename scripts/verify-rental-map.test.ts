@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import type { RentalListing } from "../app/lib/rentals/catalog";
 import { rentalMatches } from "../app/lib/rentals/catalog";
-import { distanceMiles, isEglinRental, knownRentalLocation, NAVSCOLEOD, navscoleodMiles, parseCensusRentalLocation, rentalDirections, rentalLocation, rentalMapGroups, rentalStreet } from "../app/lib/rentals/locations";
+import { parseDrivingMiles, distanceMiles, isEglinRental, knownRentalLocation, NAVSCOLEOD, navscoleodMiles, parseCensusRentalLocation, rentalDirections, rentalLocation, rentalMapGroups, rentalStreet } from "../app/lib/rentals/locations";
 
 const listing = (id: string, address = "4276 Calinda Lane · Apt 158", state = "FL"): RentalListing => ({ id, address, city: "Niceville", state, zip: "32578", ownerId: "owner", title: "Rental", monthlyRent: 1650, bedrooms: 1, bathrooms: 1, propertyType: "Condo", furnished: true, availability: { status: "pending" }, availabilityUpdatedAt: "2026-10-30", description: "Owner-provided listing", highlights: [], nearby: ["Eglin AFB"], photos: [] });
 
@@ -36,7 +36,8 @@ test("school proximity uses real coordinates and never invents missing distances
   assert.equal(distanceMiles(NAVSCOLEOD, NAVSCOLEOD), 0);
   assert.ok(Math.abs(distanceMiles({ latitude: 0, longitude: 0 }, { latitude: 1, longitude: 0 }) - 69.09) < .1);
   const rental = listing("a");
-  assert.ok(navscoleodMiles(rental)! > 3 && navscoleodMiles(rental)! < 4);
+  assert.equal(navscoleodMiles(rental), undefined);
+  assert.equal(navscoleodMiles({ ...rental, schoolDrivingMiles: 5.2 }), 5.2);
   assert.equal(navscoleodMiles(listing("unknown", "Unknown road")), undefined);
   assert.equal(isEglinRental({ ...rental, city: "Tampa", nearby: [], address: "Unknown road" }), false);
   assert.equal(navscoleodMiles({ ...rental, state: "VA" }), undefined);
@@ -68,4 +69,15 @@ test("school-name searches include Eglin rentals without including unrelated loc
   const filters = { query: "NAVSCOLEOD", state: "", availability: "", ownerId: "" };
   assert.equal(rentalMatches(listing("near-school"), filters, []), true);
   assert.equal(rentalMatches({ ...listing("elsewhere", "Unknown road"), city: "Tampa", nearby: [] }, filters, []), false);
+});
+
+
+test("comma before a unit is removed and Furling Lane resolves", () => {
+  assert.equal(rentalStreet("4507 Furling Ln , #311"), "4507 Furling Ln");
+  assert.ok(knownRentalLocation({ address: "4507 Furling Ln , #311", city: "Destin", state: "FL", zip: "32541" }));
+});
+
+test("driving mileage requires a successful finite route distance", () => {
+  assert.equal(parseDrivingMiles({ code: "Ok", routes: [{ distance: 17628.3 }] }), 11);
+  for (const payload of [null, {}, { code: "NoRoute", routes: [] }, { code: "Ok", routes: [{ distance: -1 }] }, { code: "Ok", routes: [{ distance: Infinity }] }]) assert.equal(parseDrivingMiles(payload), undefined);
 });
