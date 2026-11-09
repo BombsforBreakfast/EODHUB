@@ -14,6 +14,7 @@ import RentalSchoolProximity from "./RentalSchoolProximity";
 import RentalHomeBuyingAd from "./RentalHomeBuyingAd";
 import RentalFlagDialog from "./RentalFlagDialog";
 import { recordRentalEngagement } from "@/app/lib/rentals/analytics.client";
+import ExpandableText from "@/app/components/ExpandableText";
 
 const RentalMapView = dynamic(() => import("./RentalMapView"), { ssr: false, loading: () => <p role="status">Loading rental map…</p> });
 
@@ -191,7 +192,7 @@ export default function RentalDirectory({ listings, owners, showFilters = false,
               <RentalSchoolProximity listing={listing} />
               <div className={styles.tags}>{listing.highlights.map(highlight => <span key={highlight}>{highlight === "Pool" ? <Waves size={13} /> : null}{highlight}</span>)}</div>
               {listing.sharedRenters ? <div className={styles.roommateNote}><Users size={18} /><p><strong>Open to {listing.sharedRenters} individual renters</strong><span>About {money(listing.monthlyRent / listing.sharedRenters)} each with an equal split. Total rent is {money(listing.monthlyRent)}/month; confirm lease terms with Terry.</span></p></div> : null}
-              <p className={styles.description}>{listing.description}</p>
+              <ExpandableText maxLines={5} style={{ fontSize: 12, lineHeight: 1.8, color: "var(--muted)" }} wrapperStyle={{ margin: "18px 0" }} toggleColor="var(--electric-green)">{listing.description}</ExpandableText>
               {listing.rentalTerms ? <details className={styles.rentalTerms}><summary>Lease, fees &amp; military flexibility</summary><p>Long-term housing: leases of nine months or longer. Discuss early termination due to a course drop or military relocation directly with the owner and confirm the notice and documentation requirements in your lease.</p><p>Minimum lease: {listing.rentalTerms.minimumLeaseMonths} months · Deposit: {money(listing.rentalTerms.deposit)}</p><p>Fees: {listing.rentalTerms.fees}</p><p>Included utilities: {listing.rentalTerms.utilities}</p><p>Pets: {listing.rentalTerms.petDetails}</p></details> : null}
               {listing.sourceNote ? <p className={styles.sourceNote}>{listing.sourceNote}</p> : null}
               <div className={styles.cardActions}><button type="button" className={styles.primaryButton} onClick={event => openModal("contact", listing.id, event.currentTarget)}>Ask about this rental <ArrowRight size={17} /></button></div>
