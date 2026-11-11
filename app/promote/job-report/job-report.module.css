@@ -1,1 +1,41 @@
-.page{min-height:100vh;background:#0b1210;color:#ecf5ef;font-family:Arial,sans-serif;padding:0 24px 48px}.header{max-width:1060px;margin:auto;padding:28px 0;border-bottom:1px solid #ffffff18;display:flex;justify-content:space-between;align-items:center;gap:16px}.brand{font-weight:850;letter-spacing:2px;color:#b6f588;text-decoration:none}.header a:last-child{font-size:14px;color:#b6c6bd}.hero{max-width:1060px;margin:64px auto;display:grid;grid-template-columns:1.2fr 1fr;gap:52px;align-items:start}.eyebrow{color:#b6f588;font:700 12px monospace;letter-spacing:2px}.hero h1{font-size:clamp(40px,6vw,66px);line-height:1.05;letter-spacing:-2px;margin:18px 0}.intro{font-size:19px;line-height:1.7;color:#b6c6bd}.features{list-style:none;padding:0;line-height:1.8;color:#b6c6bd}.features li{margin:14px 0}.features strong{color:#ecf5ef}.card{padding:30px;border:1px solid #b6f58845;border-radius:20px;background:#14201b}.price{font-size:46px;font-weight:800;margin:8px 0 12px}.price small{font-size:16px;font-weight:400;color:#b6c6bd}.card p{line-height:1.6;color:#b6c6bd}.form{display:grid;gap:14px;margin-top:22px}.form label{font-size:14px}.form input{display:block;width:100%;box-sizing:border-box;margin-top:9px;padding:14px;border-radius:9px;border:1px solid #ffffff40;background:#0b1210;color:#fff;font-size:16px}.form button,.action{display:inline-block;padding:15px 18px;border:0;border-radius:9px;background:#b6f588;color:#102015;font-size:16px;font-weight:750;cursor:pointer;text-decoration:none;text-align:center}.form button:disabled{opacity:.6;cursor:wait}.notice{font-size:13px;line-height:1.6;color:#b6c6bd}.status{margin-top:18px;font-size:14px;line-height:1.6}.links{display:flex;flex-wrap:wrap;gap:22px;max-width:1060px;margin:28px auto;color:#b6c6bd;font-size:13px}.links a,.card a{color:#b6f588}.single{max-width:620px;margin:60px auto}.single h1{font-size:34px;line-height:1.15}.legal{max-width:1060px;margin:32px auto;font-size:13px;line-height:1.7;color:#97aca0}.page :is(button,a,input):focus-visible{outline:3px solid #807cff;outline-offset:4px}@media(max-width:720px){.page{padding:0 18px 30px}.hero{grid-template-columns:1fr;margin:38px auto;gap:28px}.card{padding:24px}.hero h1{letter-spacing:-1px}.header{padding:23px 0}}
+
+.page { display: flex; flex-direction: column; min-height: 100vh; background: var(--paper); color: var(--ink); }
+.header { width: 100%; }
+.content { flex: 1; width: 100%; max-width: 1440px; margin: auto; padding: 0 5%; }
+.hero { display: grid; grid-template-columns: 1.25fr 1fr; gap: 64px; align-items: start; padding: 64px 0 40px; }
+.eyebrow { display: flex; align-items: center; gap: 9px; margin: 0 0 24px; color: var(--electric-green); font: 700 10px var(--font-geist-mono), monospace; letter-spacing: 1.5px; }
+.liveDot { width: 6px; height: 6px; flex-shrink: 0; border-radius: 50%; background: var(--electric-green); box-shadow: 0 0 8px var(--green-border); }
+.hero h1 { margin: 0; font-size: clamp(42px, 4.4vw, 66px); line-height: 1.1; font-weight: 850; letter-spacing: -2.7px; }
+.hero h1 > span { color: var(--muted); }
+.intro { margin: 25px 0 28px; font-size: 16px; line-height: 1.8; color: var(--muted); }
+.features { list-style: none; padding: 0; margin: 32px 0 0; color: var(--muted); font-size: 14px; line-height: 1.8; }
+.features li { margin: 0; padding: 18px 0; border-top: 1px solid var(--line); }
+.features strong { color: var(--ink); font-weight: 750; }
+.card { padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); }
+.card p { color: var(--muted); font-size: 14px; line-height: 1.8; }
+.price { margin: 0 0 18px; font-size: 48px; font-weight: 850; letter-spacing: -1.8px; }
+.price small { font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--muted); }
+.form { display: grid; gap: 16px; margin-top: 24px; }
+.form label { font-size: 12px; font-weight: 650; }
+.form input { display: block; width: 100%; margin-top: 9px; min-height: 48px; padding: 13px 14px; border: 1px solid var(--input-border); border-radius: var(--radius-sm); background: var(--input); color: var(--ink); font-size: 16px; }
+.form button, .action { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 48px; padding: 13px 20px; border: 1px solid var(--electric-green); border-radius: var(--radius-sm); background: var(--green-surface); color: var(--electric-green) !important; font: 700 13px var(--font-geist-mono), monospace; letter-spacing: .3px; text-align: center; cursor: pointer; }
+.form button:hover, .action:hover { border-color: var(--accent); background: var(--hover); }
+.form button:disabled, .action:disabled { opacity: .6; cursor: default; }
+.beta { display: inline-block; border: 1px solid var(--green-border); border-radius: 4px; padding: 3px 6px; color: var(--electric-green); font: 700 9px var(--font-geist-mono), monospace; text-transform: uppercase; letter-spacing: .8px; white-space: nowrap; }
+.notice { color: var(--muted); font-size: 12px; line-height: 1.8; }
+.status { margin-top: 18px; font-size: 14px; line-height: 1.6; }
+.card a { color: var(--electric-green); }
+.single { max-width: 620px; margin: 60px auto; }
+.single h1 { margin: 0 0 24px; font-size: clamp(29px, 3vw, 40px); letter-spacing: -1px; line-height: 1.15; font-weight: 800; }
+.single h2 { margin-top: 28px; font-size: 18px; }
+.legal { margin: 16px 0 48px; font-size: 12px; line-height: 1.8; color: var(--muted); }
+.links { width: 100%; max-width: 1440px; margin: auto; padding: 28px 5%; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 24px; font-size: 12px; color: var(--muted); }
+.links a:hover { text-decoration: underline; text-underline-offset: 4px; }
+.betaDialog { width: min(440px, calc(100% - 40px)); padding: 28px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); color: var(--ink); }
+.betaDialog::backdrop { background: #000b; }
+.betaDialog h2 { margin: 0 0 14px; font-size: 23px; letter-spacing: -.6px; }
+.betaDialog p { line-height: 1.8; font-size: 14px; }
+.betaDialog button { width: 100%; margin-top: 12px; }
+@media (max-width: 850px) { .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 38px; } }
+@media (max-width: 600px) { .header { flex-wrap: wrap; gap: 16px; } .header nav { width: 100%; justify-content: space-between; gap: 16px; } .header nav > a:first-child { display: inline-flex; } }
+@media (max-width: 600px) { .content { padding: 0 20px; } .hero { padding-top: 30px; } .hero h1 { font-size: clamp(39px, 10.8vw, 61px); letter-spacing: -1.8px; } .eyebrow { font-size: 9px; letter-spacing: 1.6px; } .intro { font-size: 14px; margin: 22px 0; } .card { padding: 22px; } .single { margin: 32px auto; } .links { padding: 26px 20px; gap: 18px; } }

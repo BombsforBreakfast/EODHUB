@@ -12,8 +12,8 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{action:
   if(!["checkout","manage","portal","confirm","unsubscribe"].includes(action))return reportJson({error:"Not found"},404);
   const denied=reportGuard(request,action!=="unsubscribe");if(denied)return denied;
   try {
-    const ctx=reportContext();
     if(action==="unsubscribe") {
+      const ctx=reportContext();
       const id=readReportToken(request.nextUrl.searchParams.get("token")??"");if(!id)return reportJson({error:"Invalid unsubscribe link"},400);
       // Persist suppression before the Stripe call; the worker retries cancellation after an outage.
       const cancellation=await cancelReport(ctx,id);
@@ -24,10 +24,12 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{action:
     const raw=await request.text();if(raw.length>2048)return reportJson({error:"Request too large"},413);
     const body=form?Object.fromEntries(new URLSearchParams(raw)):JSON.parse(raw);
     if(action==="portal") {
+      const ctx=reportContext();
       const token=z.string().max(100).parse(body.token);const session=await reportPortal(ctx,token);
       return form?new Response(null,{status:303,headers:{Location:session.url,"Cache-Control":"no-store","Referrer-Policy":"no-referrer"}}):reportJson({url:session.url});
     }
     if(action==="confirm") {
+      const ctx=reportContext();
       const id=z.string().startsWith("cs_").max(255).parse(body.sessionId);
       const session=await ctx.stripe.checkout.sessions.retrieve(id);
       if(session.livemode!==ctx.live||session.metadata?.purpose!==JOB_REPORT_PURPOSE)return reportJson({error:"Invalid checkout"},400);
@@ -39,7 +41,8 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{action:
       return reportJson({paid:true,reportSent:["accepted","delivered"].includes(delivery.data?.status??""),jobCount:delivery.data?.payload?.jobs?.length??0});
     }
     const email=z.email().max(254).parse(String(body.email??"").trim().toLowerCase());
-    if(!reportTestAllowed(email,ctx.live))return reportJson({error:"The Job Report is in a limited live test. Public subscriptions will open after validation."},403);
+    if(!reportTestAllowed(email,process.env.JOB_REPORT_MODE==="live"))return reportJson({code:"beta_only",error:"This feature is currently in testing. Please try again later or reach out to hello@eod-hub.com for more information."},403);
+    const ctx=reportContext();
     if(action==="checkout") {
       const result=await startReportCheckout(ctx,email);
       if(result.manage)after(async()=>{await drainReportDeliveries(ctx);});
@@ -49,7 +52,7 @@ export async function POST(request:NextRequest,{params}:{params:Promise<{action:
     if(queued)after(async()=>{await drainReportDeliveries(ctx);});
     return reportJson({ok:true,message:"If a Job Report subscription matches that email, a private management link is on its way."});
   } catch(error) {
-    console.error("[job-report] action failed",action,error instanceof Error?error.name:"Error");
+    console.error("[job-report] action failed",action,error instanceof Error?{name:error.name,type:(error as {type?:string}).type,code:(error as {code?:string}).code,status:(error as {statusCode?:number}).statusCode,message:error.message.replace(/[sr]k_(live|test)_[A-Za-z0-9]+/g,"[redacted]")}:"Error");
     return reportJson({error:action==="portal"?"That management link is unavailable or expired. Request a fresh link.":"The Job Report is temporarily unavailable. Please retry. No new charge is created by a management request."},action==="portal"?400:503);
   }
 }

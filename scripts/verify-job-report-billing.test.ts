@@ -4,7 +4,7 @@ import type Stripe from 'stripe';
 import type {SupabaseClient} from '@supabase/supabase-js';
 import {cancelReport,syncReportSubscription} from '../app/lib/server/jobReportBilling';
 import {drainReportDeliveries,renderReportDelivery,type ReportDelivery} from '../app/lib/server/jobReportDelivery';
-import {readReportToken,reportToken,startReportCheckout,type ReportContext} from '../app/lib/server/jobReport';
+import {readReportToken,reportToken,reportTestAllowed,startReportCheckout,type ReportContext} from '../app/lib/server/jobReport';
 import {JOB_REPORT_PURPOSE} from '../app/lib/jobReport';
 
 process.env.JOB_REPORT_MODE='test';process.env.JOB_REPORT_TOKEN_SECRET='local-fixture-secret-at-least-32-characters';
@@ -50,4 +50,11 @@ test('delivery retries preserve row identity, avoid accepted duplicates, and sup
 test('signed unsubscribe tokens reject modification; every email has the chosen contact',()=>{
  const h=harness();const token=reportToken(h.subscriber.id);assert.equal(readReportToken(token),h.subscriber.id);assert.equal(readReportToken(token+'x'),null);
  for(const kind of ['initial','welcome','manage']){const mail=renderReportDelivery({...h.delivery,kind,payload:{...h.delivery.payload,link:'https://example.org/manage'}} as ReportDelivery)!;assert.match(mail.text,/hello@eod-hub.com/);assert.match(mail.html,/hello@eod-hub.com/);}
+});
+test('live beta checkout fails closed and admits only the approved email',()=>{
+ delete process.env.JOB_REPORT_LIVE_TEST_ONLY;
+ assert.equal(reportTestAllowed('someone@example.org',true),false);
+ assert.equal(reportTestAllowed('TEST@example.org',true),true);
+ process.env.JOB_REPORT_LIVE_TEST_ONLY='true';
+ assert.equal(reportTestAllowed('someone@example.org',true),false);
 });

@@ -16,7 +16,7 @@ export function reportDb(live=process.env.JOB_REPORT_MODE==="live") {
 }
 export function reportContext(): ReportContext {
   const live=process.env.JOB_REPORT_MODE==="live";
-  const key=process.env.STRIPE_JOB_REPORT_SECRET_KEY||process.env.STRIPE_SUPPORT_SECRET_KEY;
+  const key=process.env.STRIPE_JOB_REPORT_SECRET_KEY||process.env.STRIPE_RENTALS_SECRET_KEY;
   if(!["live","test"].includes(process.env.JOB_REPORT_MODE??"")||!key||!new RegExp(`^[sr]k_${live?"live":"test"}_`).test(key))throw Error("Job Report billing mode is not configured");
   if(process.env.VERCEL_ENV==="production"&&!live)throw Error("Test checkout cannot run in production");
   return {db:reportDb(live),stripe:new Stripe(key),live};
@@ -34,7 +34,7 @@ export function reportGuard(request:NextRequest,origin=true) {
   if(!checkRateLimit(`job-report:${getClientIp(request)}`,{limit:20,windowMs:60000}).allowed)return reportJson({error:"Please wait a minute and try again."},429);
 }
 export function reportTestAllowed(email:string,live:boolean) {
-  if(live&&process.env.JOB_REPORT_LIVE_TEST_ONLY!=="true")return true;
+  if(live&&process.env.JOB_REPORT_LIVE_TEST_ONLY==="false")return true;
   return (process.env.JOB_REPORT_TEST_EMAIL_ALLOWLIST??"").split(",").map(x=>x.trim().toLowerCase()).includes(email.trim().toLowerCase());
 }
 export function reportToken(id:string) {
