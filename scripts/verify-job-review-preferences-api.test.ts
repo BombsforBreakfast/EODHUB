@@ -50,5 +50,21 @@ test("exclusions require admin and a fresh exact-title preview; approved/communi
   const complete=await(await POST(req({action:"add_exclusion",phrases,previewToken:retry.previewToken}))).json();assert.equal(complete.removed,1);assert.equal(complete.failed,0);assert.equal(rules.length,2);
   for(const id of ["bulk-approved","bulk-community","bulk-senior","senior"])assert.equal(rows.find(row=>row.id===id)?.is_rejected,false,id);
   assert(!writes.some(x=>x.includes("job_review_feedback")));
+  // Long exact titles work individually and in a batch without truncation or prefix matching.
+  const longTitle="Program and Business Development Officer (open for applicants who have the right to be based and work from Egypt only)";
+  const anotherLongTitle="Research "+"international project coordination ".repeat(30)+"consultant";
+  assert.ok(longTitle.length>100);assert.ok(anotherLongTitle.length>1000);
+  rows.push(make("long-one",longTitle),make("long-duplicate",longTitle.toUpperCase()),make("long-suffix",longTitle+" Senior"),make("long-approved",longTitle,{is_approved:true}),make("long-community",longTitle,{source_type:"community"}),make("long-second",anotherLongTitle));
+  const longPreview=await(await POST(req({action:"preview_exclusion",phrase:longTitle}))).json();
+  assert.equal(longPreview.count,2);assert.ok(longPreview.phrase.length>100);
+  const longSaved=await(await POST(req({action:"add_exclusion",phrase:longPreview.phrase,previewToken:longPreview.previewToken}))).json();
+  assert.equal(longSaved.removed,2);assert.equal(longSaved.failed,0);
+  const longBatch=await(await POST(req({action:"preview_exclusion",phrases:[anotherLongTitle,longTitle,"CBRN Analyst"]}))).json();
+  assert.equal(longBatch.count,1);assert.equal(longBatch.phrases.length,3);
+  const longBatchSaved=await(await POST(req({action:"add_exclusion",phrases:longBatch.phrases,previewToken:longBatch.previewToken}))).json();
+  assert.equal(longBatchSaved.excluded,3);assert.equal(longBatchSaved.removed,1);assert.equal(longBatchSaved.failed,0);
+  for(const id of ["long-suffix","long-approved","long-community"])assert.equal(rows.find(row=>row.id===id)?.is_rejected,false,id);
+  assert.ok(rules.some(rule=>rule.phrase===longPreview.phrase));
+  assert.ok(rules.some(rule=>rule.phrase.length>1000));
  }finally{globalThis.fetch=oldFetch;names.forEach((n,i)=>{if(old[i]===undefined)delete process.env[n];else process.env[n]=old[i];});}
 });

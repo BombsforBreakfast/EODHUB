@@ -56,8 +56,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Select between 1 and 100 complete job titles." }, { status: 400 });
       }
       const phrases = [...new Set(input.map(value => normalizeJobPhrase(value as string)))].sort();
-      if (phrases.some(phrase => phrase.length < 3 || phrase.length > 100 || !/[a-z]/.test(phrase))) {
-        return NextResponse.json({ error: "Each complete job title must be 3–100 characters." }, { status: 400 });
+      if (phrases.some(phrase => phrase.length < 3 || !/[a-z]/.test(phrase))) {
+        return NextResponse.json({ error: "Each complete job title must contain at least 3 characters and include a letter." }, { status: 400 });
       }
       const titles = new Set(phrases);
       const matches:Array<{id:string;title:string}>=[];
