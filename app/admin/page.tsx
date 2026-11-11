@@ -892,6 +892,7 @@ export default function AdminPage() {
   const [jobsLoading, setJobsLoading] = useState(false);
   const [jobsError, setJobsError] = useState("");
   const jobsRequest = useRef(0);
+  const jobsSelectionScope = useRef<string | null>(null);
   const jobsPageSize = 25;
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
@@ -1873,8 +1874,15 @@ export default function AdminPage() {
     setJobsPage(page);
     setJobsTotal(total);
     setJobsPriorityCounts(json.priorityCounts ?? { high: 0, possible: 0, low: 0, all: total, gold:0 });
-    setJobs((json.jobs ?? []) as Job[]);
-    setSelectedJobs(new Set());
+    const refreshedJobs = (json.jobs ?? []) as Job[];
+    const scope = JSON.stringify([page, pendingOnly, jobsPriority, jobsSearchDebounced.query]);
+    const preserveSelection = jobsSelectionScope.current === scope;
+    jobsSelectionScope.current = scope;
+    const visibleIds = new Set(refreshedJobs.map(job => job.id));
+    setJobs(refreshedJobs);
+    // Refreshes after a single action keep the rest of the visible batch checked.
+    // New pages/filters and jobs no longer in the results must not leave hidden selections.
+    setSelectedJobs(previous => preserveSelection ? new Set([...previous].filter(id => visibleIds.has(id))) : new Set());
     } catch (error) {
       if (request === jobsRequest.current) setJobsError(error instanceof Error ? error.message : "Could not load jobs.");
     } finally {
@@ -2470,6 +2478,11 @@ export default function AdminPage() {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
     if (!response.ok) throw new Error("Approval failed. Please retry.");
+    setSelectedJobs(previous => {
+      const next = new Set(previous);
+      next.delete(id);
+      return next;
+    });
     showToast("Job approved!");
     await Promise.all([loadJobs(), loadPendingCounts()]);
     } catch (error) {
