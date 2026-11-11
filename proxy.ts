@@ -86,6 +86,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // API routes handle their own auth; after geo check, pass through.
+  if (path.startsWith("/api/job-report/")) return NextResponse.next();
   if (path.startsWith("/api/")) {
     const shared=process.env.NEXT_PUBLIC_SHARED_PORTAL_AUTH_ENABLED==="1" || process.env.SHARED_PORTAL_AUTH_ENABLED==="1";
     if(!accountApiAllowed(path) && !rentalApiAllowed(path,request.method) && !ticketingApiAllowed(path)){

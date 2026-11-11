@@ -1204,6 +1204,7 @@ export default function LoginPage() {
 
       <WebSupportOnly><div style={{ display: "grid", gap: 12, width: "100%", margin: "12px 0 24px" }}>
         <a href="/promote/rentals" style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", textDecoration: "none" }}><House size={16} strokeWidth={1.8} aria-hidden />Rentals</a>
+        <a href="/promote/job-report" style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, textAlign: "center", textDecoration: "none" }}>Subscribe to Job Report</a>
         <HubSupportProgress />
         <HubSupportButton login />
       </div></WebSupportOnly>
