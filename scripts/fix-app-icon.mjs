@@ -39,3 +39,6 @@ for (const p of paths) {
   writeFileSync(p, png);
   console.log("Wrote", p);
 }
+
+// Keep all Android launcher densities in sync with the canonical iOS artwork.
+await import("./generate-android-icons.mjs");
