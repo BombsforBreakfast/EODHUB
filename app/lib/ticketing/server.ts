@@ -8,6 +8,7 @@ import { isOwnerAdmin, OWNER_ADMIN_EMAIL } from "@/app/lib/ownerAdminAccess";
 import { activeAssignment, assignedAccess, isTicketingIdentity, ticketingEmail, ticketingOrigin, TICKETING_COOKIE, TICKETING_ROLE, uuidPattern, type Assignment } from "./access";
 import { cleanCoordinatorDraft, cleanTicketTypeDrafts, coordinatorProfileState, emptyEventDraft, eventFields, parseCoordinatorProfile, parseEventDraft, type CoordinatorProfile, type EventDraft } from "./event-intake";
 import { accountActor,sharedAuthEnabled,requireSharedSchema } from "../account/server";
+import { noCardPilotAllowed } from "./pilot-checkout";
 
 export class TicketingError extends Error { constructor(message: string, public status = 400) { super(message); } }
 export const ticketingHeaders = { "Cache-Control": "private, no-store", "X-Robots-Tag": "noindex, nofollow", "Referrer-Policy": "no-referrer" };
@@ -196,7 +197,7 @@ export async function ticketingWorkspace(actor: TicketingActor) {
     const emails = new Map(identities);
     staff = staff.map(row => ({ ...row, email: emails.get(String(row.user_id)) }));
   }
-  return { actor: { id: actor.user.id, email: actor.user.email, admin: actor.admin, can_create: actor.admin || actor.account.can_submit_events }, ...coordinatorProfileState(actor.account.profile, actor.user.email!), events, staff, audit, invitations, mode: "pilot", checkoutEnabled: false };
+  return { actor: { id: actor.user.id, email: actor.user.email, admin: actor.admin, can_create: actor.admin || actor.account.can_submit_events }, ...coordinatorProfileState(actor.account.profile, actor.user.email!), events, staff, audit, invitations, mode: "pilot", checkoutEnabled: false, noCardPilotAvailable: noCardPilotAllowed() };
 }
 export async function ticketingCommand(actor: TicketingActor, body: Record<string, unknown>) {
   const { db, user } = actor;
