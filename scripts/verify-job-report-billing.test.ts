@@ -51,10 +51,14 @@ test('signed unsubscribe tokens reject modification; every email has the chosen 
  const h=harness();const token=reportToken(h.subscriber.id);assert.equal(readReportToken(token),h.subscriber.id);assert.equal(readReportToken(token+'x'),null);
  for(const kind of ['initial','welcome','manage']){const mail=renderReportDelivery({...h.delivery,kind,payload:{...h.delivery.payload,link:'https://example.org/manage'}} as ReportDelivery)!;assert.match(mail.text,/hello@eod-hub.com/);assert.match(mail.html,/hello@eod-hub.com/);}
 });
-test('live beta checkout fails closed and admits only the approved email',()=>{
+test('checkout opens to everyone only when live public launch is explicitly enabled',()=>{
  delete process.env.JOB_REPORT_LIVE_TEST_ONLY;
  assert.equal(reportTestAllowed('someone@example.org',true),false);
  assert.equal(reportTestAllowed('TEST@example.org',true),true);
  process.env.JOB_REPORT_LIVE_TEST_ONLY='true';
  assert.equal(reportTestAllowed('someone@example.org',true),false);
+ process.env.JOB_REPORT_LIVE_TEST_ONLY='false';
+ assert.equal(reportTestAllowed('someone@example.org',true),true);
+ assert.equal(reportTestAllowed('someone@example.org',false),false);
+ process.env.JOB_REPORT_LIVE_TEST_ONLY='true';
 });
