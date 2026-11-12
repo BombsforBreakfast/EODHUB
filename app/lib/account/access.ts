@@ -20,7 +20,7 @@ export function safeAccountReturn(value: unknown, fallback = "/account") {
   try {
     const url = new URL(value, "https://eod-hub.com");
     const path = url.pathname;
-    return path === "/account" || path.startsWith("/account/") || path === "/onboarding" || path === "/pending" || path === "/verify-email" || path === "/" || path === "/promote/rentals/portal" || path.startsWith("/ticketing/") ? path + url.search : fallback;
+    return path === "/account" || path.startsWith("/account/") || path === "/onboarding" || path === "/pending" || path === "/verify-email" || path === "/" || path === "/promote/rentals/portal" || path === "/promote/rentals/bundle" || path.startsWith("/ticketing/") ? path + url.search : fallback;
   } catch { return fallback; }
 }
 export type AccountAccessInput = {

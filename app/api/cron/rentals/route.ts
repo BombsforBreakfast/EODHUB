@@ -5,6 +5,7 @@ import { rentalStripe, rentalBillingReady, syncRentalSubscription } from "@/app/
 import { annualReminderEmail,drainBillingEmails,expireBillingCase,openBillingCase } from "@/app/lib/rentals/billing-notifications.server";
 import {processDelisting} from "@/app/lib/rentals/delisting.server";
 import type {Delisting} from "@/app/lib/rentals/delisting";
+import { reconcileBundles } from "@/app/lib/rentals/bundle.server";
 export const dynamic="force-dynamic";
 export async function GET(request:NextRequest){
   if(!process.env.CRON_SECRET||request.headers.get("authorization")!==`Bearer ${process.env.CRON_SECRET}`)return rentalJson({error:"Unauthorized"},401);
@@ -43,6 +44,7 @@ export async function GET(request:NextRequest){
       if(["payment_failed","payment_stopped"].includes(issue.kind))await syncRentalSubscription(db,await stripe.subscriptions.retrieve(issue.subscription_id,{expand:["latest_invoice"]}),stripe);
       await expireBillingCase(db,issue,stripe);
     }
+    await reconcileBundles(db);
     const emailDelivery=await drainBillingEmails(db);
     checkDb((await db.from("rental_rate_limits").delete().lt("expires_at",now)).error);
     return rentalJson({ok:true,reportsDue:due.data?.length??0,expired:expired.data?.length??0,emailDelivery});

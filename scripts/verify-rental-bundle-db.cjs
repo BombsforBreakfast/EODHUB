@@ -1,0 +1,14 @@
+const {PGlite}=require(process.env.PGLITE_MODULE||'@electric-sql/pglite');
+const fs=require('node:fs');const assert=require('node:assert/strict');
+(async()=>{const db=new PGlite();try{await db.exec(`create role anon;create role authenticated;create role eod_rental;create role eod_ticketing;create role eod_portal;create role service_role bypassrls;create schema auth;create table auth.users(id uuid primary key);`);await db.exec(fs.readFileSync('supabase/migrations/20261112145146_legacy_rental_bundle.sql','utf8'));
+ const owner='11111111-1111-4111-8111-111111111111';await db.query('insert into auth.users values($1)',[owner]);
+ const insert=`insert into public.rental_legacy_bundles(owner_slug,user_id,full_name,email,listing_ids,annual_cents,approved_at,campaign_started_at,complimentary_until) values($1,$2,'Synthetic','synthetic@example.com',$3,20000,now(),now(),now()+interval '30 days')`;
+ await db.query(insert,['one',owner,['a','b','c']]);
+ assert.equal((await db.query(`select monthly_cents,checkout_pending,auto_renew from public.rental_legacy_bundles`)).rows[0].monthly_cents,2500);
+ const second='22222222-2222-4222-8222-222222222222';await db.query('insert into auth.users values($1)',[second]);
+ await assert.rejects(()=>db.query(insert,['two',second,['c','d','e']]),/already assigned/);
+ await assert.rejects(()=>db.query(insert,['two',second,['d','d']]),/already assigned/);
+ for(const role of ['anon','authenticated','eod_rental','eod_portal','eod_ticketing']){await db.exec(`set role ${role}`);await assert.rejects(()=>db.query('select * from public.rental_legacy_bundles'),/permission denied/);await db.exec('reset role');}
+ assert.equal((await db.query(`select relrowsecurity from pg_class where oid='public.rental_legacy_bundles'::regclass`)).rows[0].relrowsecurity,true);
+ console.log('Bundle migration, monthly price, listing uniqueness and five browser-role denials passed.');
+}finally{await db.close();}})().catch(e=>{console.error(e);process.exit(1);});

@@ -54,7 +54,8 @@ async function main() {
   assert.equal(publicPage.headers.has("x-robots-tag"), false);
   assert.equal((await proxy(new NextRequest("http://localhost/promote/rentals/example"))).headers.get("x-middleware-next"), "1");
   assert.equal((await proxy(new NextRequest("http://localhost/rentals-private"))).status, 307);
-  assert.equal((await proxy(new NextRequest("http://localhost/account"))).status, 307);
+  // Shared account entry is public; each account API still authenticates its caller.
+  assert.equal((await proxy(new NextRequest("http://localhost/account"))).status, 200);
   console.log("Rental directory checks passed: catalog, owner grouping, all-state filters, availability, contacts, and public route boundaries.");
 }
 

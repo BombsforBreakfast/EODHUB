@@ -72,12 +72,13 @@ export async function accountBody(request:Request,maximum=16000):Promise<Record<
   try { const body=JSON.parse(raw);if(!body || typeof body!=="object" || Array.isArray(body))throw new Error();return body; } catch {throw new AccountError("Invalid account request.");}
 }
 export async function accountSnapshot({db,user,emailVerified}:Awaited<ReturnType<typeof accountActor>>) {
-  const [p,r,e,a,q]=await Promise.all([
+  const [p,r,e,a,q,b]=await Promise.all([
     db.from("profiles").select("*").eq("user_id",user.id).maybeSingle(),
     db.from("rental_providers").select("status,full_name,phone,company,review_note").eq("user_id",user.id).maybeSingle(),
     db.from("ticketing_accounts").select("active,can_submit_events").eq("user_id",user.id).maybeSingle(),
     db.from("ticketing_assignments").select("event_id,role,expires_at,revoked_at").eq("user_id",user.id),
     db.from("portal_access_requests").select("portal,status,review_note").eq("user_id",user.id),
+    db.from("rental_legacy_bundles").select("id,full_name,paid_until").eq("user_id",user.id).maybeSingle(),
   ]);[p,r,e,a,q].forEach(result=>checkAccountDb(result.error));
-  return {user:{id:user.id,email:user.email,emailVerified,providers:(user.identities??[]).map(row=>row.provider)},profile:p.data,rental:r.data,eventAccount:e.data,eventsAvailable:!!ticketingOrigin(),requests:q.data??[],access:accountAccess({profile:p.data,rental:r.data,events:e.data,assignments:a.data??[],organizerSuspended:q.data?.some(row=>row.portal==="event_organizer"&&row.status==="suspended")}),admin:isOwnerAdmin({userId:user.id,email:user.email,isAdmin:p.data?.is_admin})};
+  return {rentalBundle:emailVerified?b.data:null,user:{id:user.id,email:user.email,emailVerified,providers:(user.identities??[]).map(row=>row.provider)},profile:p.data,rental:r.data,eventAccount:e.data,eventsAvailable:!!ticketingOrigin(),requests:q.data??[],access:accountAccess({profile:p.data,rental:r.data,events:e.data,assignments:a.data??[],organizerSuspended:q.data?.some(row=>row.portal==="event_organizer"&&row.status==="suspended")}),admin:isOwnerAdmin({userId:user.id,email:user.email,isAdmin:p.data?.is_admin})};
 }

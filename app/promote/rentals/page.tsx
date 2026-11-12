@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { rentalListings, rentalOwners } from "@/app/lib/rentals/listings.server";
-import { loadRentalListings } from "@/app/lib/rentals/availability.server";
+import { loadRentalListings,filterLegacyBundleTerms } from "@/app/lib/rentals/availability.server";
 import RentalDirectory from "./RentalDirectory";
 import RentalsWebGate from "./RentalsWebGate";
 import { publishedRentalInventory } from "@/app/lib/rentals/published.server";
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 
 export default async function RentalsPage() {
   const [listings, inventory] = await Promise.all([loadRentalListings(),publishedRentalInventory()]);
-  const moderated = await filterModeratedRentals([...listings, ...inventory.listings]);
+  const moderated = await filterModeratedRentals([...(await filterLegacyBundleTerms(listings)), ...inventory.listings]);
   const mappedListings = await locateRentalListings(moderated.listings);
   return <RentalsWebGate>{inventory.unavailable||moderated.unavailable?<p role="status" style={{textAlign:"center",padding:"12px 20px",fontSize:13}}>{moderated.unavailable?"Rental listings are temporarily unavailable.":"Additional rental inventory is temporarily unavailable."} Please try again shortly.</p>:null}<RentalDirectory listings={mappedListings} owners={[...rentalOwners,...inventory.owners]} showFilters showStateFilter /></RentalsWebGate>;
 }

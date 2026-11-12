@@ -55,7 +55,7 @@ export default function RentalPortal(){
     const {data}=await rentalAuth.auth.getSession();
     if(sharedAuthEnabledClient()){
       if(!data.session){location.replace("/account/sign-in?portal=rentals");return;}
-      const account=await accountFetch(supabase);if(!account.rental){location.replace("/account?portal=rentals");return;}
+      const account=await accountFetch(supabase);if(account.rentalBundle){location.replace("/promote/rentals/bundle");return;}if(!account.rental){location.replace("/account?portal=rentals");return;}
     }
     if(data.session){if(!sharedAuthEnabledClient()&&!isRentalIdentity(data.session.user)){await rentalAuth.auth.signOut({scope:"local"});return;}
       const query=new URLSearchParams(window.location.search);if(query.has("checkout")){await api({action:"confirm_checkout",sessionId:query.get("checkout")});setNotice("Your properties are submitted. No charges are made until approval.");history.replaceState(null,"",window.location.pathname);}
