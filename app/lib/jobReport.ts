@@ -25,7 +25,8 @@ export function reportEmail(jobs: ReportJob[], date: string, manageUrl: string, 
   const cards=jobs.map(job=>{
     const url=reportApplicationUrl(job.applyUrl); if(!url)return "";
     const salary=reportSalary(job);
-    return `<article style="margin:16px 0;padding:20px;border:1px solid #d8e2dc;border-radius:12px"><h2 style="font-size:19px;margin:0 0 8px">${e(job.title)}</h2><p>${e([job.company,job.location].filter(Boolean).join(" · "))}</p>${salary?`<p>Salary: ${e(salary)}</p>`:""}<p style="line-height:1.5">${e(reportExcerpt(job.description))}</p><a href="${e(url)}" style="display:inline-block;background:#153d29;color:#fff;padding:11px 18px;border-radius:7px;text-decoration:none">View listing &amp; apply</a>${job.source==="adzuna"?'<p><a href="https://www.adzuna.com" style="display:inline-block;min-width:116px;min-height:23px;font-size:24px">Adzuna</a></p>':""}</article>`;
+    const sourceCredit=job.source==="adzuna"?'<span style="font-size:11px;color:#53645b"> &middot; Source: <a href="https://www.adzuna.com" style="color:#53645b">Adzuna</a></span>':"";
+    return `<article style="margin:16px 0;padding:20px;border:1px solid #d8e2dc;border-radius:12px"><h2 style="font-size:19px;margin:0 0 8px">${e(job.title)}</h2><p>${e([job.company,job.location].filter(Boolean).join(" · "))}${sourceCredit}</p>${salary?`<p>Salary: ${e(salary)}</p>`:""}<p style="line-height:1.5">${e(reportExcerpt(job.description))}</p><a href="${e(url)}" style="display:inline-block;background:#153d29;color:#fff;padding:11px 18px;border-radius:7px;text-decoration:none">View listing &amp; apply</a></article>`;
   }).join("");
   return {
     subject:`The Job Report · ${date} · ${jobs.length} new opportunit${jobs.length===1?"y":"ies"}`,
