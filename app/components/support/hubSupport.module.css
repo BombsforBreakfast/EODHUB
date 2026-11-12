@@ -70,3 +70,10 @@
 .login { border-radius:16px; }
 .login .support { padding:13px 12px; font-size:inherit !important; font-weight:700; }
 
+
+/* Match the electric EOD-HUB landing actions without changing other support placements. */
+.login { --support-electric:#33ff66; --support-electric-bg:#020802; border:1px solid var(--support-electric); border-radius:12px; background:var(--support-electric-bg); box-shadow:0 0 12px #33ff6615; }
+.login .support, .login .why { background:var(--support-electric-bg); color:var(--support-electric); font-family:var(--font-geist-mono),monospace; letter-spacing:.3px; }
+.login .why { border-left-color:var(--support-electric) !important; }
+.login button:focus-visible { outline-color:var(--support-electric); }
+:global(html[data-theme="light"]) .login { --support-electric:#087e2a; --support-electric-bg:#effbf2; box-shadow:none; }

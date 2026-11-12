@@ -749,25 +749,19 @@ export default function LoginPage() {
     color: t.text,
   };
 
-  const buttonPrimary: React.CSSProperties = {
-    padding: "14px 12px",
-    borderRadius: t.radius,
-    border: "none",
-    background: t.text,
-    color: t.surface,
-    fontWeight: 700,
+  const electricButton: React.CSSProperties = {
+    borderRadius: t.radiusSm,
+    border: `1px solid ${isDark ? "#33ff66" : "#087e2a"}`,
+    background: isDark ? "#020802" : "#effbf2",
+    color: isDark ? "#33ff66" : "#087e2a",
+    fontFamily: "var(--font-geist-mono), monospace",
+    fontWeight: 750,
+    letterSpacing: ".3px",
+    boxShadow: isDark ? "0 0 12px #33ff6615" : "none",
     cursor: "pointer",
   };
-
-  const buttonSecondary: React.CSSProperties = {
-    padding: "13px 12px",
-    borderRadius: t.radius,
-    border: `1px solid ${t.border}`,
-    background: t.surface,
-    color: t.text,
-    fontWeight: 700,
-    cursor: "pointer",
-  };
+  const buttonPrimary: React.CSSProperties = { ...electricButton, padding: "14px 12px" };
+  const buttonSecondary: React.CSSProperties = { ...electricButton, padding: "13px 12px" };
 
   return (
     <div
