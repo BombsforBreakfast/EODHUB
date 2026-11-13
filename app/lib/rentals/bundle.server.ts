@@ -6,7 +6,7 @@ import { rentalStripe,rentalAutomaticTax,rentalBillingPortal } from "./billing.s
 import { checkDb,RentalError } from "./portal.server";
 import { queueBillingEmail } from "./billing-notifications.server";
 import { billingDate,billingMoney } from "./billing-lifecycle";
-import { BUNDLE_PATH,BUNDLE_TERMS,bundleCheckoutAllowed,bundleReminder,type RentalBundle } from "./bundle";
+import { BUNDLE_PATH,BUNDLE_TERMS,bundleCheckoutAllowed,bundleReminder,bundleInventory,bundleSelection,bundleQuote,type RentalBundle } from "./bundle";
 import { OWNER_ADMIN_EMAIL } from "../ownerAdminAccess";
 
 export async function ownerBundle(db:SupabaseClient,userId:string) {
@@ -17,8 +17,16 @@ export async function ownerBundle(db:SupabaseClient,userId:string) {
 const subscriptionId=(v:Stripe.Invoice)=>typeof v.parent?.subscription_details?.subscription==="string"?v.parent.subscription_details.subscription:v.parent?.subscription_details?.subscription?.id;
 const customerId=(v:string|{id:string}|null)=>typeof v==="string"?v:v?.id;
 const link=`https://eod-hub.com${BUNDLE_PATH}`;
-export async function bundleCheckout(db:SupabaseClient,b:RentalBundle,autoRenew:boolean,plan:"monthly"|"annual",origin:string,stripe=rentalStripe()) {
+export async function bundleCheckout(db:SupabaseClient,b:RentalBundle,autoRenew:boolean,plan:"monthly"|"annual",origin:string,stripe=rentalStripe(),listingIds:string[]=bundleSelection(b)) {
   if(!bundleCheckoutAllowed(b))throw new RentalError("Your bundle already has a paid term or needs billing review. Use Manage billing or contact hello@eod-hub.com.",409);
+  let pricing:ReturnType<typeof bundleQuote>;
+  try{pricing=bundleQuote(b,listingIds);}catch{throw new RentalError("Choose at least one property from your account.");}
+  const selected=bundleInventory(b).filter(id=>listingIds.includes(id));
+  const encoded=JSON.stringify(selected),selectionMeta:Record<string,string>={};
+  if(encoded.length<=500)selectionMeta.listing_ids=encoded;
+  else for(let i=0;i<encoded.length;i+=450)selectionMeta["listing_ids_"+Math.floor(i/450)]=encoded.slice(i,i+450);
+  const sameSelection=JSON.stringify([...bundleSelection(b)].sort())===JSON.stringify([...selected].sort());
+  const quote=pricing[plan];
   if(b.stripe_subscription_id){
     const previous=await stripe.subscriptions.retrieve(b.stripe_subscription_id);
     if(!["canceled","incomplete_expired"].includes(previous.status))throw new RentalError("Resolve the existing subscription before purchasing another term.",409);
@@ -27,30 +35,31 @@ export async function bundleCheckout(db:SupabaseClient,b:RentalBundle,autoRenew:
     const previous=await stripe.checkout.sessions.retrieve(b.stripe_checkout_id);
     if(previous.status==="complete")throw new RentalError("Your completed checkout is being confirmed. Refresh shortly; do not pay again.",409);
     if(previous.status==="open"){
-      if(autoRenew!==b.checkout_auto_renew||plan!==b.checkout_plan)throw new RentalError("Finish or cancel your open Stripe checkout before changing the renewal choice.",409);
+      if(!sameSelection||autoRenew!==b.checkout_auto_renew||plan!==b.checkout_plan)throw new RentalError("Finish or cancel your open Stripe checkout before changing the renewal choice.",409);
       return previous.url;
     }
   }
   let attempt=b.checkout_attempt;
   if(b.checkout_pending){
-    if(autoRenew!==b.checkout_auto_renew||plan!==b.checkout_plan)throw new RentalError("Your checkout is being prepared. Retry with the same renewal choice.",409);
+    if(!sameSelection||autoRenew!==b.checkout_auto_renew||plan!==b.checkout_plan)throw new RentalError("Your checkout is being prepared. Retry with the same renewal choice.",409);
   }else{
     attempt=randomUUID();
-    const saved=await db.from("rental_legacy_bundles").update({checkout_pending:true,checkout_attempt:attempt,checkout_auto_renew:autoRenew,checkout_plan:plan,terms_accepted_at:new Date().toISOString(),terms_version:BUNDLE_TERMS}).eq("id",b.id).eq("checkout_attempt",b.checkout_attempt).eq("checkout_pending",false).select("id");checkDb(saved.error);
+    const saved=await db.from("rental_legacy_bundles").update({checkout_pending:true,checkout_attempt:attempt,checkout_auto_renew:autoRenew,checkout_plan:plan,checkout_listing_ids:selected,stripe_checkout_id:null,terms_accepted_at:new Date().toISOString(),terms_version:BUNDLE_TERMS}).eq("id",b.id).eq("checkout_attempt",b.checkout_attempt).eq("checkout_pending",false).select("id");checkDb(saved.error);
     if(saved.data?.length!==1)throw new RentalError("Your checkout changed. Refresh and retry.",409);
   }
   const customer=b.stripe_customer_id??(await stripe.customers.create({email:b.email,name:b.full_name,metadata:{billing_subject:"eod_rental_bundle",rental_bundle_id:b.id}},{idempotencyKey:`rental-bundle-customer-${b.id}`})).id;
   checkDb((await db.from("rental_legacy_bundles").update({stripe_customer_id:customer}).eq("id",b.id)).error);
   // A separate product keeps bundle invoices distinct from individual listing fees.
-  const product=b.stripe_product_id??(await stripe.products.create({name:`EOD-HUB property bundle — ${b.listing_ids.length} properties`,tax_code:"txcd_10701000",metadata:{eod_rental_product:"legacy_bundle",rental_bundle_id:b.id}},{idempotencyKey:`rental-bundle-product-${b.id}`})).id;
+  const product=b.stripe_product_id??(await stripe.products.create({name:"EOD-HUB rental property listings",tax_code:"txcd_10701000",metadata:{eod_rental_product:"legacy_bundle",rental_bundle_id:b.id}},{idempotencyKey:`rental-bundle-product-v2-${b.id}`})).id;
+  if(b.stripe_product_id)await stripe.products.update(product,{name:"EOD-HUB rental property listings"});
   checkDb((await db.from("rental_legacy_bundles").update({stripe_product_id:product}).eq("id",b.id)).error);
   const session=await stripe.checkout.sessions.create({
-    mode:"subscription",customer,line_items:[{price_data:{currency:"usd",product,unit_amount:plan==="annual"?b.annual_cents:b.monthly_cents,tax_behavior:"exclusive",recurring:{interval:plan==="annual"?"year":"month"}},quantity:1}],
+    mode:"subscription",customer,line_items:[{price_data:{currency:"usd",product,unit_amount:quote.unit,tax_behavior:"exclusive",recurring:{interval:plan==="annual"?"year":"month"}},quantity:quote.quantity}],
     automatic_tax:await rentalAutomaticTax(stripe),billing_address_collection:"required",customer_update:{address:"auto"},
     integration_identifier:"eod-rentals-bundle-"+Array.from(attempt.replaceAll("-","").slice(0,8),c=>String.fromCharCode(97+parseInt(c,16))).join(""),
     metadata:{billing_subject:"eod_rental_bundle",rental_bundle_id:b.id},
-    subscription_data:{metadata:{billing_subject:"eod_rental_bundle",rental_bundle_id:b.id,auto_renew:autoRenew?"true":"false",plan}},
-    custom_text:{submit:{message:`One ${plan==="annual"?"annual":"monthly"} payment covers your ${b.listing_ids.length} existing property listings. Listing access begins at purchase. Automatic renewal is ${autoRenew?"ON":"OFF; the subscription will be set to end after this paid term"}. Social campaigns are separate.`}},
+    subscription_data:{metadata:{billing_subject:"eod_rental_bundle",rental_bundle_id:b.id,auto_renew:autoRenew?"true":"false",plan,...selectionMeta}},
+    custom_text:{submit:{message:`One ${plan==="annual"?"annual":"monthly"} payment covers your ${selected.length} selected property listings. Listing access begins at purchase. Automatic renewal is ${autoRenew?"ON":"OFF; the subscription will be set to end after this paid term"}. Social campaigns are separate.`}},
     success_url:`${origin}${BUNDLE_PATH}?checkout={CHECKOUT_SESSION_ID}`,cancel_url:`${origin}${BUNDLE_PATH}?checkout=canceled`,
   },{idempotencyKey:`rental-bundle-checkout-${b.id}-${attempt}`});
   checkDb((await db.from("rental_legacy_bundles").update({stripe_checkout_id:session.id,checkout_pending:false}).eq("id",b.id)).error);
@@ -70,13 +79,20 @@ export async function syncBundle(db:SupabaseClient,sub:Stripe.Subscription,strip
   const invoice=typeof sub.latest_invoice==="string"?await stripe.invoices.retrieve(sub.latest_invoice):sub.latest_invoice;
   const item=sub.items.data[0];
   const plan=sub.metadata.plan=== "monthly"?"monthly":"annual";
-  const expected=sub.items.data.length===1&&item?.price.unit_amount===(plan==="annual"?b.annual_cents:b.monthly_cents)&&item.price.currency==="usd"&&item.quantity===1&&item.price.recurring?.interval===(plan==="annual"?"year":"month")&&item.price.recurring.interval_count===1;
+  let listingIds=b.listing_ids,quote:ReturnType<typeof bundleQuote>["monthly"];
+  try{
+    const encodedIds=sub.metadata.listing_ids||Object.keys(sub.metadata).filter(k=>/^listing_ids_\d+$/.test(k)).sort((a,z)=>Number(a.split("_").pop())-Number(z.split("_").pop())).map(k=>sub.metadata[k]).join("");
+    if(encodedIds){const value=JSON.parse(encodedIds);if(!Array.isArray(value)||value.some(id=>typeof id!=="string"))throw Error();listingIds=value;}
+    quote=bundleQuote(b,listingIds)[plan];
+  }catch{throw new RentalError("The subscription property selection needs administrator review.",409);}
+  const expected=sub.items.data.length===1&&item?.price.unit_amount===quote.unit&&item.price.currency==="usd"&&item.quantity===quote.quantity&&item.price.recurring?.interval===(plan==="annual"?"year":"month")&&item.price.recurring.interval_count===1;
   if(!expected)throw new RentalError("The bundle price requires administrator review.",409);
   const patch:Record<string,unknown>={plan,stripe_subscription_id:sub.id,payment_status:sub.status,auto_renew:!sub.cancel_at_period_end&&sub.status!=="canceled"};
   if(invoice?.status==="paid"&&item.current_period_end){
+    patch.listing_ids=listingIds;
     // Never shorten an already paid term because an older event arrived late.
     patch.paid_until=new Date(Math.max(Date.parse(b.paid_until??"")||0,item.current_period_end*1000)).toISOString();
-    await queueBillingEmail(db,`bundle-receipt:${invoice.id}`,b.email,"Your three-property listing bundle is active",`Hi ${b.full_name.split(" ")[0]},\n\nPayment confirmed: ${billingMoney(invoice.amount_paid,invoice.currency)}. Your ${b.listing_ids.length} property listings are covered through ${billingDate(patch.paid_until as string)}.\n\nAutomatic renewal is ${patch.auto_renew?"on":"off"}. Your original social campaign still ends on November 20, 2026; additional social campaigns are separate.\n\nManage your properties and billing below. Questions? Reply to hello@eod-hub.com.`,link);
+    await queueBillingEmail(db,`bundle-receipt:${invoice.id}`,b.email,`Your ${listingIds.length}-property listing plan is active`,`Hi ${b.full_name.split(" ")[0]},\n\nPayment confirmed: ${billingMoney(invoice.amount_paid,invoice.currency)}. Your ${listingIds.length} property listings are covered through ${billingDate(patch.paid_until as string)}.\n\nAutomatic renewal is ${patch.auto_renew?"on":"off"}. Your original social campaign still ends on November 20, 2026; additional social campaigns are separate.\n\nManage your properties and billing below. Questions? Reply to hello@eod-hub.com.`,link);
   }
   checkDb((await db.from("rental_legacy_bundles").update(patch).eq("id",b.id)).error);
   return true;
@@ -144,9 +160,11 @@ export async function reconcileBundles(db:SupabaseClient,stripe=rentalStripe(),n
       await syncBundle(db,await stripe.subscriptions.retrieve(b.stripe_subscription_id),stripe);
       b=await ownerBundle(db,b.user_id);
     }
+    const offer=bundleQuote(b,bundleSelection(b));
+    const current=bundleQuote(b,b.listing_ids);
     const window=bundleReminder(b,now);if(!window)continue;
     const title=window.startsWith("annual")?(b.auto_renew?"Your listing bundle will renew soon":"Your listing bundle is ending"):window.startsWith("ended")?"Your listing bundle term has ended":window==="campaign-ended"?"Your 30-day rental campaign has ended":"Your rental campaign ends soon";
-    const message=b.paid_until?`Hi ${b.full_name.split(" ")[0]},\n\nYour ${b.listing_ids.length}-property bundle term ends ${billingDate(b.paid_until)}. ${b.auto_renew?`Automatic renewal is on at ${billingMoney(b.plan==="annual"?b.annual_cents:b.monthly_cents)} per ${b.plan==="annual"?"year":"month"}, plus applicable tax. Use Manage billing to change your payment method or cancel renewal.`:`Automatic renewal is off. Open your property bundle to review billing or purchase another listing term after this term ends.`}`:`Hi ${b.full_name.split(" ")[0]},\n\nYour original 30-day campaign ends ${billingDate(b.complimentary_until)}. Keep all ${b.listing_ids.length} properties listed for ${billingMoney(b.monthly_cents)} per month or ${billingMoney(b.annual_cents)} per year, plus applicable tax. Your property details and photos are already in your account. Sign in and check out below. If you have not selected and paid for a monthly or annual plan by November 20, the promotion ends and your properties will be removed from the public listings. Your details and photos remain saved. Additional social campaigns are separate.\n\nQuestions? Reply to hello@eod-hub.com.`;
+    const message=b.paid_until?`Hi ${b.full_name.split(" ")[0]},\n\nYour ${b.listing_ids.length}-property bundle term ends ${billingDate(b.paid_until)}. ${b.auto_renew?`Automatic renewal is on at ${billingMoney(current[b.plan].total)} per ${b.plan==="annual"?"year":"month"}, plus applicable tax. Use Manage billing to change your payment method or cancel renewal.`:`Automatic renewal is off. Open your property bundle to review billing or purchase another listing term after this term ends.`}`:`Hi ${b.full_name.split(" ")[0]},\n\nYour original 30-day campaign ends ${billingDate(b.complimentary_until)}. Keep your ${bundleSelection(b).length} selected properties listed for ${billingMoney(offer.monthly.total)} per month or ${billingMoney(offer.annual.total)} per year, plus applicable tax. Your property details and photos are already in your account. Sign in and check out below. If you have not selected and paid for a monthly or annual plan by November 20, the promotion ends and your properties will be removed from the public listings. Your details and photos remain saved. Additional social campaigns are separate.\n\nQuestions? Reply to hello@eod-hub.com.`;
     await queueBillingEmail(db,`bundle-reminder:${b.id}:${window}`,b.email,title,message,link);
   }
 }

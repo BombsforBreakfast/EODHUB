@@ -4,7 +4,7 @@ import { rentalListings } from "./listings.server";
 import type { RentalStatusRow } from "./availability";
 import type { RentalListing } from "./catalog";
 
-import { bundleVisible } from "./bundle";
+import { bundleInventory,bundleListingVisible } from "./bundle";
 
 export async function loadRentalListings(database?: SupabaseClient): Promise<RentalListing[]> {
   const db = database ?? createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false, autoRefreshToken: false } });
@@ -20,9 +20,9 @@ export async function loadRentalListings(database?: SupabaseClient): Promise<Ren
 /** Only migrated partner listings gain a term gate; all other inventory is unchanged. */
 export async function filterLegacyBundleTerms(listings:RentalListing[],database?:SupabaseClient){
   const db=database??createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!,process.env.SUPABASE_SERVICE_ROLE_KEY!,{auth:{persistSession:false,autoRefreshToken:false}});
-  const {data,error}=await db.from("rental_legacy_bundles").select("listing_ids,paid_until,complimentary_until,risk_hold_until");
+  const {data,error}=await db.from("rental_legacy_bundles").select("listing_ids,available_listing_ids,paid_until,complimentary_until,risk_hold_until");
   if(error)throw new Error("Partner listing terms are temporarily unavailable.");
   const paused=new Set<string>();
-  for(const b of data??[])if(!bundleVisible(b))for(const id of b.listing_ids)paused.add(id);
+  for(const b of data??[])for(const id of bundleInventory(b))if(!bundleListingVisible(b,id))paused.add(id);
   return listings.filter(p=>!paused.has(p.id));
 }
