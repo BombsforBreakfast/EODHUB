@@ -890,6 +890,23 @@ export default function AdminPage() {
   const [jobsPriority, setJobsPriority] = useState<"high" | "possible" | "low" | "all" | "gold">("all");
   const [jobsPriorityCounts, setJobsPriorityCounts] = useState({ high: 0, possible: 0, low: 0, all: 0, gold:0 });
   const [jobsLoading, setJobsLoading] = useState(false);
+  const [reportSending, setReportSending] = useState(false);
+
+  async function sendJobReport() {
+    if (reportSending || !window.confirm("Send newly approved, unsent jobs to Job Report subscribers now? Jobs already included in a report will not be repeated.")) return;
+    setReportSending(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/admin/jobs/send-report", { method: "POST", headers: { Authorization: `Bearer ${session?.access_token ?? ""}` } });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Could not send the Job Report.");
+      showToast(`${result.reportId ? "Job Report queued." : "No new unsent jobs."} ${result.sent} emails accepted; ${result.failed} awaiting retry. Remaining queued emails send automatically.`);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not send the Job Report.");
+    } finally {
+      setReportSending(false);
+    }
+  }
   const [jobsError, setJobsError] = useState("");
   const jobsRequest = useRef(0);
   const jobsSelectionScope = useRef<string | null>(null);
@@ -4731,6 +4748,12 @@ export default function AdminPage() {
         {/* ── JOBS TAB ── */}
         {activeTab === "jobs" && (
           <div style={{ marginTop: 20 }}>
+            <div style={{ marginBottom: 14 }}>
+              <button type="button" onClick={() => void sendJobReport()} disabled={reportSending} style={actionBtn("#153d29")}>
+                {reportSending ? "Sending…" : "Send Job Report now"}
+              </button>
+              <p style={{ color: t.textMuted, fontSize: 13, margin: "6px 0 0" }}>Scheduled for 8:00 a.m. Eastern. After a late ingest, approve the jobs here, then send any new unsent listings.</p>
+            </div>
             {/* Sub-filter: switch between submission queue and stale-report queue */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
               <button

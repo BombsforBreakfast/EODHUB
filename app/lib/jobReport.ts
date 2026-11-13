@@ -34,14 +34,14 @@ export function reportEmail(jobs: ReportJob[], date: string, manageUrl: string, 
     text:`The Job Report by EOD-HUB\n${date}\n\n${jobs.map(j=>`${j.title}\n${[j.company,j.location].filter(Boolean).join(" · ")}${reportSalary(j)?`\nSalary: ${reportSalary(j)}`:""}\n${reportExcerpt(j.description)}\n${j.applyUrl}${j.source==="adzuna"?"\nSource: Adzuna — https://www.adzuna.com":""}`).join("\n\n")}\n\nManage or cancel: ${manageUrl}\nUnsubscribe and cancel future renewals: ${unsubscribeUrl}\nEOD-HUB LLC\nContact: hello@eod-hub.com`,
   };
 }
-/** Latest 7 p.m. Eastern cutoff, including DST. Repeated sweeps catch delayed runs. */
+/** Latest 8 a.m. Eastern cutoff, including DST. Repeated sweeps catch delayed runs. */
 export function reportCutoff(now=new Date()) {
   const parts=new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",hourCycle:"h23"}).formatToParts(now);
   const value=(type:string)=>parts.find(p=>p.type===type)!.value;
   const date=new Date(`${value("year")}-${value("month")}-${value("day")}T12:00:00Z`);
-  if(Number(value("hour"))<19)date.setUTCDate(date.getUTCDate()-1);
+  if(Number(value("hour"))<8)date.setUTCDate(date.getUTCDate()-1);
   const day=date.toISOString().slice(0,10);
   const noon=new Date(`${day}T19:00:00Z`);
   const hour=Number(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"2-digit",hourCycle:"h23"}).format(noon));
-  return new Date(noon.getTime()+(19-hour)*3600000);
+  return new Date(noon.getTime()+(8-hour)*3600000);
 }
